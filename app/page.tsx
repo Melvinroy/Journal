@@ -150,7 +150,7 @@ function AuthScreen({ mode, setMode, onRecovered }: { mode: AuthMode; setMode: (
 
     if (mode === "signup") {
       result = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo } });
-      if (!result.error) setMessage("Account created. Check your email to confirm your address, then return here to sign in.");
+      if (!result.error) setMessage("If this email is new, check your inbox to confirm it. If you already have an account, return to sign in or reset your password.");
     } else if (mode === "forgot") {
       result = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
       if (!result.error) setMessage("Password-reset link sent. Please check your email.");
