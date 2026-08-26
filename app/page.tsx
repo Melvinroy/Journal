@@ -490,7 +490,8 @@ export default function Home() {
 
   useEffect(() => {
     if (demoMode || new URLSearchParams(window.location.search).get("demo") === "1") return;
-    if (!session || !supabase) {
+    const client = supabase;
+    if (!session || !client) {
       setTrades([]);
       return;
     }
@@ -498,7 +499,7 @@ export default function Home() {
     async function loadTrades() {
       setCloudBusy(true);
       setCloudError("");
-      const { data, error } = await supabase.from("trades").select("*").order("trade_date", { ascending: false }).order("created_at", { ascending: false });
+      const { data, error } = await client!.from("trades").select("*").order("trade_date", { ascending: false }).order("created_at", { ascending: false });
       if (!current) return;
       if (error) setCloudError(error.message.includes("schema cache") ? "The secure trade table still needs to be activated in Supabase." : error.message);
       else setTrades((data as TradeRow[]).map(fromRow));
