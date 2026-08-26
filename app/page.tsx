@@ -1,13 +1,15 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
 type EquityMode = "dollar" | "r";
 
 type Trade = {
-  id: number;
+  id: string;
   symbol: string;
   side: "Long" | "Short";
   setup: string;
@@ -19,9 +21,7 @@ type Trade = {
   grade: Grade;
 };
 
-const symbols = ["NVDA", "MDB", "PLTR", "MSTR", "COIN", "SNOW", "MU", "SHOP", "TGTX", "TOST"];
 const setups = ["Momentum breakout", "EP breakout", "Earnings gap", "10/20 pullback", "VWAP rejection"];
-const rSeries = [-1, -0.85, 0.4, 1.25, -1, -0.3, 3.4, 0.8, -1, 5.2, 0.2, -0.7, 1.1, -1, 0.6, 8, -0.9, 0.35, 2.2, -1, 0.95, 4.6, -1, 1.4, -0.6, 0.5, 3.1, -1.2, 1.8, -1];
 
 function isoDate(daysAgo = 0) {
   const date = new Date();
@@ -29,22 +29,6 @@ function isoDate(daysAgo = 0) {
   date.setDate(date.getDate() - daysAgo);
   return date.toISOString().slice(0, 10);
 }
-
-const seedTrades: Trade[] = rSeries.map((r, index) => {
-  const risk = [150, 200, 250, 300][index % 4];
-  return {
-    id: index + 1,
-    symbol: symbols[index % symbols.length],
-    side: index % 5 === 2 ? "Short" : "Long",
-    setup: setups[index % setups.length],
-    date: isoDate(index),
-    pnl: Math.round(r * risk),
-    r,
-    risk,
-    plannedR: [3, 4, 5][index % 3],
-    grade: r >= 2 ? "A" : r > 0 ? "B" : index % 4 === 0 ? "B" : "C",
-  };
-});
 
 const nav = [
   ["Dashboard", "grid"],
@@ -102,6 +86,116 @@ function getCutoff(range: RangeKey) {
   if (range === "ytd") return new Date(now.getFullYear(), 0, 1);
   now.setDate(now.getDate() - Number(range));
   return now;
+}
+
+type TradeRow = {
+  id: string;
+  symbol: string;
+  side: "Long" | "Short";
+  setup: string;
+  trade_date: string;
+  pnl: number | string;
+  realized_r: number | string;
+  dollar_risk: number | string;
+  planned_r: number | string;
+  grade: Grade;
+};
+
+function fromRow(row: TradeRow): Trade {
+  return {
+    id: row.id,
+    symbol: row.symbol,
+    side: row.side,
+    setup: row.setup,
+    date: row.trade_date,
+    pnl: Number(row.pnl),
+    r: Number(row.realized_r),
+    risk: Number(row.dollar_risk),
+    plannedR: Number(row.planned_r),
+    grade: row.grade,
+  };
+}
+
+function toRow(trade: Omit<Trade, "id">) {
+  return {
+    symbol: trade.symbol,
+    side: trade.side,
+    setup: trade.setup,
+    trade_date: trade.date,
+    pnl: trade.pnl,
+    realized_r: trade.r,
+    dollar_risk: trade.risk,
+    planned_r: trade.plannedR,
+    grade: trade.grade,
+  };
+}
+
+type AuthMode = "signin" | "signup" | "forgot" | "recovery";
+
+function AuthScreen({ mode, setMode, onRecovered }: { mode: AuthMode; setMode: (mode: AuthMode) => void; onRecovered: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    setError("");
+    const data = new FormData(event.currentTarget);
+    const email = String(data.get("email") || "").trim();
+    const password = String(data.get("password") || "");
+    const redirectTo = `${window.location.origin}${window.location.pathname}`;
+    let result: { error: { message: string } | null };
+
+    if (mode === "signup") {
+      result = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo } });
+      if (!result.error) setMessage("Account created. Check your email to confirm your address, then return here to sign in.");
+    } else if (mode === "forgot") {
+      result = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+      if (!result.error) setMessage("Password-reset link sent. Please check your email.");
+    } else if (mode === "recovery") {
+      result = await supabase.auth.updateUser({ password });
+      if (!result.error) {
+        setMessage("Password updated securely.");
+        onRecovered();
+      }
+    } else {
+      result = await supabase.auth.signInWithPassword({ email, password });
+    }
+
+    if (result.error) setError(result.error.message);
+    setBusy(false);
+  }
+
+  const title = mode === "signup" ? "Create your journal" : mode === "forgot" ? "Reset your password" : mode === "recovery" ? "Choose a new password" : "Welcome back";
+  const subtitle = mode === "signup" ? "Your trades stay private and synchronized across devices." : mode === "forgot" ? "We’ll send a secure recovery link to your email." : mode === "recovery" ? "Use at least eight characters for your new password." : "Sign in to open your private trading workspace.";
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-brand-panel">
+        <div className="auth-brand"><span className="brand-mark"><Icon name="spark" size={19}/></span><span>Journal</span></div>
+        <div className="auth-brand-copy"><p className="eyebrow">Asymmetric Edge Labs</p><h1>Review clearly.<br/>Trade deliberately.</h1><p>A private decision cockpit for measuring risk, execution and the outcomes that build your edge.</p></div>
+        <div className="auth-proof"><span>Secure cloud journal</span><span>Multi-device sync</span><span>Private by design</span></div>
+      </section>
+      <section className="auth-form-panel">
+        <div className="auth-card">
+          <p className="eyebrow">Trading Journal</p>
+          <h2>{title}</h2>
+          <p className="auth-subtitle">{subtitle}</p>
+          <form onSubmit={submit}>
+            {mode !== "recovery" && <label>Email address<input name="email" type="email" autoComplete="email" placeholder="you@example.com" required autoFocus/></label>}
+            {mode !== "forgot" && <label>{mode === "recovery" ? "New password" : "Password"}<input name="password" type="password" minLength={8} autoComplete={mode === "signin" ? "current-password" : "new-password"} placeholder="At least 8 characters" required autoFocus={mode === "recovery"}/></label>}
+            {error && <p className="auth-message error" role="alert">{error}</p>}
+            {message && <p className="auth-message success" role="status">{message}</p>}
+            <button type="submit" className="primary-button auth-submit" disabled={busy}>{busy ? "Please wait…" : mode === "signup" ? "Create account" : mode === "forgot" ? "Send reset link" : mode === "recovery" ? "Update password" : "Sign in"}</button>
+          </form>
+          {mode === "signin" && <div className="auth-links"><button onClick={() => setMode("forgot")}>Forgot password?</button><button onClick={() => setMode("signup")}>Create account</button></div>}
+          {mode !== "signin" && mode !== "recovery" && <button className="auth-back" onClick={() => setMode("signin")}>← Back to sign in</button>}
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function EquityChart({ trades, mode }: { trades: Trade[]; mode: EquityMode }) {
@@ -206,9 +300,16 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 
 export default function Home() {
   const [active, setActive] = useState("Dashboard");
-  const [trades, setTrades] = useState<Trade[]>(seedTrades);
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("signin");
+  const [recovering, setRecovering] = useState(false);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudError, setCloudError] = useState("");
+  const [importTrades, setImportTrades] = useState<Trade[]>([]);
+  const [importDismissed, setImportDismissed] = useState(false);
   const [range, setRange] = useState<RangeKey>("30");
   const [equityMode, setEquityMode] = useState<EquityMode>("dollar");
   const [todayLabel, setTodayLabel] = useState("Trading overview");
@@ -217,17 +318,47 @@ export default function Home() {
   useEffect(() => {
     const saved = window.localStorage.getItem("journal-trades-v2");
     if (saved) {
-      try { setTrades(JSON.parse(saved)); } catch { /* retain demonstration data */ }
+      try {
+        const parsed = JSON.parse(saved) as Trade[];
+        if (Array.isArray(parsed) && parsed.length) setImportTrades(parsed.map((trade) => ({ ...trade, id: String(trade.id) })));
+      } catch { /* ignore unreadable local backup */ }
     }
     const now = new Date();
     setTodayLabel(new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(now));
     setGreeting(`${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Melvin`);
-    setHydrated(true);
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthReady(true);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, nextSession: Session | null) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setRecovering(true);
+        setAuthMode("recovery");
+      }
+      setSession(nextSession);
+      setAuthReady(true);
+    });
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (hydrated) window.localStorage.setItem("journal-trades-v2", JSON.stringify(trades));
-  }, [trades, hydrated]);
+    if (!session) {
+      setTrades([]);
+      return;
+    }
+    let current = true;
+    async function loadTrades() {
+      setCloudBusy(true);
+      setCloudError("");
+      const { data, error } = await supabase.from("trades").select("*").order("trade_date", { ascending: false }).order("created_at", { ascending: false });
+      if (!current) return;
+      if (error) setCloudError(error.message.includes("schema cache") ? "The secure trade table still needs to be activated in Supabase." : error.message);
+      else setTrades((data as TradeRow[]).map(fromRow));
+      setCloudBusy(false);
+    }
+    loadTrades();
+    return () => { current = false; };
+  }, [session?.user.id]);
 
   const filteredTrades = useMemo(() => {
     const cutoff = getCutoff(range);
@@ -257,13 +388,12 @@ export default function Home() {
     return [...grouped.entries()].map(([setup, values]) => ({ setup, count: values.length, avgR: average(values) })).sort((a, b) => b.avgR - a.avgR);
   }, [filteredTrades]);
 
-  function addTrade(event: FormEvent<HTMLFormElement>) {
+  async function addTrade(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const risk = Math.max(Number(data.get("risk")) || 0, 1);
     const pnl = Number(data.get("pnl")) || 0;
-    setTrades((current) => [{
-      id: Date.now(),
+    const trade: Omit<Trade, "id"> = {
       symbol: String(data.get("symbol") || "NEW").toUpperCase(),
       side: data.get("side") as "Long" | "Short",
       setup: String(data.get("setup") || "Unclassified"),
@@ -273,12 +403,45 @@ export default function Home() {
       risk,
       plannedR: Number(data.get("plannedR")) || 1,
       grade: data.get("grade") as Grade,
-    }, ...current]);
-    setModal(false);
+    };
+    setCloudBusy(true);
+    setCloudError("");
+    const { data: saved, error } = await supabase.from("trades").insert(toRow(trade)).select().single();
+    if (error) setCloudError(error.message);
+    else {
+      setTrades((current) => [fromRow(saved as TradeRow), ...current]);
+      setModal(false);
+    }
+    setCloudBusy(false);
+  }
+
+  async function importLocalTrades() {
+    if (!importTrades.length) return;
+    setCloudBusy(true);
+    setCloudError("");
+    const rows = importTrades.map(({ id: _id, ...trade }) => toRow(trade));
+    const { data, error } = await supabase.from("trades").insert(rows).select();
+    if (error) setCloudError(error.message);
+    else {
+      setTrades((current) => [...(data as TradeRow[]).map(fromRow), ...current]);
+      window.localStorage.removeItem("journal-trades-v2");
+      setImportTrades([]);
+      setImportDismissed(true);
+    }
+    setCloudBusy(false);
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setSession(null);
+    setAuthMode("signin");
   }
 
   const rangeLabel = range === "30" ? "Last 30 days" : range === "90" ? "Last 90 days" : range === "ytd" ? "This year" : "All time";
   const latestTrades = [...filteredTrades].sort((a, b) => b.date.localeCompare(a.date));
+
+  if (!authReady) return <main className="loading-shell"><span className="loading-mark"><Icon name="spark" size={21}/></span><p>Opening your journal…</p></main>;
+  if (!session || recovering) return <AuthScreen mode={authMode} setMode={setAuthMode} onRecovered={() => { setRecovering(false); setAuthMode("signin"); }}/>;
 
   return (
     <main className="app-shell">
@@ -289,18 +452,24 @@ export default function Home() {
           {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
         <div className="sidebar-spacer"/>
-        <button className="profile"><span className="avatar">M</span><span><b>Melvin Roy</b><small>Momentum trader</small></span><Icon name="more" size={16}/></button>
+        <div className="profile"><span className="avatar">M</span><span><b>Melvin Roy</b><small>{session.user.email}</small></span><Icon name="check" size={16}/></div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">
+            <span className={`sync-state ${cloudError ? "has-error" : ""}`}><i/>{cloudBusy ? "Syncing…" : cloudError ? "Sync issue" : "Cloud synced"}</span>
             <label className="range-control"><Icon name="calendar" size={16}/><span className="sr-only">Date range</span><select value={range} onChange={(event) => setRange(event.target.value as RangeKey)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="ytd">This year</option><option value="all">All time</option></select></label>
-            <button className="secondary-button"><Icon name="settings" size={16}/> Filters</button>
+            <button className="secondary-button auth-button" onClick={signOut}>Sign out</button>
             <button className="primary-button" onClick={() => setModal(true)}><Icon name="plus" size={17}/> Log trade</button>
           </div>
         </header>
+
+        {(cloudError || (importTrades.length > 0 && !importDismissed)) && <section className={`cloud-notice ${cloudError ? "error" : ""}`}>
+          <div><strong>{cloudError ? "Cloud setup required" : `${importTrades.length} browser trades found`}</strong><span>{cloudError || "Import them once into your private cloud journal. Review first if these are demonstration trades."}</span></div>
+          {!cloudError && <div className="cloud-notice-actions"><button onClick={() => setImportDismissed(true)}>Not now</button><button className="import-button" onClick={importLocalTrades} disabled={cloudBusy}>Import browser trades</button></div>}
+        </section>}
 
         <section className="stat-grid" aria-label="Trading statistics">
           <article className="stat-card"><span>Net P&amp;L</span><strong className={stats.pnl >= 0 ? "positive" : "negative"}>{formatMoney(stats.pnl)}</strong><small>{filteredTrades.length} recorded trades</small></article>
