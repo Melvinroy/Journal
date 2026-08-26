@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "../lib/supabase";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
