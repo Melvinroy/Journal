@@ -286,7 +286,7 @@ export default function Home() {
         <div className="brand"><span className="brand-mark"><Icon name="spark" size={17}/></span><span>Journal</span></div>
         <nav aria-label="Main navigation">
           <p className="nav-label">Workspace</p>
-          {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span>{label === "Daily journal" && <i>3</i>}</button>)}
+          {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
         <div className="sidebar-spacer"/>
         <button className="profile"><span className="avatar">M</span><span><b>Melvin Roy</b><small>Momentum trader</small></span><Icon name="more" size={16}/></button>
