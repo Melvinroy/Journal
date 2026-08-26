@@ -1,5 +1,6 @@
--- Compatibility copy of migrations/20260826000000_initial_trading_journal.sql.
--- New installations should use the versioned migration or public setup installer.
+-- Trading Journal initial cloud schema.
+-- Designed for one Supabase project per self-hosted installation.
+
 create extension if not exists pgcrypto;
 
 create table if not exists public.trades (
@@ -68,3 +69,4 @@ drop trigger if exists trades_set_updated_at on public.trades;
 create trigger trades_set_updated_at
 before update on public.trades
 for each row execute function public.set_trades_updated_at();
+

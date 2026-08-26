@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import { supabase, supabaseConfig } from "../lib/supabase";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -22,6 +22,45 @@ type Trade = {
 };
 
 const setups = ["Momentum breakout", "EP breakout", "Earnings gap", "10/20 pullback", "VWAP rejection"];
+
+const demoTrades: Trade[] = [
+  ["NVDA", "Long", "Momentum breakout", 2, 920, 4.6, 200, 5, "A"],
+  ["TSLA", "Short", "VWAP rejection", 3, -180, -0.9, 200, 3, "A"],
+  ["PLTR", "Long", "EP breakout", 4, 250, 1.25, 200, 4, "B"],
+  ["META", "Long", "10/20 pullback", 5, -200, -1, 200, 4, "A"],
+  ["AMD", "Long", "Momentum breakout", 6, 160, .8, 200, 3, "B"],
+  ["COIN", "Long", "Earnings gap", 7, 1240, 6.2, 200, 6, "A"],
+  ["AMZN", "Long", "10/20 pullback", 8, -190, -.95, 200, 4, "A"],
+  ["MSTR", "Short", "VWAP rejection", 9, 80, .4, 200, 3, "B"],
+  ["SNOW", "Long", "EP breakout", 10, -200, -1, 200, 5, "A"],
+  ["NFLX", "Long", "Earnings gap", 11, 680, 3.4, 200, 5, "A"],
+  ["AVGO", "Long", "Momentum breakout", 12, 220, 1.1, 200, 4, "B"],
+  ["CRWD", "Short", "VWAP rejection", 13, -210, -1.05, 200, 3, "B"],
+  ["HOOD", "Long", "EP breakout", 14, 1560, 7.8, 200, 8, "A"],
+  ["GOOGL", "Long", "10/20 pullback", 15, 100, .5, 200, 3, "B"],
+  ["MDB", "Long", "Earnings gap", 16, -200, -1, 200, 5, "A"],
+  ["MU", "Long", "Momentum breakout", 17, 360, 1.8, 200, 4, "A"],
+  ["SHOP", "Long", "EP breakout", 18, -180, -.9, 200, 5, "B"],
+  ["ARM", "Short", "VWAP rejection", 19, 140, .7, 200, 3, "A"],
+  ["RDDT", "Long", "Momentum breakout", 20, -200, -1, 200, 5, "A"],
+  ["APP", "Long", "EP breakout", 21, 1060, 5.3, 200, 6, "A"],
+  ["DELL", "Long", "Earnings gap", 22, 240, 1.2, 200, 4, "B"],
+  ["SMCI", "Short", "VWAP rejection", 23, -190, -.95, 200, 3, "A"],
+  ["ORCL", "Long", "10/20 pullback", 24, 120, .6, 200, 3, "B"],
+  ["SNDK", "Long", "Momentum breakout", 25, 840, 4.2, 200, 5, "A"],
+  ["HIMS", "Long", "EP breakout", 26, -200, -1, 200, 4, "A"],
+].map(([symbol, side, setup, daysAgo, pnl, r, risk, plannedR, grade], index) => ({
+  id: `demo-${index + 1}`,
+  symbol: String(symbol),
+  side: side as "Long" | "Short",
+  setup: String(setup),
+  date: isoDate(Number(daysAgo)),
+  pnl: Number(pnl),
+  r: Number(r),
+  risk: Number(risk),
+  plannedR: Number(plannedR),
+  grade: grade as Grade,
+}));
 
 function isoDate(daysAgo = 0) {
   const date = new Date();
@@ -51,6 +90,10 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     target: <><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></>,
     export: <><path d="M12 3v12m-4-4 4 4 4-4"/><path d="M5 19h14"/></>,
     settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
+    database: <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></>,
+    shield: <path d="M12 3 20 6v5c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z"/>,
+    copy: <><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></>,
+    external: <><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -139,6 +182,10 @@ function AuthScreen({ mode, setMode, onRecovered }: { mode: AuthMode; setMode: (
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!supabase) {
+      setError("This journal has not been connected to Supabase yet.");
+      return;
+    }
     setBusy(true);
     setMessage("");
     setError("");
@@ -193,6 +240,93 @@ function AuthScreen({ mode, setMode, onRecovered }: { mode: AuthMode; setMode: (
           {mode === "signin" && <div className="auth-links"><button onClick={() => setMode("forgot")}>Forgot password?</button><button onClick={() => setMode("signup")}>Create account</button></div>}
           {mode !== "signin" && mode !== "recovery" && <button className="auth-back" onClick={() => setMode("signin")}>← Back to sign in</button>}
         </div>
+      </section>
+    </main>
+  );
+}
+
+function SetupScreen({ onClose, forceUnconfigured = false }: { onClose?: () => void; forceUnconfigured?: boolean }) {
+  const [copied, setCopied] = useState("");
+  const [siteUrl, setSiteUrl] = useState("https://your-name.github.io/your-repository/");
+  const [variablesUrl, setVariablesUrl] = useState("https://github.com/settings");
+  const configured = supabaseConfig.isConfigured && !forceUnconfigured;
+
+  useEffect(() => {
+    if (forceUnconfigured) {
+      setSiteUrl("https://your-name.github.io/Journal/");
+      return;
+    }
+    const url = `${window.location.origin}${window.location.pathname}`;
+    setSiteUrl(url.endsWith("/") ? url : `${url}/`);
+    if (window.location.hostname.endsWith("github.io")) {
+      const owner = window.location.hostname.split(".")[0];
+      const repository = window.location.pathname.split("/").filter(Boolean)[0];
+      if (owner && repository) setVariablesUrl(`https://github.com/${owner}/${repository}/settings/variables/actions`);
+    }
+  }, [forceUnconfigured]);
+
+  async function copy(value: string, label: string) {
+    await navigator.clipboard.writeText(value);
+    setCopied(label);
+    window.setTimeout(() => setCopied(""), 1800);
+  }
+
+  async function copyInstaller() {
+    const response = await fetch("supabase-setup.sql");
+    await copy(await response.text(), "installer");
+  }
+
+  return (
+    <main className={onClose ? "setup-overlay" : "setup-shell"}>
+      <section className="setup-rail">
+        <div className="auth-brand"><span className="brand-mark"><Icon name="spark" size={19}/></span><span>Journal</span></div>
+        <div className="setup-rail-copy">
+          <p className="eyebrow">Self-hosted by design</p>
+          <h1>Your journal.<br/>Your database.</h1>
+          <p>A guided, private installation that keeps every trade under your control.</p>
+        </div>
+        <div className="setup-trust"><Icon name="shield" size={17}/><span>No database passwords or privileged keys are ever stored in the journal.</span></div>
+      </section>
+
+      <section className="setup-workspace">
+        <header className="setup-header">
+          <div><p className="eyebrow">Owner setup</p><h2>{configured ? "Cloud connection" : "Let’s connect your journal"}</h2><p>{configured ? "This installation has a valid Supabase configuration." : "Four short steps. Most people finish in about five minutes."}</p></div>
+          {onClose && <button className="icon-button" aria-label="Close settings" onClick={onClose}><Icon name="close"/></button>}
+          {!onClose && <a className="demo-link" href="?demo=1">Preview dashboard <Icon name="arrow" size={15}/></a>}
+        </header>
+
+        <div className="setup-progress" aria-label="Setup progress"><span className={configured ? "done" : "active"}/><span className={configured ? "done" : ""}/><span className={configured ? "done" : ""}/><span className={configured ? "done" : ""}/></div>
+
+        <div className="setup-steps">
+          <article className="setup-step">
+            <span className="step-number">01</span>
+            <div><h3>Create your cloud</h3><p>Create a free Supabase project in the region closest to you. Keep the database password private.</p></div>
+            <a className="step-action" href="https://supabase.com/dashboard/new" target="_blank" rel="noreferrer">Open Supabase <Icon name="external" size={14}/></a>
+          </article>
+
+          <article className="setup-step">
+            <span className="step-number">02</span>
+            <div><h3>Install the secure database</h3><p>Copy the prepared installer, paste it into Supabase SQL Editor and select Run once.</p><small>Creates the trades table, index and user-isolation policies.</small></div>
+            <div className="step-actions"><button className="step-action" onClick={copyInstaller}><Icon name={copied === "installer" ? "check" : "copy"} size={14}/>{copied === "installer" ? "Copied" : "Copy installer"}</button><a className="step-action quiet" href="https://supabase.com/dashboard/project/_/sql/new" target="_blank" rel="noreferrer">SQL Editor <Icon name="external" size={14}/></a></div>
+          </article>
+
+          <article className="setup-step">
+            <span className="step-number">03</span>
+            <div><h3>Connect the deployment</h3><p>Add these repository variables, then run the GitHub Pages workflow again.</p><div className="variable-list"><code>NEXT_PUBLIC_SUPABASE_URL</code><code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code></div></div>
+            <a className="step-action" href={variablesUrl} target="_blank" rel="noreferrer">GitHub variables <Icon name="external" size={14}/></a>
+          </article>
+
+          <article className="setup-step">
+            <span className="step-number">04</span>
+            <div><h3>Allow secure sign-in</h3><p>Use this address as the Supabase Site URL and add the same address followed by <code>**</code> as a Redirect URL.</p><button className="copy-value" onClick={() => copy(siteUrl, "url")}><span>{siteUrl}</span><Icon name={copied === "url" ? "check" : "copy"} size={14}/></button></div>
+            <a className="step-action" href="https://supabase.com/dashboard/project/_/auth/url-configuration" target="_blank" rel="noreferrer">Auth settings <Icon name="external" size={14}/></a>
+          </article>
+        </div>
+
+        <footer className="setup-footer">
+          <div className={`connection-state ${configured ? "ready" : "waiting"}`}><span><Icon name={configured ? "check" : "database"} size={16}/></span><div><strong>{configured ? "Configuration detected" : "Waiting for deployment configuration"}</strong><small>{configured ? new URL(supabaseConfig.url).hostname : "The journal will unlock automatically after GitHub Pages redeploys."}</small></div></div>
+          <a href="https://github.com/Melvinroy/Journal/blob/main/docs/SELF_HOSTING.md" target="_blank" rel="noreferrer">Read the full guide <Icon name="arrow" size={14}/></a>
+        </footer>
       </section>
     </main>
   );
@@ -314,10 +448,19 @@ export default function Home() {
   const [equityMode, setEquityMode] = useState<EquityMode>("dollar");
   const [todayLabel, setTodayLabel] = useState("Trading overview");
   const [greeting, setGreeting] = useState("Welcome back, Melvin");
+  const [demoMode, setDemoMode] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [setupPreview, setSetupPreview] = useState(false);
 
   useEffect(() => {
+    const isDemo = new URLSearchParams(window.location.search).get("demo") === "1";
+    setSetupPreview(new URLSearchParams(window.location.search).get("setup") === "1");
+    if (isDemo) {
+      setDemoMode(true);
+      setTrades(demoTrades);
+    }
     const saved = window.localStorage.getItem("journal-trades-v2");
-    if (saved) {
+    if (saved && !isDemo) {
       try {
         const parsed = JSON.parse(saved) as Trade[];
         if (Array.isArray(parsed) && parsed.length) setImportTrades(parsed.map((trade) => ({ ...trade, id: String(trade.id) })));
@@ -325,7 +468,11 @@ export default function Home() {
     }
     const now = new Date();
     setTodayLabel(new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(now));
-    setGreeting(`${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Melvin`);
+    setGreeting(`${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Trader`);
+    if (isDemo || !supabase) {
+      setAuthReady(true);
+      return;
+    }
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthReady(true);
@@ -342,7 +489,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!session) {
+    if (demoMode || new URLSearchParams(window.location.search).get("demo") === "1") return;
+    if (!session || !supabase) {
       setTrades([]);
       return;
     }
@@ -404,6 +552,12 @@ export default function Home() {
       plannedR: Number(data.get("plannedR")) || 1,
       grade: data.get("grade") as Grade,
     };
+    if (demoMode) {
+      setTrades((current) => [{ ...trade, id: `demo-new-${Date.now()}` }, ...current]);
+      setModal(false);
+      return;
+    }
+    if (!supabase) return;
     setCloudBusy(true);
     setCloudError("");
     const { data: saved, error } = await supabase.from("trades").insert(toRow(trade)).select().single();
@@ -416,7 +570,7 @@ export default function Home() {
   }
 
   async function importLocalTrades() {
-    if (!importTrades.length) return;
+    if (!importTrades.length || !supabase) return;
     setCloudBusy(true);
     setCloudError("");
     const rows = importTrades.map(({ id: _id, ...trade }) => toRow(trade));
@@ -432,6 +586,11 @@ export default function Home() {
   }
 
   async function signOut() {
+    if (demoMode) {
+      window.location.assign(window.location.pathname);
+      return;
+    }
+    if (!supabase) return;
     await supabase.auth.signOut();
     setSession(null);
     setAuthMode("signin");
@@ -440,8 +599,13 @@ export default function Home() {
   const rangeLabel = range === "30" ? "Last 30 days" : range === "90" ? "Last 90 days" : range === "ytd" ? "This year" : "All time";
   const latestTrades = [...filteredTrades].sort((a, b) => b.date.localeCompare(a.date));
 
+  const accountLabel = demoMode ? "Demo Trader" : session?.user.email?.split("@")[0].replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Trader";
+  const accountEmail = demoMode ? "Sample data · no account required" : session?.user.email || "Private account";
+
   if (!authReady) return <main className="loading-shell"><span className="loading-mark"><Icon name="spark" size={21}/></span><p>Opening your journal…</p></main>;
-  if (!session || recovering) return <AuthScreen mode={authMode} setMode={setAuthMode} onRecovered={() => { setRecovering(false); setAuthMode("signin"); }}/>;
+  if (setupPreview) return <SetupScreen forceUnconfigured/>;
+  if (!demoMode && !supabaseConfig.isConfigured) return <SetupScreen/>;
+  if (!demoMode && (!session || recovering)) return <AuthScreen mode={authMode} setMode={setAuthMode} onRecovered={() => { setRecovering(false); setAuthMode("signin"); }}/>;
 
   return (
     <main className="app-shell">
@@ -452,16 +616,17 @@ export default function Home() {
           {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
         <div className="sidebar-spacer"/>
-        <div className="profile"><span className="avatar">M</span><span><b>Melvin Roy</b><small>{session.user.email}</small></span><Icon name="check" size={16}/></div>
+        {!demoMode && <div className="utility-nav"><button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="settings"/><span>Cloud settings</span></button></div>}
+        <div className="profile"><span className="avatar">{accountLabel.slice(0, 1)}</span><span><b>{accountLabel}</b><small>{accountEmail}</small></span><Icon name={demoMode ? "spark" : "check"} size={16}/></div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">
-            <span className={`sync-state ${cloudError ? "has-error" : ""}`}><i/>{cloudBusy ? "Syncing…" : cloudError ? "Sync issue" : "Cloud synced"}</span>
+            <span className={`sync-state ${cloudError ? "has-error" : ""}`}><i/>{demoMode ? "Live demo" : cloudBusy ? "Syncing…" : cloudError ? "Sync issue" : "Cloud synced"}</span>
             <label className="range-control"><Icon name="calendar" size={16}/><span className="sr-only">Date range</span><select value={range} onChange={(event) => setRange(event.target.value as RangeKey)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="ytd">This year</option><option value="all">All time</option></select></label>
-            <button className="secondary-button auth-button" onClick={signOut}>Sign out</button>
+            <button className="secondary-button auth-button" onClick={signOut}>{demoMode ? "Exit demo" : "Sign out"}</button>
             <button className="primary-button" onClick={() => setModal(true)}><Icon name="plus" size={17}/> Log trade</button>
           </div>
         </header>
@@ -514,6 +679,7 @@ export default function Home() {
       </section>
 
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(false)}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">New journal entry</p><h2 id="modal-title">Log a trade</h2></div><button className="icon-button" aria-label="Close" onClick={() => setModal(false)}><Icon name="close"/></button></div><form onSubmit={addTrade}><div className="form-row"><label>Symbol<input name="symbol" placeholder="NVDA" required autoFocus/></label><label>Trade date<input name="date" type="date" defaultValue={isoDate()} required/></label></div><div className="form-row"><label>Side<select name="side"><option>Long</option><option>Short</option></select></label><label>Setup<select name="setup">{setups.map((setup) => <option key={setup}>{setup}</option>)}</select></label></div><div className="form-row"><label>Dollar risk<input name="risk" type="number" min="1" placeholder="150" required/></label><label>Planned reward<input name="plannedR" type="number" min=".1" step=".1" placeholder="5.0" required/></label></div><div className="form-row"><label>Final P&amp;L<input name="pnl" type="number" placeholder="750" required/></label><label>Execution grade<select name="grade"><option value="A">A · Followed every rule</option><option value="B">B · Minor deviation</option><option value="C">C · Broke the plan</option></select></label></div><p className="form-help">Realized R is calculated automatically as final P&amp;L ÷ dollar risk.</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(false)}>Cancel</button><button type="submit" className="primary-button"><Icon name="check" size={16}/> Save trade</button></div></form></section></div>}
+      {settingsOpen && <SetupScreen onClose={() => setSettingsOpen(false)}/>} 
     </main>
   );
 }

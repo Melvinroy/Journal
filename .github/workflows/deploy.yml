@@ -17,6 +17,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || (github.repository == 'Melvinroy/Journal' && 'https://fsccmouzyfgcpqlmcngu.supabase.co') || '' }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || (github.repository == 'Melvinroy/Journal' && 'sb_publishable_Y6vTrdNqLmyZAANBBNGIgg_2mht84P8') || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,8 +31,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Build static site
         run: npm run build
       - name: Upload artifact
@@ -47,3 +51,4 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+

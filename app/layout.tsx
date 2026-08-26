@@ -2,20 +2,20 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Trading Journal",
-  description: "A calm, focused workspace for reviewing trades and building a repeatable edge.",
+  title: "Trading Journal — Review clearly. Trade deliberately.",
+  description: "An open-source, self-hosted trading journal for risk, R-multiple distribution and repeatable execution.",
   openGraph: {
     title: "Trading Journal",
-    description: "Review clearly. Trade deliberately.",
-    images: ["https://melvinroy.github.io/Journal/og.png"],
+    description: "Open-source, self-hosted trade analytics with private cloud synchronization.",
+    images: ["https://trading-journal.melvinroyv.chatgpt.site/og.png"],
   },
   twitter: {
     card: "summary_large_image",
     title: "Trading Journal",
-    description: "Review clearly. Trade deliberately.",
-    images: ["https://melvinroy.github.io/Journal/og.png"],
+    description: "Open-source, self-hosted trade analytics with private cloud synchronization.",
+    images: ["https://trading-journal.melvinroyv.chatgpt.site/og.png"],
   },
-  icons: { icon: "/Journal/favicon.svg", shortcut: "/Journal/favicon.svg" },
+  icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
