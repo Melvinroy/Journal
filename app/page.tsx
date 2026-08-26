@@ -166,8 +166,8 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
   const left = 24;
   const right = 4;
   const top = 28;
-  const chartBottom = 205;
-  const rugTop = 250;
+  const chartBottom = 182;
+  const rugTop = 238;
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
   const plotWidth = width - left - right;
   const xValue = (value: number) => left + ((value - domainMin) / (domainMax - domainMin)) * plotWidth;
@@ -197,8 +197,8 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
         <text x={Math.max(xValue(med) - 4, 48)} y={23} textAnchor="end" className="reference-label">Med {formatR(med)}</text>
         {labelValues.map((value) => <g key={value}><line x1={xValue(value)} y1={chartBottom} x2={xValue(value)} y2={chartBottom + 4} className="axis-tick"/><text x={xValue(value)} y={chartBottom + 18} textAnchor="middle" className="axis-label">{value > 0 ? "+" : ""}{value}R</text></g>)}
         <text x={(left + width - right) / 2} y={chartBottom + 36} textAnchor="middle" className="axis-title">Realized R multiple</text>
-        <text x={left} y={rugTop - 7} className="axis-title">Individual trades</text>
-        {trades.map((trade, index) => <line key={trade.id} x1={xValue(trade.r)} y1={rugTop + (index % 3) * 3} x2={xValue(trade.r)} y2={rugTop + 13 + (index % 3) * 3} className={trade.r < 0 ? "rug negative-rug" : "rug positive-rug"}><title>{trade.symbol} · {formatR(trade.r)} · {formatMoney(trade.pnl)}</title></line>)}
+        <text x={left} y={rugTop - 9} className="axis-title">Individual trades</text>
+        {trades.map((trade, index) => <line key={trade.id} x1={xValue(trade.r)} y1={rugTop + (index % 3) * 4} x2={xValue(trade.r)} y2={rugTop + 24 + (index % 3) * 4} className={trade.r < 0 ? "rug negative-rug" : "rug positive-rug"}><title>{trade.symbol} · {formatR(trade.r)} · {formatMoney(trade.pnl)}</title></line>)}
       </svg>
     </div>
   );
