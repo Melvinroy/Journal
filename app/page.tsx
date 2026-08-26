@@ -47,11 +47,7 @@ const seedTrades: Trade[] = rSeries.map((r, index) => {
 });
 
 const nav = [
-  ["Overview", "grid"],
-  ["Trades", "candles"],
-  ["Daily journal", "note"],
-  ["Playbook", "book"],
-  ["Insights", "spark"],
+  ["Dashboard", "grid"],
 ] as const;
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -156,8 +152,8 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
   if (!trades.length) return <div className="empty-chart">No outcomes in this period.</div>;
   const values = trades.map((trade) => trade.r);
   const binSize = .5;
-  const domainMin = Math.min(-1.5, Math.floor(Math.min(...values) / binSize) * binSize);
-  const domainMax = Math.max(8, Math.ceil(Math.max(...values) / binSize) * binSize);
+  const domainMin = Math.min(0, Math.floor(Math.min(...values) / binSize) * binSize);
+  const domainMax = Math.max(domainMin + binSize, Math.ceil(Math.max(...values) / binSize) * binSize);
   const binCount = Math.round((domainMax - domainMin) / binSize);
   const bins = Array.from({ length: binCount }, (_, index) => ({ start: domainMin + index * binSize, count: 0 }));
   values.forEach((value) => {
@@ -165,13 +161,13 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
     bins[Math.max(0, Math.min(raw, bins.length - 1))].count += 1;
   });
 
-  const width = 470;
-  const height = 285;
-  const left = 38;
-  const right = 10;
-  const top = 30;
-  const chartBottom = 184;
-  const rugTop = 224;
+  const width = 560;
+  const height = 300;
+  const left = 24;
+  const right = 4;
+  const top = 28;
+  const chartBottom = 205;
+  const rugTop = 250;
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
   const plotWidth = width - left - right;
   const xValue = (value: number) => left + ((value - domainMin) / (domainMax - domainMin)) * plotWidth;
@@ -209,7 +205,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState("Overview");
+  const [active, setActive] = useState("Dashboard");
   const [trades, setTrades] = useState<Trade[]>(seedTrades);
   const [modal, setModal] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -282,7 +278,7 @@ export default function Home() {
   }
 
   const rangeLabel = range === "30" ? "Last 30 days" : range === "90" ? "Last 90 days" : range === "ytd" ? "This year" : "All time";
-  const latestTrades = [...filteredTrades].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const latestTrades = [...filteredTrades].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
     <main className="app-shell">
@@ -293,16 +289,12 @@ export default function Home() {
           {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span>{label === "Daily journal" && <i>3</i>}</button>)}
         </nav>
         <div className="sidebar-spacer"/>
-        <nav className="utility-nav" aria-label="Utilities">
-          <button className="nav-item"><Icon name="settings"/><span>Settings</span></button>
-          <button className="nav-item"><Icon name="export"/><span>Exports</span></button>
-        </nav>
         <button className="profile"><span className="avatar">M</span><span><b>Melvin Roy</b><small>Momentum trader</small></span><Icon name="more" size={16}/></button>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow">{todayLabel}</p><h1>{active === "Overview" ? greeting : active}</h1></div>
+          <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">
             <label className="range-control"><Icon name="calendar" size={16}/><span className="sr-only">Date range</span><select value={range} onChange={(event) => setRange(event.target.value as RangeKey)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="ytd">This year</option><option value="all">All time</option></select></label>
             <button className="secondary-button"><Icon name="settings" size={16}/> Filters</button>
@@ -338,7 +330,7 @@ export default function Home() {
 
         <section className="lower-grid">
           <article className="panel trades-panel">
-            <div className="panel-heading"><div><h2>Recent trades</h2><p>Risk, execution and realized outcome</p></div><button className="text-button" onClick={() => setActive("Trades")}>View all <Icon name="arrow" size={14}/></button></div>
+            <div className="panel-heading"><div><h2>Recent trades</h2><p>Risk, execution and realized outcome</p></div><span className="panel-meta">{filteredTrades.length} trades</span></div>
             <div className="trade-table">
               <div className="trade-row table-head"><span>Date</span><span>Symbol</span><span>Side</span><span>Risk</span><span>Planned R:R</span><span>Realized R</span><span>P&amp;L</span><span>Grade</span></div>
               {latestTrades.map((trade) => <div className="trade-row" key={trade.id}><span>{shortDate(trade.date)}</span><span className="symbol-cell">{trade.symbol}<small>{trade.setup}</small></span><span><i className={`side-pill ${trade.side.toLowerCase()}`}>{trade.side}</i></span><span>{formatMoney(trade.risk, false)}</span><span>1:{trade.plannedR.toFixed(1)}</span><span className={trade.r >= 0 ? "positive" : "negative"}>{formatR(trade.r)}</span><span className={trade.pnl >= 0 ? "positive" : "negative"}>{formatMoney(trade.pnl)}</span><span><i className={`grade grade-${trade.grade.toLowerCase()}`}>{trade.grade}</i></span></div>)}
@@ -346,8 +338,8 @@ export default function Home() {
           </article>
 
           <article className="panel setup-panel">
-            <div className="panel-heading"><div><h2>Setup performance</h2><p>Average realized R</p></div><button className="text-button">View all</button></div>
-            <div className="setup-table"><div className="setup-row setup-head"><span>Setup</span><span>Trades</span><span>Avg R</span></div>{setupPerformance.slice(0, 5).map((item) => <div className="setup-row" key={item.setup}><span>{item.setup}</span><span>{item.count}</span><b className={item.avgR >= 0 ? "positive" : "negative"}>{formatR(item.avgR)}</b></div>)}</div>
+            <div className="panel-heading"><div><h2>Setup performance</h2><p>Average realized R</p></div><span className="panel-meta">{setupPerformance.length} setups</span></div>
+            <div className="setup-table"><div className="setup-row setup-head"><span>Setup</span><span>Trades</span><span>Avg R</span></div>{setupPerformance.map((item) => <div className="setup-row" key={item.setup}><span>{item.setup}</span><span>{item.count}</span><b className={item.avgR >= 0 ? "positive" : "negative"}>{formatR(item.avgR)}</b></div>)}</div>
           </article>
         </section>
       </section>
