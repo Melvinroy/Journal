@@ -55,10 +55,15 @@ export default function Home() {
   const [trades, setTrades] = useState<Trade[]>(seedTrades);
   const [modal, setModal] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [todayLabel, setTodayLabel] = useState("Trading overview");
+  const [greeting, setGreeting] = useState("Welcome back, Melvin");
 
   useEffect(() => {
     const saved = window.localStorage.getItem("journal-trades");
     if (saved) try { setTrades(JSON.parse(saved)); } catch { /* keep demo data */ }
+    const now = new Date();
+    setTodayLabel(new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(now));
+    setGreeting(`${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Melvin`);
     setHydrated(true);
   }, []);
   useEffect(() => { if (hydrated) window.localStorage.setItem("journal-trades", JSON.stringify(trades)); }, [trades, hydrated]);
@@ -98,7 +103,7 @@ export default function Home() {
 
       <section className="workspace">
         <header className="topbar">
-          <div><p className="eyebrow">Tuesday, August 25</p><h1>{active === "Overview" ? "Good evening, Melvin" : active}</h1></div>
+          <div><p className="eyebrow">{todayLabel}</p><h1>{active === "Overview" ? greeting : active}</h1></div>
           <div className="header-actions"><button className="date-button"><Icon name="calendar" size={16}/> This month</button><button className="primary-button" onClick={() => setModal(true)}><Icon name="plus" size={17}/> Log trade</button></div>
         </header>
 
@@ -132,7 +137,6 @@ export default function Home() {
           <aside className="right-column">
             <section className="review-card"><div className="review-top"><span className="review-orb">✦</span><span className="status-dot">Ready to review</span></div><p className="section-kicker">Today’s reflection</p><h2>Turn today’s trades into tomorrow’s edge.</h2><p>Three focused prompts. About four minutes.</p><button>Start daily review <Icon name="arrow" size={16}/></button></section>
             <section className="panel edge-panel"><div className="panel-heading"><div><p className="section-kicker">Your edge</p><h2>Setup performance</h2></div><button className="icon-button"><Icon name="more"/></button></div><div className="setup-list"><div><span><i className="setup-dot green"/>EP breakout</span><b>+3.1R</b></div><div><span><i className="setup-dot blue"/>Earnings gap</span><b>+2.4R</b></div><div><span><i className="setup-dot gold"/>10/20 pullback</span><b>+1.6R</b></div><div><span><i className="setup-dot red"/>Anticipation</span><b className="negative">−0.8R</b></div></div><p className="insight"><span>✦</span><span><b>Pattern spotted</b>Your EP breakouts work best before 11:00 AM.</span></p></section>
-            <section className="quote-card"><p>“The goal is not to be right. The goal is to execute well.”</p><span>Today’s reminder</span></section>
           </aside>
         </div>
       </section>
