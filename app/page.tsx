@@ -5,6 +5,7 @@ import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { supabase, supabaseConfig } from "../lib/supabase";
 import { isLegacyDemoDataset, LOCAL_TRADE_STORAGE_KEY } from "../lib/local-trade-migration";
 import { CatalystDashboard } from "./CatalystDashboard";
+import { TradePlanner } from "./TradePlanner";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -74,6 +75,7 @@ function isoDate(daysAgo = 0) {
 const nav = [
   ["Journal", "book"],
   ["Catalyst", "spark"],
+  ["Trade", "target"],
 ] as const;
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -436,7 +438,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState<"Journal" | "Catalyst">("Journal");
+  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade">("Journal");
   const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -625,11 +627,11 @@ export default function Home() {
         <div className="profile"><span className="avatar">{accountLabel.slice(0, 1)}</span><span><b>{accountLabel}</b><small>{accountEmail}</small></span><Icon name={demoMode ? "spark" : "check"} size={16}/></div>
       </aside>
 
-      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : ""}`}>
+      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : ""}`}>
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {nav.map(([label]) => <button key={label} className={active === label ? "active" : ""} onClick={() => setActive(label)}>{label}</button>)}
         </nav>
-        {active === "Catalyst" ? <CatalystDashboard/> : <>
+        {active === "Catalyst" ? <CatalystDashboard/> : active === "Trade" ? <TradePlanner/> : <>
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  A professional, open-source trading workspace combining risk-aware journaling with a ranked catalyst intelligence dashboard.
+  A professional, open-source trading workspace combining risk-aware journaling, catalyst intelligence and disciplined trade planning.
 </p>
 
 <p align="center">
@@ -37,15 +37,25 @@
 - **Secure email authentication** and password recovery
 - **Responsive one-screen workstation** for desktop, tablet and mobile
 - **Built-in demo mode** with realistic sample trades
+- **Dual-cap position sizing** using account risk and maximum symbol allocation
 
-## Journal and Catalyst workspace
+## Journal, Catalyst and Trade workspace
 
-The signed-in application has two primary tabs:
+The signed-in application has three primary tabs:
 
 - **Journal** — private trades, equity curve, realized-R distribution and setup performance
 - **Catalyst** — Today / 3-day / 5-day signal windows, bullish and bearish leadership, theme concentration, searchable canonical inventory and ticker drill-down
+- **Trade** — compact long/short position sizing, Low-of-Day or manual stops, persistent risk defaults and a staged post-fill exit plan
 
 The Catalyst dashboard reads the de-duplicated Table 3 feed from the read-only `catalyst_dashboard_rows` view. If that optional feed has not been installed or populated in a self-hosted Supabase project, the Journal remains fully operational and the Catalyst tab shows a clear unavailable state.
+
+## Trade execution roadmap
+
+- **Phase 1 — Planner:** calculate integer shares from the smaller of the risk-based and allocation-based limits; save preferences and trade plans locally. No broker order is sent.
+- **Phase 2 — IBKR entry:** connect through the TWS API, load account and market data, preview orders and submit an entry with one full-position protective stop.
+- **Phase 3 — Post-fill management:** respond to confirmed executions, create profit-taking and runner orders, resize remaining protection after fills and reconcile broker state after reconnects.
+
+The multi-exit plan is deliberately not attached to the entry in Phase 1. It is staged for deployment only after a confirmed fill.
 
 ## Your deployment. Your data.
 
