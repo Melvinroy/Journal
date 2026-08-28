@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { supabase, supabaseConfig } from "../lib/supabase";
+import { isLegacyDemoDataset, LOCAL_TRADE_STORAGE_KEY } from "../lib/local-trade-migration";
 import { CatalystDashboard } from "./CatalystDashboard";
 
 type Grade = "A" | "B" | "C";
@@ -461,11 +462,12 @@ export default function Home() {
       setDemoMode(true);
       setTrades(demoTrades);
     }
-    const saved = window.localStorage.getItem("journal-trades-v2");
+    const saved = window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY);
     if (saved && !isDemo) {
       try {
         const parsed = JSON.parse(saved) as Trade[];
-        if (Array.isArray(parsed) && parsed.length) setImportTrades(parsed.map((trade) => ({ ...trade, id: String(trade.id) })));
+        if (isLegacyDemoDataset(parsed)) window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
+        else if (Array.isArray(parsed) && parsed.length) setImportTrades(parsed.map((trade) => ({ ...trade, id: String(trade.id) })));
       } catch { /* ignore unreadable local backup */ }
     }
     const now = new Date();
@@ -581,7 +583,7 @@ export default function Home() {
     if (error) setCloudError(error.message);
     else {
       setTrades((current) => [...(data as TradeRow[]).map(fromRow), ...current]);
-      window.localStorage.removeItem("journal-trades-v2");
+      window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
       setImportTrades([]);
       setImportDismissed(true);
     }
