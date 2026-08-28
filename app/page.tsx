@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { supabase, supabaseConfig } from "../lib/supabase";
+import { CatalystDashboard } from "./CatalystDashboard";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -70,7 +71,8 @@ function isoDate(daysAgo = 0) {
 }
 
 const nav = [
-  ["Dashboard", "grid"],
+  ["Journal", "book"],
+  ["Catalyst", "spark"],
 ] as const;
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -433,7 +435,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState("Dashboard");
+  const [active, setActive] = useState<"Journal" | "Catalyst">("Journal");
   const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -614,14 +616,18 @@ export default function Home() {
         <div className="brand"><span className="brand-mark"><Icon name="spark" size={17}/></span><span>Journal</span></div>
         <nav aria-label="Main navigation">
           <p className="nav-label">Workspace</p>
-          {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span></button>)}
+          {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} aria-current={active === label ? "page" : undefined} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
         <div className="sidebar-spacer"/>
         {!demoMode && <div className="utility-nav"><button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="settings"/><span>Cloud settings</span></button></div>}
         <div className="profile"><span className="avatar">{accountLabel.slice(0, 1)}</span><span><b>{accountLabel}</b><small>{accountEmail}</small></span><Icon name={demoMode ? "spark" : "check"} size={16}/></div>
       </aside>
 
-      <section className="workspace">
+      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : ""}`}>
+        <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
+          {nav.map(([label]) => <button key={label} className={active === label ? "active" : ""} onClick={() => setActive(label)}>{label}</button>)}
+        </nav>
+        {active === "Catalyst" ? <CatalystDashboard/> : <>
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">
@@ -677,6 +683,7 @@ export default function Home() {
             <div className="setup-table"><div className="setup-row setup-head"><span>Setup</span><span>Trades</span><span>Avg R</span></div>{setupPerformance.map((item) => <div className="setup-row" key={item.setup}><span>{item.setup}</span><span>{item.count}</span><b className={item.avgR >= 0 ? "positive" : "negative"}>{formatR(item.avgR)}</b></div>)}</div>
           </article>
         </section>
+        </>}
       </section>
 
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(false)}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">New journal entry</p><h2 id="modal-title">Log a trade</h2></div><button className="icon-button" aria-label="Close" onClick={() => setModal(false)}><Icon name="close"/></button></div><form onSubmit={addTrade}><div className="form-row"><label>Symbol<input name="symbol" placeholder="NVDA" required autoFocus/></label><label>Trade date<input name="date" type="date" defaultValue={isoDate()} required/></label></div><div className="form-row"><label>Side<select name="side"><option>Long</option><option>Short</option></select></label><label>Setup<select name="setup">{setups.map((setup) => <option key={setup}>{setup}</option>)}</select></label></div><div className="form-row"><label>Dollar risk<input name="risk" type="number" min="1" placeholder="150" required/></label><label>Planned reward<input name="plannedR" type="number" min=".1" step=".1" placeholder="5.0" required/></label></div><div className="form-row"><label>Final P&amp;L<input name="pnl" type="number" placeholder="750" required/></label><label>Execution grade<select name="grade"><option value="A">A · Followed every rule</option><option value="B">B · Minor deviation</option><option value="C">C · Broke the plan</option></select></label></div><p className="form-help">Realized R is calculated automatically as final P&amp;L ÷ dollar risk.</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(false)}>Cancel</button><button type="submit" className="primary-button"><Icon name="check" size={16}/> Save trade</button></div></form></section></div>}

@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  A professional, open-source trading journal focused on risk, execution quality and the R-multiple outcomes that create your edge.
+  A professional, open-source trading workspace combining risk-aware journaling with a ranked catalyst intelligence dashboard.
 </p>
 
 <p align="center">
@@ -37,6 +37,15 @@
 - **Secure email authentication** and password recovery
 - **Responsive one-screen workstation** for desktop, tablet and mobile
 - **Built-in demo mode** with realistic sample trades
+
+## Journal and Catalyst workspace
+
+The signed-in application has two primary tabs:
+
+- **Journal** — private trades, equity curve, realized-R distribution and setup performance
+- **Catalyst** — Today / 3-day / 5-day signal windows, bullish and bearish leadership, theme concentration, searchable canonical inventory and ticker drill-down
+
+The Catalyst dashboard reads the de-duplicated Table 3 feed from the read-only `catalyst_dashboard_rows` view. If that optional feed has not been installed or populated in a self-hosted Supabase project, the Journal remains fully operational and the Catalyst tab shows a clear unavailable state.
 
 ## Your deployment. Your data.
 
