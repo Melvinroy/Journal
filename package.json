@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/next-dev.mjs",
     "build": "next build",
     "start": "next start"
   },
@@ -20,4 +20,3 @@
     "typescript": "5.9.3"
   }
 }
-
