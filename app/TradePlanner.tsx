@@ -8,6 +8,7 @@ const ALLOCATION_OPTIONS = [3, 5, 10, 15, 20, 25] as const;
 const SETTINGS_KEY = "journal.trade-planner.settings.v1";
 const DRAFT_KEY = "journal.trade-planner.draft.v1";
 const EXIT_KEY = "journal.trade-planner.exits.v1";
+const AFTER_FILL_KEY = "journal.trade-planner.after-fill-stage.v1";
 const EXIT_COUNT_OPTIONS = [1, 2, 3] as const;
 
 type StopSource = "LoD" | "Manual";
@@ -52,8 +53,8 @@ export function TradePlanner() {
   const [riskPercent, setRiskPercent] = useState(0.5);
   const [maxAllocationPercent, setMaxAllocationPercent] = useState(15);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [exitOpen, setExitOpen] = useState(false);
   const [stageState, setStageState] = useState<StageState>("draft");
+  const [afterFillStaged, setAfterFillStaged] = useState(false);
   const [targetCount, setTargetCount] = useState<ExitCount>(2);
   const [stopCount, setStopCount] = useState<ExitCount>(1);
   const [runnerEnabled, setRunnerEnabled] = useState(true);
@@ -75,6 +76,7 @@ export function TradePlanner() {
         if (EXIT_COUNT_OPTIONS.includes(exits.stopCount as ExitCount)) setStopCount(exits.stopCount as ExitCount);
         if (typeof exits.runnerEnabled === "boolean") setRunnerEnabled(exits.runnerEnabled);
       }
+      if (window.localStorage.getItem(AFTER_FILL_KEY)) setAfterFillStaged(true);
 
       const savedDraft = window.localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
@@ -143,7 +145,8 @@ export function TradePlanner() {
 
   function saveExitDefaults(next: { targetCount: ExitCount; stopCount: ExitCount; runnerEnabled: boolean }) {
     window.localStorage.setItem(EXIT_KEY, JSON.stringify(next));
-    editPlan();
+    window.localStorage.removeItem(AFTER_FILL_KEY);
+    setAfterFillStaged(false);
   }
 
   function changeTargetCount(next: ExitCount) {
@@ -162,13 +165,24 @@ export function TradePlanner() {
     saveExitDefaults({ targetCount, stopCount, runnerEnabled: next });
   }
 
+  function stageAfterFill() {
+    if (!result.valid) return;
+    window.localStorage.setItem(AFTER_FILL_KEY, JSON.stringify({ targetCount, stopCount, runnerEnabled, savedAt: new Date().toISOString() }));
+    setAfterFillStaged(true);
+  }
+
+  function cancelAfterFill() {
+    window.localStorage.removeItem(AFTER_FILL_KEY);
+    setAfterFillStaged(false);
+  }
+
   return (
     <div className="trade-planner">
       <header className="trade-commandbar">
         <div>
           <p className="eyebrow">Phase 1 · UI preview</p>
           <h1>New trade</h1>
-          <p>Size and stage now. IBKR execution activates in Phase 2.</p>
+          <p>Size the trade, enter, then apply your saved exits after fill.</p>
         </div>
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
@@ -180,12 +194,12 @@ export function TradePlanner() {
 
       <section className="trade-actionbar" aria-label="Quick trade actions">
         <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={stageState === "draft" && (!result.valid || !symbol.trim())} onClick={stageState === "staged" ? cancelStage : stageEntry}>
-          <span>{stageState === "staged" ? "Cancel stage" : "Stage entry + SL"}</span><small>{stageState === "staged" ? "Staged locally" : "1 full stop"}</small>
+          {stageState === "staged" ? "Cancel" : "Enter"}
         </button>
-        <button type="button" className={`trade-action-button exits ${exitOpen ? "active" : ""}`} disabled={!result.valid} onClick={() => setExitOpen((current) => !current)} aria-expanded={exitOpen}>
-          <span>After fill</span><small>{targetCount} TP · {stopCount} SL{runnerEnabled ? " · Runner" : ""}</small><i aria-hidden="true">{exitOpen ? "×" : "⌄"}</i>
+        <button type="button" className={`trade-action-button exits ${afterFillStaged ? "active" : ""}`} disabled={!result.valid} onClick={afterFillStaged ? cancelAfterFill : stageAfterFill}>
+          {afterFillStaged ? "Cancel exits" : "After fill"}
         </button>
-        <span className="trade-execution-state">Execute with IBKR · Phase 2</span>
+        <span className="trade-execution-state">UI preview · IBKR execution in Phase 2</span>
       </section>
 
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
@@ -222,21 +236,25 @@ export function TradePlanner() {
             <strong>{result.valid ? `${result.shares.toLocaleString()} shares` : "—"}</strong>
           </div>
 
-          {exitOpen && <div className="trade-exit-plan open">
-            <div className="trade-exit-head"><div><span>Editable default</span><strong>After-fill plan</strong></div><span className="trade-locked-pill">Attach after fill</span></div>
-            <div className="trade-exit-details">
-              <div className="trade-exit-config">
-                <div><span>Profit targets</span><div className="trade-count-control">{EXIT_COUNT_OPTIONS.map((count) => <button type="button" key={count} className={targetCount === count ? "active" : ""} onClick={() => changeTargetCount(count)}>{count}</button>)}</div></div>
-                <div><span>Stop steps</span><div className="trade-count-control">{EXIT_COUNT_OPTIONS.map((count) => <button type="button" key={count} className={stopCount === count ? "active" : ""} onClick={() => changeStopCount(count)}>{count}</button>)}</div></div>
-                <div><span>Runner</span><button type="button" className={`trade-runner-toggle ${runnerEnabled ? "active" : ""}`} onClick={toggleRunner}>{runnerEnabled ? "On" : "Off"}</button></div>
-              </div>
-              <div className="trade-exit-columns">
-                <div>{targetShares.map((shares, index) => <div className="trade-exit-row" key={`target-${index}`}><b>T{index + 1}</b><strong>{shares} sh</strong><span>{index + 1}R · {price(targetPrices[index])}</span></div>)}{runnerEnabled && <div className="trade-exit-row"><b>Run</b><strong>{runnerShares} sh</strong><span>10 SMA / ORL trail</span></div>}</div>
-                <div>{Array.from({ length: stopCount }, (_, index) => <div className="trade-exit-row stop" key={`stop-${index}`}><b>SL{index + 1}</b><strong>{index === 0 ? "Initial" : `After T${index}`}</strong><span>{index === 0 ? `${price(stopPrice)} · full position` : index === 1 ? "Move remaining → breakeven" : "Trail remaining → 10 SMA / ORL"}</span></div>)}</div>
-              </div>
-              <div className="trade-attach-row"><p>Preview only. Quantities will be recalculated from confirmed filled shares.</p><button type="button" disabled>Attach to position</button></div>
-            </div>
-          </div>}
+        </div>
+      </section>
+
+      <section className="trade-ticket trade-after-fill-ticket" aria-labelledby="after-fill-title">
+        <div className="trade-ticket-head">
+          <div><p className="eyebrow">Saved default</p><h2 id="after-fill-title">After-fill plan</h2></div>
+          <span className="trade-plan-summary">{targetCount} TP · {stopCount} SL{runnerEnabled ? " · Runner" : ""}</span>
+        </div>
+        <div className="trade-ticket-body trade-exit-details">
+          <div className="trade-exit-config">
+            <div><span>Profit targets</span><div className="trade-count-control">{EXIT_COUNT_OPTIONS.map((count) => <button type="button" key={count} className={targetCount === count ? "active" : ""} onClick={() => changeTargetCount(count)}>{count}</button>)}</div></div>
+            <div><span>Stop steps</span><div className="trade-count-control">{EXIT_COUNT_OPTIONS.map((count) => <button type="button" key={count} className={stopCount === count ? "active" : ""} onClick={() => changeStopCount(count)}>{count}</button>)}</div></div>
+            <div><span>Runner</span><button type="button" className={`trade-runner-toggle ${runnerEnabled ? "active" : ""}`} onClick={toggleRunner}>{runnerEnabled ? "On" : "Off"}</button></div>
+          </div>
+          <div className="trade-exit-columns">
+            <div>{targetShares.map((shares, index) => <div className="trade-exit-row" key={`target-${index}`}><b>T{index + 1}</b><strong>{shares} sh</strong><span>{index + 1}R · {price(targetPrices[index])}</span></div>)}{runnerEnabled && <div className="trade-exit-row"><b>Run</b><strong>{runnerShares} sh</strong><span>10 SMA / ORL trail</span></div>}</div>
+            <div>{Array.from({ length: stopCount }, (_, index) => <div className="trade-exit-row stop" key={`stop-${index}`}><b>SL{index + 1}</b><strong>{index === 0 ? "Initial" : `After T${index}`}</strong><span>{index === 0 ? `${price(stopPrice)} · full position` : index === 1 ? "Move remaining → breakeven" : "Trail remaining → 10 SMA / ORL"}</span></div>)}</div>
+          </div>
+          <p className="trade-exit-help">The quick After fill button uses this saved plan after IBKR confirms the filled quantity.</p>
         </div>
       </section>
 
