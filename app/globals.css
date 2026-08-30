@@ -318,9 +318,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .trade-risk-banner { min-height: 36px; display: flex; align-items: center; gap: 8px; padding: 4px 5px 4px 11px; color: #607068; background: #fff; border: 1px solid var(--line); border-radius: 999px; box-shadow: 0 1px 2px rgba(20,33,27,.02); font-size: 9px; white-space: nowrap; }
 .trade-risk-banner strong { color: var(--green-dark); font-weight: 760; }
 .trade-risk-banner > i { width: 1px; height: 15px; background: var(--line); }
-.trade-risk-banner button { height: 26px; padding: 0 9px; color: #607068; background: #f2f5f3; border: 0; border-radius: 999px; cursor: pointer; font-size: 9px; font-weight: 720; }
+.trade-risk-banner button, .trade-action-button { height: 26px; padding: 0 9px; color: #607068; background: #f2f5f3; border: 0; border-radius: 9999px; cursor: pointer; font-size: 9px; font-weight: 720; -webkit-appearance: none; appearance: none; }
 .trade-actionbar { max-width: 930px; display: flex; align-items: center; gap: 6px; margin: 0 auto 9px; }
-.trade-action-button { height: 30px; display: inline-flex; align-items: center; justify-content: center; padding: 0 13px; color: #607068; background: #f2f5f3; border: 0; border-radius: 999px; cursor: pointer; font-size: 9px; font-weight: 720; white-space: nowrap; }
+.trade-action-button { display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
 .trade-action-button.entry { color: var(--green-dark); background: var(--green-soft); }
 .trade-action-button.entry.cancel { color: #9a3d3d; background: #fff1f1; box-shadow: none; }
 .trade-action-button.exits { color: #607068; background: #f2f5f3; }
@@ -571,7 +571,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .trade-commandbar { align-items: flex-start; }
   .trade-commandbar > div:first-child > p:last-child { display: none; }
   .trade-actionbar { flex-wrap: wrap; gap: 5px; }
-  .trade-action-button { width: auto; padding-inline: 15px; }
+  .trade-action-button { width: auto; padding-inline: 9px; }
   .trade-execution-state { flex-basis: 100%; margin: -1px 0 0; }
   .trade-input-grid { grid-template-columns: 1fr 1fr; }
   .trade-result-strip { grid-template-columns: 1fr 1fr; gap: 11px 0; }
