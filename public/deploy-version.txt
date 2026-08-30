@@ -1,1 +1,1 @@
-Clarified order lifecycle · 0c28ee0
+Compact trade controls · a4cce63
