@@ -8,7 +8,7 @@ const ALLOCATION_OPTIONS = [3, 5, 10, 15, 20, 25] as const;
 const SETTINGS_KEY = "journal.trade-planner.settings.v1";
 const DRAFT_KEY = "journal.trade-planner.draft.v1";
 
-type StopSource = "Low of day" | "Manual";
+type StopSource = "LoD" | "Manual";
 
 type SavedSettings = {
   accountEquity: number;
@@ -38,7 +38,7 @@ export function TradePlanner() {
   const [side, setSide] = useState<TradeSide>("Long");
   const [entryPrice, setEntryPrice] = useState(120);
   const [stopPrice, setStopPrice] = useState(118);
-  const [stopSource, setStopSource] = useState<StopSource>("Low of day");
+  const [stopSource, setStopSource] = useState<StopSource>("LoD");
   const [accountEquity, setAccountEquity] = useState(30000);
   const [riskPercent, setRiskPercent] = useState(0.5);
   const [maxAllocationPercent, setMaxAllocationPercent] = useState(15);
@@ -100,7 +100,7 @@ export function TradePlanner() {
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
           <i aria-hidden="true"/>
-          <span>Max position <strong>{maxAllocationPercent}%</strong></span>
+          <span>Max symbol <strong>{maxAllocationPercent}%</strong></span>
           <button type="button" onClick={() => setSettingsOpen(true)}>Change</button>
         </div>
       </header>
@@ -116,11 +116,11 @@ export function TradePlanner() {
             <label>Symbol<input className="trade-symbol-input" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase().slice(0, 8))} placeholder="NVDA" aria-label="Stock symbol"/></label>
             <label>Side<span className="trade-side-control"><button type="button" className={side === "Long" ? "active" : ""} onClick={() => setSide("Long")}>Long</button><button type="button" className={side === "Short" ? "active" : ""} onClick={() => setSide("Short")}>Short</button></span></label>
             <label>Entry price<span className="trade-price-control"><span>$</span><input inputMode="decimal" value={entryPrice || ""} onChange={(event) => setEntryPrice(safeNumber(event.target.value))} aria-label="Entry price"/></span></label>
-            <label>Initial stop<span className="trade-combined-control"><select value={stopSource} onChange={(event) => setStopSource(event.target.value as StopSource)} aria-label="Stop source"><option>Low of day</option><option>Manual</option></select><input inputMode="decimal" value={stopPrice || ""} onChange={(event) => setStopPrice(safeNumber(event.target.value))} aria-label="Stop price"/></span></label>
+            <label>Initial stop<span className="trade-combined-control"><select value={stopSource} onChange={(event) => setStopSource(event.target.value as StopSource)} aria-label="Stop source"><option>LoD</option><option>Manual</option></select><input inputMode="decimal" value={stopPrice || ""} onChange={(event) => setStopPrice(safeNumber(event.target.value))} aria-label="Stop price"/></span></label>
           </div>
 
           <div className="trade-context-line">
-            <span>{stopSource === "Low of day" ? "LoD entered manually in Phase 1" : "Manual technical stop"}</span>
+            <span>{stopSource === "LoD" ? "LoD entered manually in Phase 1" : "Manual technical stop"}</span>
             <span>Risk/share <b>{price(result.riskPerShare)}</b></span>
             <span>Stop distance <b>{entryPrice > 0 ? `${(result.riskPerShare / entryPrice * 100).toFixed(2)}%` : "—"}</b></span>
           </div>

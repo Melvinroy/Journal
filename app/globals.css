@@ -561,7 +561,6 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .trade-planner { padding: 13px 10px 24px; }
   .trade-commandbar { align-items: flex-start; }
   .trade-commandbar > div:first-child > p:last-child { display: none; }
-  .trade-risk-banner > i, .trade-risk-banner span:nth-of-type(2) { display: none; }
   .trade-input-grid { grid-template-columns: 1fr 1fr; }
   .trade-result-strip { grid-template-columns: 1fr 1fr; gap: 11px 0; }
   .trade-result-strip > div:nth-child(3) { border-left: 0; }
