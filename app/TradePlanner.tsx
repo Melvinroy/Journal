@@ -100,7 +100,7 @@ export function TradePlanner() {
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
           <i aria-hidden="true"/>
-          <span>Max symbol <strong>{maxAllocationPercent}%</strong></span>
+          <span>Alloc. <strong>{maxAllocationPercent}%</strong></span>
           <button type="button" onClick={() => setSettingsOpen(true)}>Change</button>
         </div>
       </header>
