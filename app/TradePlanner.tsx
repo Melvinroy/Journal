@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { calculateTradePlan, splitShares, type TradeSide } from "../lib/trade-planner";
+import { calculateTradePlan, type TradeSide } from "../lib/trade-planner";
 
 const RISK_OPTIONS = [.25, .5, .75, 1] as const;
 const ALLOCATION_OPTIONS = [3, 5, 10, 15, 20, 25] as const;
 const SETTINGS_KEY = "journal.trade-planner.settings.v1";
 const DRAFT_KEY = "journal.trade-planner.draft.v1";
+const EXIT_KEY = "journal.trade-planner.exits.v1";
+const EXIT_COUNT_OPTIONS = [1, 2, 3] as const;
 
 type StopSource = "LoD" | "Manual";
 type StageState = "draft" | "staged";
+type ExitCount = (typeof EXIT_COUNT_OPTIONS)[number];
 
 type SavedSettings = {
   accountEquity: number;
@@ -34,6 +37,11 @@ function safeNumber(value: string) {
   return Number(value.replace(/,/g, "")) || 0;
 }
 
+function distributeShares(total: number, count: number) {
+  const base = Math.floor(total / count);
+  return Array.from({ length: count }, (_, index) => index === count - 1 ? total - base * (count - 1) : base);
+}
+
 export function TradePlanner() {
   const [symbol, setSymbol] = useState("NVDA");
   const [side, setSide] = useState<TradeSide>("Long");
@@ -46,6 +54,9 @@ export function TradePlanner() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [stageState, setStageState] = useState<StageState>("draft");
+  const [targetCount, setTargetCount] = useState<ExitCount>(2);
+  const [stopCount, setStopCount] = useState<ExitCount>(1);
+  const [runnerEnabled, setRunnerEnabled] = useState(true);
 
   useEffect(() => {
     try {
@@ -57,9 +68,17 @@ export function TradePlanner() {
         if (ALLOCATION_OPTIONS.includes(Number(parsed.maxAllocationPercent) as (typeof ALLOCATION_OPTIONS)[number])) setMaxAllocationPercent(Number(parsed.maxAllocationPercent));
       }
 
+      const savedExits = window.localStorage.getItem(EXIT_KEY);
+      if (savedExits) {
+        const exits = JSON.parse(savedExits) as { targetCount?: number; stopCount?: number; runnerEnabled?: boolean };
+        if (EXIT_COUNT_OPTIONS.includes(exits.targetCount as ExitCount)) setTargetCount(exits.targetCount as ExitCount);
+        if (EXIT_COUNT_OPTIONS.includes(exits.stopCount as ExitCount)) setStopCount(exits.stopCount as ExitCount);
+        if (typeof exits.runnerEnabled === "boolean") setRunnerEnabled(exits.runnerEnabled);
+      }
+
       const savedDraft = window.localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
-        const draft = JSON.parse(savedDraft) as Partial<SavedSettings> & { symbol?: string; side?: TradeSide; entryPrice?: number; stopPrice?: number; stopSource?: StopSource };
+        const draft = JSON.parse(savedDraft) as Partial<SavedSettings> & { symbol?: string; side?: TradeSide; entryPrice?: number; stopPrice?: number; stopSource?: StopSource; exitPlan?: { targetCount?: number; stopCount?: number; runnerEnabled?: boolean } };
         if (draft.symbol) setSymbol(draft.symbol);
         if (draft.side === "Long" || draft.side === "Short") setSide(draft.side);
         if (Number(draft.entryPrice) > 0) setEntryPrice(Number(draft.entryPrice));
@@ -68,6 +87,9 @@ export function TradePlanner() {
         if (Number(draft.accountEquity) > 0) setAccountEquity(Number(draft.accountEquity));
         if (RISK_OPTIONS.includes(Number(draft.riskPercent) as (typeof RISK_OPTIONS)[number])) setRiskPercent(Number(draft.riskPercent));
         if (ALLOCATION_OPTIONS.includes(Number(draft.maxAllocationPercent) as (typeof ALLOCATION_OPTIONS)[number])) setMaxAllocationPercent(Number(draft.maxAllocationPercent));
+        if (EXIT_COUNT_OPTIONS.includes(draft.exitPlan?.targetCount as ExitCount)) setTargetCount(draft.exitPlan?.targetCount as ExitCount);
+        if (EXIT_COUNT_OPTIONS.includes(draft.exitPlan?.stopCount as ExitCount)) setStopCount(draft.exitPlan?.stopCount as ExitCount);
+        if (typeof draft.exitPlan?.runnerEnabled === "boolean") setRunnerEnabled(draft.exitPlan.runnerEnabled);
         setStageState("staged");
       }
     } catch {
@@ -84,7 +106,9 @@ export function TradePlanner() {
     side,
   }), [accountEquity, riskPercent, maxAllocationPercent, entryPrice, stopPrice, side]);
 
-  const [p1Shares, p2Shares, runnerShares] = splitShares(result.shares);
+  const runnerShares = runnerEnabled ? Math.floor(result.shares * .3) : 0;
+  const targetShares = distributeShares(Math.max(0, result.shares - runnerShares), targetCount);
+  const targetPrices = [result.oneRPrice, result.twoRPrice, entryPrice + (side === "Long" ? 1 : -1) * result.riskPerShare * 3];
   const allocationLimited = result.valid && result.sharesByAllocation < result.sharesByRisk;
 
   function saveSettings() {
@@ -100,7 +124,7 @@ export function TradePlanner() {
     window.localStorage.setItem(DRAFT_KEY, JSON.stringify({
       symbol: symbol.trim().toUpperCase(), side, entryPrice, stopPrice, stopSource,
       accountEquity, riskPercent, maxAllocationPercent, result,
-      exitPlan: { p1Shares, p2Shares, runnerShares, p1Target: result.oneRPrice, p2Target: result.twoRPrice },
+      exitPlan: { targetCount, stopCount, runnerEnabled, targetShares, runnerShares },
       savedAt: new Date().toISOString(),
     }));
     setStageState("staged");
@@ -117,13 +141,34 @@ export function TradePlanner() {
     setStageState("draft");
   }
 
+  function saveExitDefaults(next: { targetCount: ExitCount; stopCount: ExitCount; runnerEnabled: boolean }) {
+    window.localStorage.setItem(EXIT_KEY, JSON.stringify(next));
+    editPlan();
+  }
+
+  function changeTargetCount(next: ExitCount) {
+    setTargetCount(next);
+    saveExitDefaults({ targetCount: next, stopCount, runnerEnabled });
+  }
+
+  function changeStopCount(next: ExitCount) {
+    setStopCount(next);
+    saveExitDefaults({ targetCount, stopCount: next, runnerEnabled });
+  }
+
+  function toggleRunner() {
+    const next = !runnerEnabled;
+    setRunnerEnabled(next);
+    saveExitDefaults({ targetCount, stopCount, runnerEnabled: next });
+  }
+
   return (
     <div className="trade-planner">
       <header className="trade-commandbar">
         <div>
-          <p className="eyebrow">Phase 1 · planning only</p>
+          <p className="eyebrow">Phase 1 · UI preview</p>
           <h1>New trade</h1>
-          <p>Size the position now. Stage exits for after the entry fills.</p>
+          <p>Size and stage now. IBKR execution activates in Phase 2.</p>
         </div>
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
@@ -134,28 +179,13 @@ export function TradePlanner() {
       </header>
 
       <section className="trade-actionbar" aria-label="Quick trade actions">
-        <div className={`trade-action-card ${stageState === "staged" ? "staged" : ""}`}>
-          <div className="trade-action-copy">
-            <span>Entry protection</span>
-            <strong>Entry + 1 SL</strong>
-            <small>{stageState === "staged" ? "Staged locally · not sent" : "One full-position stop"}</small>
-          </div>
-          {stageState === "staged" ? <div className="trade-action-controls">
-            <span className="trade-status-pill"><i/> Staged</span>
-            <button type="button" className="trade-cancel-stage" onClick={cancelStage}>Cancel stage</button>
-          </div> : <button type="button" className="trade-stage-button" disabled={!result.valid || !symbol.trim()} onClick={stageEntry}>Stage entry</button>}
-        </div>
-
-        <div className="trade-action-card exits">
-          <div className="trade-action-copy">
-            <span>After fill</span>
-            <strong>P1 · P2 · Runner</strong>
-            <small>Attach only to confirmed shares</small>
-          </div>
-          <button type="button" className="trade-preview-button" disabled={!result.valid} onClick={() => setExitOpen((current) => !current)} aria-expanded={exitOpen}>{exitOpen ? "Close" : "Preview"}</button>
-        </div>
-
-        <p className="trade-lifecycle"><b>Phase 1</b> Stage locally <i>→</i> <span>Phase 2 · Submit + cancel working order</span> <i>→</i> <span>Confirmed fill</span> <i>→</i> <span>Attach exits</span></p>
+        <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={stageState === "draft" && (!result.valid || !symbol.trim())} onClick={stageState === "staged" ? cancelStage : stageEntry}>
+          <span>{stageState === "staged" ? "Cancel stage" : "Stage entry + SL"}</span><small>{stageState === "staged" ? "Staged locally" : "1 full stop"}</small>
+        </button>
+        <button type="button" className={`trade-action-button exits ${exitOpen ? "active" : ""}`} disabled={!result.valid} onClick={() => setExitOpen((current) => !current)} aria-expanded={exitOpen}>
+          <span>After fill</span><small>{targetCount} TP · {stopCount} SL{runnerEnabled ? " · Runner" : ""}</small><i aria-hidden="true">{exitOpen ? "×" : "⌄"}</i>
+        </button>
+        <span className="trade-execution-state">Execute with IBKR · Phase 2</span>
       </section>
 
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
@@ -193,11 +223,17 @@ export function TradePlanner() {
           </div>
 
           {exitOpen && <div className="trade-exit-plan open">
-            <div className="trade-exit-head"><div><span>Post-fill default</span><strong>P1 · P2 · Runner</strong></div><span className="trade-locked-pill">Locked until fill</span></div>
+            <div className="trade-exit-head"><div><span>Editable default</span><strong>After-fill plan</strong></div><span className="trade-locked-pill">Attach after fill</span></div>
             <div className="trade-exit-details">
-              <div className="trade-exit-row"><b>P1</b><strong>{p1Shares} sh</strong><span>Target 1R · {price(result.oneRPrice)}</span><span>Then review stop → breakeven</span></div>
-              <div className="trade-exit-row"><b>P2</b><strong>{p2Shares} sh</strong><span>Target 2R · {price(result.twoRPrice)}</span><span>Reduce aggregate stop quantity</span></div>
-              <div className="trade-exit-row"><b>Run</b><strong>{runnerShares} sh</strong><span>No fixed target</span><span>Manual 10 SMA / ORL trail</span></div>
+              <div className="trade-exit-config">
+                <div><span>Profit targets</span><div className="trade-count-control">{EXIT_COUNT_OPTIONS.map((count) => <button type="button" key={count} className={targetCount === count ? "active" : ""} onClick={() => changeTargetCount(count)}>{count}</button>)}</div></div>
+                <div><span>Stop steps</span><div className="trade-count-control">{EXIT_COUNT_OPTIONS.map((count) => <button type="button" key={count} className={stopCount === count ? "active" : ""} onClick={() => changeStopCount(count)}>{count}</button>)}</div></div>
+                <div><span>Runner</span><button type="button" className={`trade-runner-toggle ${runnerEnabled ? "active" : ""}`} onClick={toggleRunner}>{runnerEnabled ? "On" : "Off"}</button></div>
+              </div>
+              <div className="trade-exit-columns">
+                <div>{targetShares.map((shares, index) => <div className="trade-exit-row" key={`target-${index}`}><b>T{index + 1}</b><strong>{shares} sh</strong><span>{index + 1}R · {price(targetPrices[index])}</span></div>)}{runnerEnabled && <div className="trade-exit-row"><b>Run</b><strong>{runnerShares} sh</strong><span>10 SMA / ORL trail</span></div>}</div>
+                <div>{Array.from({ length: stopCount }, (_, index) => <div className="trade-exit-row stop" key={`stop-${index}`}><b>SL{index + 1}</b><strong>{index === 0 ? "Initial" : `After T${index}`}</strong><span>{index === 0 ? `${price(stopPrice)} · full position` : index === 1 ? "Move remaining → breakeven" : "Trail remaining → 10 SMA / ORL"}</span></div>)}</div>
+              </div>
               <div className="trade-attach-row"><p>Preview only. Quantities will be recalculated from confirmed filled shares.</p><button type="button" disabled>Attach to position</button></div>
             </div>
           </div>}
