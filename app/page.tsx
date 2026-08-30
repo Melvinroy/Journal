@@ -73,9 +73,9 @@ function isoDate(daysAgo = 0) {
 }
 
 const nav = [
-  ["Journal", "book"],
-  ["Catalyst", "spark"],
   ["Trade", "target"],
+  ["Catalyst", "spark"],
+  ["Journal", "book"],
 ] as const;
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -438,7 +438,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade">("Journal");
+  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade">("Trade");
   const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
