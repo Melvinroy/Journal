@@ -139,22 +139,29 @@ export function TradePlanner() {
             <strong>{result.valid ? `${result.shares.toLocaleString()} shares` : "—"}</strong>
           </div>
 
-          <div className={`trade-exit-plan ${exitOpen ? "open" : ""}`}>
-            <button type="button" className="trade-exit-toggle" onClick={() => setExitOpen((current) => !current)} aria-expanded={exitOpen}>
-              <span><i>After fill</i><b>Exit plan</b><small>33 / 33 / 34 · two targets + runner</small></span>
-              <span aria-hidden="true">⌄</span>
+          <div className="trade-quick-actions" aria-label="Trade actions">
+            <button type="button" className="trade-quick-action entry" disabled={!result.valid || !symbol.trim()} onClick={saveDraft}>
+              <span><b>{saved ? "Entry staged ✓" : "Enter + SL"}</b><small>1 entry · 1 full stop</small></span>
+              <i aria-hidden="true">→</i>
             </button>
-            {exitOpen && <div className="trade-exit-details">
+            <button type="button" className={`trade-quick-action exits ${exitOpen ? "active" : ""}`} disabled={!result.valid} onClick={() => setExitOpen((current) => !current)} aria-expanded={exitOpen}>
+              <span><b>Manage exits</b><small>After confirmed fill</small></span>
+              <i aria-hidden="true">{exitOpen ? "×" : "→"}</i>
+            </button>
+          </div>
+
+          {exitOpen && <div className="trade-exit-plan open">
+            <div className="trade-exit-details">
               <div className="trade-exit-row"><b>P1</b><strong>{p1Shares} sh</strong><span>Target 1R · {price(result.oneRPrice)}</span><span>Then review stop → breakeven</span></div>
               <div className="trade-exit-row"><b>P2</b><strong>{p2Shares} sh</strong><span>Target 2R · {price(result.twoRPrice)}</span><span>Reduce aggregate stop quantity</span></div>
               <div className="trade-exit-row"><b>Run</b><strong>{runnerShares} sh</strong><span>No fixed target</span><span>Manual 10 SMA / ORL trail</span></div>
               <p>Saved locally only. IBKR orders are not created in Phase 1.</p>
-            </div>}
-          </div>
+            </div>
+          </div>}
 
           <div className="trade-ticket-actions">
-            <span>No broker connection · no order will be sent</span>
-            <button type="button" className="primary-button" disabled={!result.valid || !symbol.trim()} onClick={saveDraft}>{saved ? "Plan saved ✓" : "Save trade plan"}</button>
+            <span>UI planning only · no broker order will be sent</span>
+            <button type="button" className="trade-draft-button" disabled={!result.valid || !symbol.trim()} onClick={saveDraft}>{saved ? "Saved ✓" : "Save draft"}</button>
           </div>
         </div>
       </section>
