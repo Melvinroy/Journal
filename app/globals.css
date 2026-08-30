@@ -321,10 +321,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .trade-risk-banner button, .trade-action-button { height: 26px; padding: 0 9px; color: #607068; background: #f2f5f3; border: 0; border-radius: 9999px; cursor: pointer; font-size: 9px; font-weight: 720; -webkit-appearance: none; appearance: none; }
 .trade-actionbar { max-width: 930px; display: flex; align-items: center; gap: 6px; margin: 0 auto 9px; }
 .trade-action-button { display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; }
-.trade-action-button.entry { color: var(--green-dark); background: var(--green-soft); }
-.trade-action-button.entry.cancel { color: #9a3d3d; background: #fff1f1; box-shadow: none; }
-.trade-action-button.exits { color: #607068; background: #f2f5f3; }
-.trade-action-button.exits.active { color: var(--green-dark); background: var(--green-soft); }
+.trade-action-button.entry { color: #fff; background: var(--green-dark); box-shadow: 0 1px 2px rgba(8,100,51,.18); }
+.trade-action-button.entry.cancel { color: #fff; background: #9a3d3d; box-shadow: 0 1px 2px rgba(113,31,31,.18); }
+.trade-action-button.exits { color: #fff; background: #315a47; box-shadow: 0 1px 2px rgba(28,68,49,.16); }
+.trade-action-button.exits.active { color: #fff; background: var(--green-dark); }
 .trade-action-button:disabled { cursor: not-allowed; opacity: .45; }
 .trade-execution-state { margin-left: auto; color: #8d9791; font-size: 7px; white-space: nowrap; }
 .trade-ticket { max-width: 930px; margin: 0 auto; background: #fff; border: 1px solid var(--line); border-radius: 11px; box-shadow: 0 8px 28px rgba(18,41,30,.045); overflow: hidden; }
