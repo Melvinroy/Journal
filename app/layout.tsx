@@ -7,13 +7,13 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Brontide",
     description: "Open-source, self-hosted trade analytics with private cloud synchronization.",
-    images: ["https://brontide.melvinroyv.chatgpt.site/og.png"],
+    images: ["https://trading-journal.melvinroyv.chatgpt.site/og.png"],
   },
   twitter: {
     card: "summary_large_image",
     title: "Brontide",
     description: "Open-source, self-hosted trade analytics with private cloud synchronization.",
-    images: ["https://brontide.melvinroyv.chatgpt.site/og.png"],
+    images: ["https://trading-journal.melvinroyv.chatgpt.site/og.png"],
   },
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };

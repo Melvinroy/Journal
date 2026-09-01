@@ -18,8 +18,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || (github.repository == 'Melvinroy/Brontide' && 'https://fsccmouzyfgcpqlmcngu.supabase.co') || '' }}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || (github.repository == 'Melvinroy/Brontide' && 'sb_publishable_Y6vTrdNqLmyZAANBBNGIgg_2mht84P8') || '' }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || (github.repository == 'Melvinroy/Journal' && 'https://fsccmouzyfgcpqlmcngu.supabase.co') || '' }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || (github.repository == 'Melvinroy/Journal' && 'sb_publishable_Y6vTrdNqLmyZAANBBNGIgg_2mht84P8') || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

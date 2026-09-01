@@ -258,7 +258,7 @@ function SetupScreen({ onClose, forceUnconfigured = false }: { onClose?: () => v
 
   useEffect(() => {
     if (forceUnconfigured) {
-      setSiteUrl("https://your-name.github.io/Brontide/");
+      setSiteUrl("https://your-name.github.io/Journal/");
       return;
     }
     const url = `${window.location.origin}${window.location.pathname}`;
@@ -330,7 +330,7 @@ function SetupScreen({ onClose, forceUnconfigured = false }: { onClose?: () => v
 
         <footer className="setup-footer">
           <div className={`connection-state ${configured ? "ready" : "waiting"}`}><span><Icon name={configured ? "check" : "database"} size={16}/></span><div><strong>{configured ? "Configuration detected" : "Waiting for deployment configuration"}</strong><small>{configured ? new URL(supabaseConfig.url).hostname : "The journal will unlock automatically after GitHub Pages redeploys."}</small></div></div>
-          <a href="https://github.com/Melvinroy/Brontide/blob/main/docs/SELF_HOSTING.md" target="_blank" rel="noreferrer">Read the full guide <Icon name="arrow" size={14}/></a>
+          <a href="https://github.com/Melvinroy/Journal/blob/main/docs/SELF_HOSTING.md" target="_blank" rel="noreferrer">Read the full guide <Icon name="arrow" size={14}/></a>
         </footer>
       </section>
     </main>

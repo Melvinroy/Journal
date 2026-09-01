@@ -15,17 +15,17 @@ You need free GitHub and Supabase accounts. Keep the Supabase database password 
 
 ## 1. Fork the repository
 
-Open [Melvinroy/Brontide](https://github.com/Melvinroy/Brontide) and select **Fork**.
+Open [Melvinroy/Journal](https://github.com/Melvinroy/Journal) and select **Fork**.
 
 Keep the repository public if you want to use GitHub Pages on the GitHub Free plan. Your source code is public, but your trading records remain protected in Supabase.
 
 Your future website address will normally be:
 
 ```text
-https://YOUR_USERNAME.github.io/Brontide/
+https://YOUR_USERNAME.github.io/Journal/
 ```
 
-If you rename the repository, replace `Brontide` with the new repository name.
+If you rename the repository, replace `Journal` with the new repository name.
 
 ## 2. Create Supabase
 
@@ -87,13 +87,13 @@ In Supabase, open **Authentication → URL Configuration**.
 Set **Site URL** to:
 
 ```text
-https://YOUR_USERNAME.github.io/Brontide/
+https://YOUR_USERNAME.github.io/Journal/
 ```
 
 Add this address under **Redirect URLs**:
 
 ```text
-https://YOUR_USERNAME.github.io/Brontide/**
+https://YOUR_USERNAME.github.io/Journal/**
 ```
 
 ## 7. Enable GitHub Pages
