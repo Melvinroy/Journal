@@ -1,4 +1,4 @@
-# Self-hosting Trading Journal
+# Self-hosting Brontide
 
 This guide creates a completely independent installation:
 
@@ -15,23 +15,23 @@ You need free GitHub and Supabase accounts. Keep the Supabase database password 
 
 ## 1. Fork the repository
 
-Open [Melvinroy/Journal](https://github.com/Melvinroy/Journal) and select **Fork**.
+Open [Melvinroy/Brontide](https://github.com/Melvinroy/Brontide) and select **Fork**.
 
 Keep the repository public if you want to use GitHub Pages on the GitHub Free plan. Your source code is public, but your trading records remain protected in Supabase.
 
 Your future website address will normally be:
 
 ```text
-https://YOUR_USERNAME.github.io/Journal/
+https://YOUR_USERNAME.github.io/Brontide/
 ```
 
-If you rename the repository, replace `Journal` with the new repository name.
+If you rename the repository, replace `Brontide` with the new repository name.
 
 ## 2. Create Supabase
 
 1. Open [Supabase New Project](https://supabase.com/dashboard/new).
 2. Choose an organization.
-3. Give the project a recognizable name such as `trading-journal`.
+3. Give the project a recognizable name such as `brontide`.
 4. Generate and securely save the database password.
 5. Choose the region closest to you.
 6. Create the project and wait for it to become ready.
@@ -87,20 +87,20 @@ In Supabase, open **Authentication → URL Configuration**.
 Set **Site URL** to:
 
 ```text
-https://YOUR_USERNAME.github.io/Journal/
+https://YOUR_USERNAME.github.io/Brontide/
 ```
 
 Add this address under **Redirect URLs**:
 
 ```text
-https://YOUR_USERNAME.github.io/Journal/**
+https://YOUR_USERNAME.github.io/Brontide/**
 ```
 
 ## 7. Enable GitHub Pages
 
 1. In your fork, open **Settings → Pages**.
 2. Under **Build and deployment**, choose **GitHub Actions**.
-3. Open **Actions → Deploy Trading Journal to GitHub Pages**.
+3. Open **Actions → Deploy Brontide to GitHub Pages**.
 4. Select **Run workflow** if a deployment is not already running.
 5. Wait for both build and deploy to show green checks.
 
@@ -139,4 +139,3 @@ Run `public/supabase-setup.sql`, confirm that `public.trades` exists, and confir
 ### GitHub Pages shows an old version
 
 Open the latest Actions run, confirm both jobs succeeded, then hard-refresh the browser.
-

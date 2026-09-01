@@ -1,4 +1,4 @@
-project_id = "trading-journal"
+project_id = "brontide"
 
 [api]
 enabled = true
@@ -11,4 +11,3 @@ enabled = true
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://localhost:3000/**"]
 enable_signup = true
-

@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping improve Trading Journal.
+Thank you for helping improve Brontide.
 
 ## Development
 
@@ -23,4 +23,3 @@ Thank you for helping improve Trading Journal.
 Keep each pull request focused. Explain the user-visible change, database impact, security impact and verification performed. Include screenshots for visual changes.
 
 By contributing, you agree that your work is licensed under the repository's MIT License.
-

@@ -1,15 +1,15 @@
-# Trading Journal
+# Brontide
 
 <p align="center">
-  <img src="public/og.png" alt="Trading Journal — Review clearly. Trade deliberately." width="100%" />
+  <img src="public/og.png" alt="Brontide — Review clearly. Trade deliberately." width="100%" />
 </p>
 
 <p align="center">
-  A professional, open-source trading workspace combining risk-aware journaling, catalyst intelligence and disciplined trade planning.
+  An open-source trading system for catalyst discovery, charting, risk-aware execution and post-trade learning.
 </p>
 
 <p align="center">
-  <a href="https://melvinroy.github.io/Journal/?demo=1"><strong>Explore the live demo</strong></a>
+  <a href="https://melvinroy.github.io/Brontide/?demo=1"><strong>Explore the live demo</strong></a>
   ·
   <a href="docs/SELF_HOSTING.md">Self-host in five minutes</a>
   ·
@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <img alt="GitHub Pages" src="https://img.shields.io/github/actions/workflow/status/Melvinroy/Journal/deploy.yml?branch=main&label=GitHub%20Pages&style=flat-square" />
+  <img alt="GitHub Pages" src="https://img.shields.io/github/actions/workflow/status/Melvinroy/Brontide/deploy.yml?branch=main&label=GitHub%20Pages&style=flat-square" />
   <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-16794d?style=flat-square" />
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-111b17?style=flat-square" />
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Auth%20%2B%20Postgres-3FCF8E?style=flat-square" />
@@ -26,7 +26,7 @@
 ## See your edge, not just your P&L
 
 <p align="center">
-  <img src="docs/images/dashboard.jpg" alt="Trading Journal dashboard showing an equity curve, R-multiple distribution and recent trades" width="100%" />
+  <img src="docs/images/dashboard.jpg" alt="Brontide dashboard showing an equity curve, R-multiple distribution and recent trades" width="100%" />
 </p>
 
 - **Cumulative equity curve** in dollars or R
@@ -104,8 +104,8 @@ supabase db push
 ## Local development
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Journal.git
-cd Journal
+git clone https://github.com/YOUR_USERNAME/Brontide.git
+cd Brontide
 cp .env.example .env.local
 npm ci
 npm run dev

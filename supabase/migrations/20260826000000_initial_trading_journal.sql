@@ -1,4 +1,4 @@
--- Trading Journal initial cloud schema.
+-- Brontide initial cloud schema.
 -- Designed for one Supabase project per self-hosted installation.
 
 create extension if not exists pgcrypto;
@@ -69,4 +69,3 @@ drop trigger if exists trades_set_updated_at on public.trades;
 create trigger trades_set_updated_at
 before update on public.trades
 for each row execute function public.set_trades_updated_at();
-

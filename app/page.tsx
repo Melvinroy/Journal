@@ -226,13 +226,13 @@ function AuthScreen({ mode, setMode, onRecovered }: { mode: AuthMode; setMode: (
   return (
     <main className="auth-shell">
       <section className="auth-brand-panel">
-        <div className="auth-brand"><span className="brand-mark"><Icon name="spark" size={19}/></span><span>Journal</span></div>
+        <div className="auth-brand"><span className="brand-mark"><Icon name="spark" size={19}/></span><span>Brontide</span></div>
         <div className="auth-brand-copy"><p className="eyebrow">Asymmetric Edge Labs</p><h1>Review clearly.<br/>Trade deliberately.</h1><p>A private decision cockpit for measuring risk, execution and the outcomes that build your edge.</p></div>
         <div className="auth-proof"><span>Secure cloud journal</span><span>Multi-device sync</span><span>Private by design</span></div>
       </section>
       <section className="auth-form-panel">
         <div className="auth-card">
-          <p className="eyebrow">Trading Journal</p>
+          <p className="eyebrow">Brontide</p>
           <h2>{title}</h2>
           <p className="auth-subtitle">{subtitle}</p>
           <form onSubmit={submit}>
@@ -258,7 +258,7 @@ function SetupScreen({ onClose, forceUnconfigured = false }: { onClose?: () => v
 
   useEffect(() => {
     if (forceUnconfigured) {
-      setSiteUrl("https://your-name.github.io/Journal/");
+      setSiteUrl("https://your-name.github.io/Brontide/");
       return;
     }
     const url = `${window.location.origin}${window.location.pathname}`;
@@ -284,7 +284,7 @@ function SetupScreen({ onClose, forceUnconfigured = false }: { onClose?: () => v
   return (
     <main className={onClose ? "setup-overlay" : "setup-shell"}>
       <section className="setup-rail">
-        <div className="auth-brand"><span className="brand-mark"><Icon name="spark" size={19}/></span><span>Journal</span></div>
+        <div className="auth-brand"><span className="brand-mark"><Icon name="spark" size={19}/></span><span>Brontide</span></div>
         <div className="setup-rail-copy">
           <p className="eyebrow">Self-hosted by design</p>
           <h1>Your journal.<br/>Your database.</h1>
@@ -330,7 +330,7 @@ function SetupScreen({ onClose, forceUnconfigured = false }: { onClose?: () => v
 
         <footer className="setup-footer">
           <div className={`connection-state ${configured ? "ready" : "waiting"}`}><span><Icon name={configured ? "check" : "database"} size={16}/></span><div><strong>{configured ? "Configuration detected" : "Waiting for deployment configuration"}</strong><small>{configured ? new URL(supabaseConfig.url).hostname : "The journal will unlock automatically after GitHub Pages redeploys."}</small></div></div>
-          <a href="https://github.com/Melvinroy/Journal/blob/main/docs/SELF_HOSTING.md" target="_blank" rel="noreferrer">Read the full guide <Icon name="arrow" size={14}/></a>
+          <a href="https://github.com/Melvinroy/Brontide/blob/main/docs/SELF_HOSTING.md" target="_blank" rel="noreferrer">Read the full guide <Icon name="arrow" size={14}/></a>
         </footer>
       </section>
     </main>
@@ -617,7 +617,7 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><Icon name="spark" size={17}/></span><span>Journal</span></div>
+        <div className="brand"><span className="brand-mark"><Icon name="spark" size={17}/></span><span>Brontide</span></div>
         <nav aria-label="Main navigation">
           <p className="nav-label">Workspace</p>
           {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} aria-current={active === label ? "page" : undefined} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span></button>)}
