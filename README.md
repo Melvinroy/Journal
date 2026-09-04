@@ -59,6 +59,12 @@ The Catalyst dashboard reads the de-duplicated Table 3 feed from the read-only `
 
 The multi-exit plan is deliberately not attached to the entry in Phase 1. It is staged for deployment only after a confirmed fill.
 
+## Local end-of-day market data
+
+The Phase 2 data service lives in [`services/eod`](services/eod). It keeps Alpaca credentials off the public site, discovers the active U.S. equity universe, retrieves completed daily consolidated SIP bars, validates OHLCV and stores the canonical result in a local DuckDB database. The public demo continues to use sample bars when no local service is configured.
+
+[Open the EOD service setup guide →](services/eod/README.md)
+
 ## Your deployment. Your data.
 
 Every self-hosted installation uses its own GitHub Pages website and its own Supabase project. No trades pass through a shared application server.

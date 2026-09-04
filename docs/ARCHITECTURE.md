@@ -29,8 +29,8 @@ Provider, repository, and broker implementations are adapters. Domain code accep
 | Web | Existing Next.js chart UI | Charts, scans, backtests, journal, trade planning |
 | API | Python FastAPI process | Stable chart/scan/backtest endpoints and future WebSocket events |
 | Jobs | APScheduler initially | End-of-day ingest, validation, features, scans and snapshots |
-| Historical seed | Existing licensed vendor archive | Reuse if its licence, coverage, adjustments and freshness pass the data audit |
-| Primary EOD | Alpaca free historical SIP adapter | Incremental US stock/ETF daily OHLCV after the 15-minute restriction |
+| Historical seed | Alpaca historical SIP plus existing licensed archive | Alpaca supplies the reproducible baseline; reuse the archive only after its coverage, adjustments and licence pass audit |
+| Primary EOD | Alpaca free historical SIP adapter | Full-exchange US stock/ETF daily OHLCV after the 15-minute restriction |
 | Broker-linked source | IBKR adapter | Optional entitled-history and reconciliation source; not the only ingestion path |
 | Fallback | yfinance adapter | Personal research/bootstrap only; never the sole trusted production source |
 | Validation | Alpha Vantage adapter | Small-symbol reconciliation because the free plan is request-limited |
@@ -39,7 +39,9 @@ Provider, repository, and broker implementations are adapters. Domain code accep
 | App metadata | PostgreSQL 16 | Fresh Brontide schema; selectively adapt proven Traders Cockpit patterns |
 | Packaging | Docker Compose | One-command desktop installation with explicit volumes and backups |
 
-Alpaca free historical SIP is suitable for the end-of-day workflow because completed daily data is older than the free plan's 15-minute SIP restriction. Real-time or historical IEX-only bars must not be used for volume-sensitive EP scans because they represent only one exchange.
+Alpaca free historical SIP is the primary Brontide source because it covers consolidated US-exchange stock and ETF activity and completed daily data is older than the free plan's 15-minute restriction. Real-time or historical IEX-only bars must not be used for volume-sensitive EP scans because they represent only one exchange.
+
+The active security master merges Alpaca assets with Nasdaq Trader's `nasdaqlisted.txt` and `otherlisted.txt`, then maps IBKR contract IDs where available. This prevents any single provider's tradability flags from defining the research universe. Historical delisted coverage remains a separate audit requirement because a current active-symbol list cannot remove survivorship bias from backtests.
 
 IBKR is an optional adapter, not a presumed free feed. Its API requires the relevant market-data entitlement for most securities, an authenticated TWS/IB Gateway or Web API brokerage session, and rate-aware batching. It is valuable for broker reconciliation and a future execution path, but a local nightly universe scan must continue when IBKR is unavailable.
 
@@ -145,7 +147,7 @@ At that stage, add a durable queue and a time-series/columnar service only when 
 ## Delivery phases
 
 1. Auto Trend on current sample bars, with deterministic scoring and chart toggle.
-2. Local EOD engine: extend Traders Cockpit FastAPI/PostgreSQL, audit the premium archive, add Alpaca SIP plus optional IBKR adapters, DuckDB/Parquet, validation and scheduled scans.
+2. Local EOD engine: run a fresh Brontide FastAPI service, ingest Alpaca SIP into DuckDB/Parquet, audit the premium archive, add the Nasdaq symbol master plus optional IBKR validation, then schedule scans.
 3. Drawing lifecycle: undo/redo, locks, persistence, layouts and hotkeys.
 4. Multi-timeframe structure: daily/weekly lines, aligned features, scans and backtests.
 5. Trade planning: line-based entry/stop/targets, risk sizing and broker adapter; alerts and real-time execution follow only after audit and paper trading.

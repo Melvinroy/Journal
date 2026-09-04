@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brontide-eod"
+version = "0.1.0"
+description = "Local-first end-of-day market data service for Brontide"
+requires-python = ">=3.11"
+dependencies = [
+  "duckdb>=1.1,<2",
+  "fastapi>=0.115,<1",
+  "httpx>=0.27,<1",
+  "python-dotenv>=1,<2",
+  "uvicorn[standard]>=0.30,<1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+brontide-eod = "brontide_eod.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brontide_eod"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

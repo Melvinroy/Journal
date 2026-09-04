@@ -4,3 +4,12 @@ out
 .DS_Store
 *.log
 *.tsbuildinfo
+.env
+.env.*
+!.env.example
+data/
+*.duckdb
+*.duckdb.wal
+__pycache__/
+.pytest_cache/
+.venv/
