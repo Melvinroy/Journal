@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timezone
 from typing import Any, Sequence
 
 import httpx
@@ -73,11 +73,17 @@ class AlpacaProvider:
     ) -> list[DailyBar]:
         if not symbols:
             return []
+        # Alpaca treats a date-only end value as a boundary that can include the
+        # following/current session.  That triggers the free-plan 15-minute SIP
+        # restriction while the U.S. market is open.  Use an explicit inclusive
+        # timestamp on the requested final session instead.
+        start_timestamp = datetime.combine(start, time.min, tzinfo=timezone.utc)
+        end_timestamp = datetime.combine(end, time(23, 59, 59), tzinfo=timezone.utc)
         params: dict[str, Any] = {
             "symbols": ",".join(symbols),
             "timeframe": "1Day",
-            "start": start.isoformat(),
-            "end": (end + timedelta(days=1)).isoformat(),
+            "start": start_timestamp.isoformat().replace("+00:00", "Z"),
+            "end": end_timestamp.isoformat().replace("+00:00", "Z"),
             "feed": "sip",
             "adjustment": "all",
             "limit": 10_000,

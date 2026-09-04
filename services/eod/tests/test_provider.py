@@ -13,6 +13,8 @@ def test_alpaca_provider_parses_sip_daily_bars_and_pagination() -> None:
         calls += 1
         assert request.url.params["feed"] == "sip"
         assert request.url.params["adjustment"] == "all"
+        assert request.url.params["start"] == "2026-09-03T00:00:00Z"
+        assert request.url.params["end"] == "2026-09-03T23:59:59Z"
         if calls == 1:
             return httpx.Response(200, json={
                 "bars": {"AAPL": [{"t": "2026-09-03T04:00:00Z", "o": 100, "h": 104, "l": 99, "c": 103, "v": 10_000, "n": 500, "vw": 102.2}]},
