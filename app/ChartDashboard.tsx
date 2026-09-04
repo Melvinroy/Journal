@@ -207,7 +207,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chart.setPaneOptions({ id: "volume_pane", height: 92, minHeight: 58, dragEnabled: true, order: 20 });
       const averages = [[20, "#875fd2", show20], [50, "#4169ca", show50], [200, "#ba7641", show200]] as const;
       averages.forEach(([period, color, visible]) => {
-        if (visible) chart.createIndicator({ name: "MA", paneId: "candle_pane", calcParams: [period], styles: { lines: [{ color, size: 1, style: "dashed", dashedValue: [5, 4] }] } });
+        if (visible) chart.createIndicator({ name: "MA", paneId: "candle_pane", calcParams: [period], styles: { lines: [{ color, size: 1, style: "dashed", dashedValue: [5, 4] }], tooltip: { showRule: "none" } } });
       });
       const crosshairHandler = (data?: unknown) => {
         const point = data as Crosshair | undefined;
