@@ -658,11 +658,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .chart-viewport-controls { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--chart-line-strong); }
 .chart-viewport-controls button { min-width: 29px; padding-inline: 8px; }
 .chart-stage-area { min-height: 0; display: grid; grid-template-columns: 43px minmax(0, 1fr); }
-.drawing-rail { z-index: 15; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 5px 6px; overflow: visible; background: var(--chart-panel); border-right: 1px solid var(--chart-line); }
+.drawing-rail { position: relative; z-index: 60; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 5px 6px; overflow: visible; background: var(--chart-panel); border-right: 1px solid var(--chart-line); }
 .drawing-rail button { width: 31px; height: 31px; position: relative; display: grid; place-items: center; padding: 0; color: var(--chart-text-soft); background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
 .drawing-rail button:hover { color: var(--chart-text); background: var(--chart-control-hover); }
 .drawing-rail button.active { color: #f4fff8; background: var(--chart-accent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
-.drawing-tool-group { position: relative; }
+.drawing-tool-group { position: relative; z-index: 1; }
+.drawing-tool-group:has(.drawing-tool-menu) { z-index: 2; }
 .drawing-tool-group + .drawing-tool-group { padding-top: 3px; border-top: 1px solid var(--chart-line); }
 .drawing-group-caret { position: absolute; right: 1px; bottom: 2px; opacity: .58; }
 .drawing-tool-menu { width: 234px; max-height: min(360px, calc(100dvh - 145px)); position: absolute; z-index: 40; top: -4px; left: 39px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 7px; overflow-y: auto; color: var(--chart-text); background: var(--chart-panel); border: 1px solid var(--chart-line-strong); border-radius: 8px; box-shadow: var(--chart-popover-shadow); }

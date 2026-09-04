@@ -1,58 +1,60 @@
 # Brontide chart design QA
 
-- Source visual truth: `/workspace/scratch/84eca3f58433/upload/IMG_D928B69B-1C3A-4415-9563-9E281EEE751C.jpeg`.
-- Implementation screenshot: browser-rendered production capture from `https://melvinroy.github.io/Journal/?demo=1` in this QA run.
+- Source visual truth: `/workspace/scratch/84eca3f58433/upload/IMG_533B02CE-2174-4010-B8B0-1F4DB9170963.jpeg`.
+- Implementation: browser-rendered production capture from `https://melvinroy.github.io/Journal/?demo=1`.
 - Viewport: 1,363 × 936 CSS pixels at device scale factor 1.
 - Source pixels: 1,536 × 1,152, including photographed monitor and browser chrome.
-- Implementation pixels: 1,363 × 936.
-- Normalization: compared the chart application region at its natural desktop scale; ignored the source photograph's monitor bezel and browser chrome.
-- State: NVDA sample history, 6M daily range, light theme, linear scale, 20/50/200 moving averages enabled.
+- Normalization: compared the chart application region at its natural desktop scale and ignored the source photograph's monitor bezel and browser chrome.
+- State: NVDA sample history, 6M daily range, light and dark themes, linear scale, 20/50/200 moving averages enabled.
 
 ## Full-view comparison evidence
 
-The final production view preserves the reference's compact two-row command structure, narrow drawing rail, dominant white plot, low-contrast grid, right price scale, green/red candles, moving-average overlays, and separate volume pane. The implementation intentionally omits the reference's base rectangles because the user requested removal. Controls stay outside the plotting and volume regions.
+The price history now starts at the left edge of the usable plot and fills approximately 80% of its width. The remaining approximately 20% is clean forward space on the right, matching the requested default composition. Candles, moving averages, axes, volume, header values, and navigation controls remain legible without overlap.
+
+The drawing rail stays narrow and quiet in its resting state. Thirty drawing and measurement tools are organized into six families, plus cursor and clear controls, instead of being displayed as one long undifferentiated toolbar.
 
 ## Focused-region comparison evidence
 
-- Header and toolbar: stock identity remains prominent, while secondary actions use compact controls with consistent height and spacing.
-- Plot header: OHLC and moving-average values now occupy two clean lines; native indicator tooltips are disabled so they cannot collide.
-- Volume pane: no floating zoom, navigation, or base controls cover the bars or axis.
-- Theme treatment: light and dark modes use matched semantic tokens for panels, borders, text, axes, grids, crosshairs, candles, volume, and popovers.
-- No separate image asset fidelity issue applies; the reference and implementation are data-chart interfaces rather than image-led screens.
+- Viewport: bar spacing is derived from the current chart width and selected range; right offset is derived as 20% of that width. A resize observer reapplies the fit when the chart container changes size.
+- Drawing tools: grouped flyouts expose trend, level, channel, Fibonacci, annotation, position, and measurement tools. Each item has a recognizable Phosphor icon and accessible name.
+- Tool interaction: selecting a tool closes the flyout, preserves its active family state, and initiates the corresponding KLineChart overlay.
+- Light/dark treatment: flyouts, active states, borders, shadows, and icons use the chart theme tokens in both modes.
+- Volume and viewport controls: the drawing rail, flyouts, zoom controls, and volume pane occupy separate layout regions.
 
 ## Findings and comparison history
 
-1. P1 — floating viewport controls overlapped the volume pane.
-   - Fix: moved zoom out, zoom in, backward, and latest controls into the secondary toolbar.
-   - Post-fix evidence: the entire volume pane is unobstructed in the final production capture.
-2. P1 — base annotations competed with candles and created visual noise.
-   - Fix: removed the base toggle, rectangles, pivot label, and footer selector.
-   - Post-fix evidence: the chart now presents only price, moving averages, crosshair state, and volume.
-3. P2 — duplicate chart chrome and nonfunctional save/share actions reduced trust.
-   - Fix: simplified the header to sample-data status, Analyze setup, and theme controls; renamed the supported price-channel tool accurately.
-4. P2 — native MA tooltip content collided with the custom OHLC/legend layer.
-   - Fix: consolidated moving averages into one indicator and disabled native indicator tooltips globally.
-   - Post-fix evidence: the final capture has one OHLC row, one MA legend row, and visible dashed average lines with no collision.
-5. P2 — previous theme styling was hard-coded and dark-only.
-   - Fix: added semantic light/dark tokens, a labeled toggle, and persisted preference in local storage. Both modes were browser-tested.
+1. P1 — visible history occupied only part of the plot and was biased toward the right.
+   - Fix: calculated default bar spacing from the usable canvas width and placed the final candle near the 80% mark.
+   - Post-fix evidence: the first visible candle begins next to the drawing rail and the last candle leaves approximately 20% forward space.
+2. P2 — the original flat drawing rail exposed too few tools and did not communicate families.
+   - Fix: added 30 drawing and measurement entries in six grouped flyouts, while keeping only eight compact rail controls visible at rest.
+3. P2 — text/glyph tool marks looked inconsistent.
+   - Fix: replaced them with the open-source MIT-licensed Phosphor icon set.
+4. P1 — the chart canvas could paint above a light-theme flyout despite the menu being present in the accessibility tree.
+   - Fix: made the rail an explicit positioned stacking context above the canvas and raised the open group within it.
+5. P2 — controls previously competed with the plot and volume pane.
+   - Fix: viewport controls remain in the secondary command bar and drawing tools remain in the dedicated left rail.
 
 ## Primary interactions tested
 
 - Open Charts from the main workspace.
-- Switch light to dark and reload; the saved preference persists.
-- Zoom in and move to latest from the toolbar.
-- Stock selector, range controls, indicator menu, linear/log controls, drawing tools, and clear-drawings control remain exposed with accessible names.
-- Production build and GitHub Pages workflows 51–54 completed successfully.
+- Switch between light and dark themes.
+- Open Trend and Level tool families.
+- Select Trend line; confirm the menu closes and the active family remains indicated.
+- Confirm grouped menus expose their item counts and accessible menu-item names.
+- Confirm the 6M default history fills the left 80% of the chart with forward space on the right.
+- Production build completed successfully.
 
 ## Accessibility and responsive checks
 
-- Visible keyboard focus rings were added to buttons, summaries, and selects.
-- Toolbar buttons have accessible labels; the theme toggle communicates the destination and pressed state.
-- At the mobile breakpoint, the header uses three bounded columns, Analyze setup is removed from the constrained row, toolbars scroll rather than overlap, viewport controls remain in the toolbar, the chart receives a dedicated bottom-navigation row, and the footer is removed.
-- The cloud browser has a fixed desktop viewport, so the mobile breakpoint was code-reviewed but not captured on a physical iPhone-sized browser. This is a P3 device-verification gap, not a known layout defect.
+- All rail triggers and menu entries have accessible names and native button semantics.
+- Group triggers expose expanded state; flyout entries use menu-item roles.
+- Focus rings remain visible in both themes.
+- Below the mobile breakpoint, flyouts use a single column and are bounded to the available viewport width.
+- The cloud browser has a fixed desktop viewport, so a physical-device capture remains a P3 verification gap, not a known defect.
 
 ## Remaining findings
 
-No actionable P0, P1, or P2 finding remains in the browser-rendered desktop production state. The remaining follow-up is physical-device verification at common phone widths.
+No actionable P0, P1, or P2 finding remains after the final production verification. Exact advanced-tool semantics are bounded by KLineChart's native overlay primitives; the visible tool catalog uses the closest supported primitive where KLineChart does not provide a dedicated overlay.
 
 final result: passed
