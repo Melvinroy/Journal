@@ -206,8 +206,12 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chart.createIndicator({ name: "VOL", paneId: "volume_pane", styles: { bars: [{ upColor: palette.volumeUp, downColor: palette.volumeDown, noChangeColor: palette.neutral }] } });
       chart.setPaneOptions({ id: "volume_pane", height: 92, minHeight: 58, dragEnabled: true, order: 20 });
       const averages = [[20, "#875fd2", show20], [50, "#4169ca", show50], [200, "#ba7641", show200]] as const;
-      averages.forEach(([period, color, visible]) => {
-        if (visible) chart.createIndicator({ name: "MA", paneId: "candle_pane", calcParams: [period], styles: { lines: [{ color, size: 1, style: "dashed", dashedValue: [5, 4] }], tooltip: { showRule: "none" } } });
+      const visibleAverages = averages.filter(([, , visible]) => visible);
+      if (visibleAverages.length) chart.createIndicator({
+        name: "MA",
+        paneId: "candle_pane",
+        calcParams: visibleAverages.map(([period]) => period),
+        styles: { lines: visibleAverages.map(([, color]) => ({ color, size: 1, style: "dashed", dashedValue: [5, 4] })), tooltip: { showRule: "none" } },
       });
       const crosshairHandler = (data?: unknown) => {
         const point = data as Crosshair | undefined;
@@ -264,7 +268,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
 
         <div className="chart-canvas-shell">
           <div className="chart-ohlc"><span>{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>
-          <div className="chart-legend"><span className="ma20">MA20: {movingAverage(bars, 20).at(-1)?.value.toFixed(2) ?? "—"}</span><span className="ma50">MA50: {movingAverage(bars, 50).at(-1)?.value.toFixed(2) ?? "—"}</span><span className="ma200">MA200: {movingAverage(bars, 200).at(-1)?.value.toFixed(2) ?? "—"}</span></div>
+          <div className="chart-legend">{show20 && <span className="ma20">MA20: {movingAverage(bars, 20).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {movingAverage(bars, 50).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {movingAverage(bars, 200).at(-1)?.value.toFixed(2) ?? "—"}</span>}</div>
           {!chartReady && <SampleChartFallback rows={bars}/>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
           {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
         </div>
