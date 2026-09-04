@@ -8,6 +8,7 @@ import { CatalystDashboard } from "./CatalystDashboard";
 import { TradePlanner } from "./TradePlanner";
 import { ScansDashboard } from "./ScansDashboard";
 import { BacktestDashboard } from "./BacktestDashboard";
+import { ChartDashboard } from "./ChartDashboard";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -76,6 +77,7 @@ function isoDate(daysAgo = 0) {
 
 const nav = [
   ["Trade", "target"],
+  ["Charts", "candles"],
   ["Catalyst", "spark"],
   ["Scans", "scan"],
   ["Backtest", "flask"],
@@ -444,7 +446,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade" | "Scans" | "Backtest">("Trade");
+  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest">("Trade");
   const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -633,11 +635,11 @@ export default function Home() {
         <div className="profile"><span className="avatar">{accountLabel.slice(0, 1)}</span><span><b>{accountLabel}</b><small>{accountEmail}</small></span><Icon name={demoMode ? "spark" : "check"} size={16}/></div>
       </aside>
 
-      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : active === "Scans" || active === "Backtest" ? "research-workspace" : ""}`}>
+      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : active === "Charts" ? "chart-workspace" : active === "Scans" || active === "Backtest" ? "research-workspace" : ""}`}>
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {nav.map(([label]) => <button key={label} className={active === label ? "active" : ""} onClick={() => setActive(label)}>{label}</button>)}
         </nav>
-        {active === "Catalyst" ? <CatalystDashboard/> : active === "Trade" ? <TradePlanner/> : active === "Scans" ? <ScansDashboard/> : active === "Backtest" ? <BacktestDashboard/> : <>
+        {active === "Catalyst" ? <CatalystDashboard/> : active === "Trade" ? <TradePlanner/> : active === "Charts" ? <ChartDashboard onExit={() => setActive("Trade")}/> : active === "Scans" ? <ScansDashboard/> : active === "Backtest" ? <BacktestDashboard/> : <>
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">
