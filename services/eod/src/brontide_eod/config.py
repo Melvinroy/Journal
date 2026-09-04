@@ -13,6 +13,7 @@ class Settings:
     alpaca_api_secret: str
     db_path: Path
     api_host: str = "127.0.0.1"
+    alpaca_trading_base_url: str = "https://api.alpaca.markets"
     api_port: int = 8765
     alpaca_batch_size: int = 200
 
@@ -34,6 +35,7 @@ class Settings:
             alpaca_api_secret=secret,
             db_path=Path(os.getenv("BRONTIDE_DB_PATH", "./data/brontide.duckdb")),
             api_host=os.getenv("BRONTIDE_API_HOST", "127.0.0.1"),
+            alpaca_trading_base_url=os.getenv("BRONTIDE_ALPACA_TRADING_BASE_URL", "https://api.alpaca.markets").rstrip("/"),
             api_port=int(os.getenv("BRONTIDE_API_PORT", "8765")),
             alpaca_batch_size=batch_size,
         )

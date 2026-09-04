@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timezone
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import httpx
 
@@ -17,11 +17,15 @@ class AlpacaProvider:
         api_secret: str,
         *,
         timeout_seconds: float = 45,
+        trading_base_url: str = "https://api.alpaca.markets",
+        before_request: Callable[[], None] | None = None,
         client: httpx.Client | None = None,
     ) -> None:
         if not api_key or not api_secret:
             raise ValueError("Alpaca credentials are required")
         self._owns_client = client is None
+        self._trading_base_url = trading_base_url.rstrip("/")
+        self._before_request = before_request
         self._client = client or httpx.Client(
             timeout=timeout_seconds,
             headers={
@@ -41,8 +45,13 @@ class AlpacaProvider:
     def __exit__(self, *_: object) -> None:
         self.close()
 
+    def _get(self, url: str, *, params: dict[str, Any]) -> httpx.Response:
+        if self._before_request:
+            self._before_request()
+        return self._client.get(url, params=params)
+
     def health(self) -> dict[str, str | bool]:
-        response = self._client.get(
+        response = self._get(
             "https://data.alpaca.markets/v2/stocks/AAPL/bars",
             params={
                 "timeframe": "1Day",
@@ -57,10 +66,10 @@ class AlpacaProvider:
         payload = response.json()
         return {"ok": bool(payload.get("bars")), "provider": "alpaca", "feed": "sip"}
 
-    def list_instruments(self) -> list[Instrument]:
-        response = self._client.get(
-            "https://api.alpaca.markets/v2/assets",
-            params={"status": "active", "asset_class": "us_equity"},
+    def list_instruments(self, *, status: str = "active") -> list[Instrument]:
+        response = self._get(
+            f"{self._trading_base_url}/v2/assets",
+            params={"status": status, "asset_class": "us_equity"},
         )
         response.raise_for_status()
         return [self._parse_instrument(row) for row in response.json()]
@@ -86,12 +95,13 @@ class AlpacaProvider:
             "end": end_timestamp.isoformat().replace("+00:00", "Z"),
             "feed": "sip",
             "adjustment": "all",
+            "asof": "-",
             "limit": 10_000,
             "sort": "asc",
         }
         rows: list[DailyBar] = []
         while True:
-            response = self._client.get("https://data.alpaca.markets/v2/stocks/bars", params=params)
+            response = self._get("https://data.alpaca.markets/v2/stocks/bars", params=params)
             response.raise_for_status()
             payload = response.json()
             for symbol, bars in payload.get("bars", {}).items():

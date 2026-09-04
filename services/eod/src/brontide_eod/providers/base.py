@@ -7,7 +7,7 @@ from brontide_eod.models import DailyBar, Instrument
 
 
 class MarketDataProvider(Protocol):
-    def list_instruments(self) -> list[Instrument]: ...
+    def list_instruments(self, *, status: str = "active") -> list[Instrument]: ...
 
     def get_daily_bars(
         self,
