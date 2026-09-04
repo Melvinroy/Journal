@@ -190,6 +190,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
             priceMark: { high: { show: false }, low: { show: false }, last: { line: { style: "dashed", dashedValue: [4, 4] } } },
             tooltip: { showRule: "none" },
           },
+          indicator: { tooltip: { showRule: "none" } },
           xAxis: { axisLine: { color: palette.axis }, tickLine: { color: palette.axis }, tickText: { color: palette.axisText, family: "Inter, ui-sans-serif, system-ui", size: 9 } },
           yAxis: { axisLine: { color: palette.axis }, tickLine: { color: palette.axis }, tickText: { color: palette.axisText, family: "Inter, ui-sans-serif, system-ui", size: 9 } },
           crosshair: { horizontal: { line: { color: palette.crosshair, style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: "#148c50" } }, vertical: { line: { color: palette.crosshair, style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: palette.crosshairLabel } } },
