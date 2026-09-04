@@ -6,6 +6,7 @@ import type { Chart, Crosshair, KLineData } from "klinecharts";
 type Bar = KLineData & { volume: number };
 type RangeKey = "1M" | "3M" | "6M" | "1Y" | "Max";
 type SymbolKey = "NVDA" | "MRNA" | "CRCL";
+type ChartTheme = "light" | "dark";
 type DrawingTool = "cursor" | "horizontal" | "vertical" | "trend" | "ray" | "channel" | "fib" | "rectangle" | "circle" | "label" | "note";
 
 const symbols: Record<SymbolKey, { name: string; seed: number; start: number; drift: number }> = {
@@ -22,8 +23,7 @@ const tools: Array<{ id: DrawingTool; glyph: string; label: string }> = [
   { id: "ray", glyph: "↗", label: "Ray" },
   { id: "channel", glyph: "≋", label: "Parallel channel" },
   { id: "fib", glyph: "≡", label: "Fibonacci retracement" },
-  { id: "rectangle", glyph: "▭", label: "Rectangle" },
-  { id: "circle", glyph: "○", label: "Circle" },
+  { id: "rectangle", glyph: "▭", label: "Price channel" },
   { id: "label", glyph: "⊣", label: "Price label" },
   { id: "note", glyph: "□", label: "Note" },
 ];
@@ -138,12 +138,13 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const chartRef = useRef<Chart | null>(null);
   const [symbol, setSymbol] = useState<SymbolKey>("NVDA");
   const [range, setRange] = useState<RangeKey>("6M");
-  const [bases, setBases] = useState(true);
   const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
   const [logScale, setLogScale] = useState(false);
   const [show20, setShow20] = useState(true);
   const [show50, setShow50] = useState(true);
   const [show200, setShow200] = useState(true);
+  const [theme, setTheme] = useState<ChartTheme>("light");
+  const [themeLoaded, setThemeLoaded] = useState(false);
   const [chartReady, setChartReady] = useState(false);
   const allBars = useMemo(() => makeBars(symbols[symbol]), [symbol]);
   const bars = useMemo(() => allBars.slice(-rangeSize(range)), [allBars, range]);
@@ -155,9 +156,26 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   useEffect(() => setHovered(latest), [latest]);
 
   useEffect(() => {
+    const saved = window.localStorage.getItem("brontide-chart-theme");
+    if (saved === "dark" || saved === "light") setTheme(saved);
+    setThemeLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (themeLoaded) window.localStorage.setItem("brontide-chart-theme", theme);
+  }, [theme, themeLoaded]);
+
+  useEffect(() => {
     if (!containerRef.current) return;
     let cancelled = false;
     let disposeChart: (() => void) | undefined;
+    const palette = theme === "light" ? {
+      grid: "#e5e9e6", axis: "#d5dcd7", axisText: "#6f7a73", crosshair: "#7b8980", crosshairLabel: "#48564d",
+      up: "#13945a", down: "#d94b55", neutral: "#7c8881", volumeUp: "#16905a8f", volumeDown: "#c9434d83", separator: "#d8dfda",
+    } : {
+      grid: "#202630", axis: "#222a35", axisText: "#697582", crosshair: "#7b8796", crosshairLabel: "#26303b",
+      up: "#38c985", down: "#df4b53", neutral: "#8b95a1", volumeUp: "#197b55aa", volumeDown: "#8f3038aa", separator: "#222a35",
+    };
 
     void import("klinecharts").then(({ dispose, init }) => {
       if (cancelled || !containerRef.current) return;
@@ -165,17 +183,17 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
         timezone: "Etc/UTC",
         layout: { barSpaceLimit: { min: 2.5, max: 28 }, yAxis: { position: "right", inside: false, gap: { top: .08, bottom: .04 } } },
         styles: {
-          grid: { horizontal: { color: "#202630", style: "dashed", dashedValue: [2, 4] }, vertical: { color: "#202630", style: "dashed", dashedValue: [2, 4] } },
+          grid: { horizontal: { color: palette.grid, style: "dashed", dashedValue: [2, 4] }, vertical: { color: palette.grid, style: "dashed", dashedValue: [2, 4] } },
           candle: {
             type: "candle_solid",
-            bar: { compareRule: "current_open", upColor: "#38c985", downColor: "#df4b53", noChangeColor: "#8b95a1", upBorderColor: "#38c985", downBorderColor: "#df4b53", noChangeBorderColor: "#8b95a1", upWickColor: "#38c985", downWickColor: "#df4b53", noChangeWickColor: "#8b95a1" },
+            bar: { compareRule: "current_open", upColor: palette.up, downColor: palette.down, noChangeColor: palette.neutral, upBorderColor: palette.up, downBorderColor: palette.down, noChangeBorderColor: palette.neutral, upWickColor: palette.up, downWickColor: palette.down, noChangeWickColor: palette.neutral },
             priceMark: { high: { show: false }, low: { show: false }, last: { line: { style: "dashed", dashedValue: [4, 4] } } },
             tooltip: { showRule: "none" },
           },
-          xAxis: { axisLine: { color: "#222a35" }, tickLine: { color: "#222a35" }, tickText: { color: "#697582", family: "Inter, ui-sans-serif, system-ui", size: 9 } },
-          yAxis: { axisLine: { color: "#222a35" }, tickLine: { color: "#222a35" }, tickText: { color: "#697582", family: "Inter, ui-sans-serif, system-ui", size: 9 } },
-          crosshair: { horizontal: { line: { color: "#7b8796", style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: "#148c50" } }, vertical: { line: { color: "#7b8796", style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: "#26303b" } } },
-          separator: { color: "#222a35", activeBackgroundColor: "#303946" },
+          xAxis: { axisLine: { color: palette.axis }, tickLine: { color: palette.axis }, tickText: { color: palette.axisText, family: "Inter, ui-sans-serif, system-ui", size: 9 } },
+          yAxis: { axisLine: { color: palette.axis }, tickLine: { color: palette.axis }, tickText: { color: palette.axisText, family: "Inter, ui-sans-serif, system-ui", size: 9 } },
+          crosshair: { horizontal: { line: { color: palette.crosshair, style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: "#148c50" } }, vertical: { line: { color: palette.crosshair, style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: palette.crosshairLabel } } },
+          separator: { color: palette.separator, activeBackgroundColor: palette.axis },
         },
       });
       if (!chart) return;
@@ -185,7 +203,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chart.setDataLoader({ getBars: ({ callback }) => callback(bars) });
       chart.setBarSpace(range === "1M" ? 18 : range === "3M" ? 10 : range === "6M" ? 6 : 4);
       chart.setOffsetRightDistance(38);
-      chart.createIndicator({ name: "VOL", paneId: "volume_pane", styles: { bars: [{ upColor: "#197b55aa", downColor: "#8f3038aa", noChangeColor: "#68727e88" }] } });
+      chart.createIndicator({ name: "VOL", paneId: "volume_pane", styles: { bars: [{ upColor: palette.volumeUp, downColor: palette.volumeDown, noChangeColor: palette.neutral }] } });
       chart.setPaneOptions({ id: "volume_pane", height: 92, minHeight: 58, dragEnabled: true, order: 20 });
       const averages = [[20, "#875fd2", show20], [50, "#4169ca", show50], [200, "#ba7641", show200]] as const;
       averages.forEach(([period, color, visible]) => {
@@ -209,7 +227,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chartRef.current = null;
       setChartReady(false);
     };
-  }, [bars, range, show20, show50, show200, symbol, logScale]);
+  }, [bars, range, show20, show50, show200, symbol, logScale, theme]);
 
   const clearDrawings = () => {
     chartRef.current?.removeOverlay();
@@ -226,16 +244,16 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   };
 
   return (
-    <section className="chart-dashboard">
+    <section className={`chart-dashboard theme-${theme}`}>
       <header className="chart-commandbar">
         <div className="chart-sequence"><button aria-label="Back" onClick={onExit}>‹</button><button className="chart-stage">EP contractions⌄</button><button aria-label="Previous">‹</button><span>1 of 14</span><button aria-label="Next">›</button></div>
         <label className="chart-symbol-select"><span>{symbols[symbol].name}</span><b>{symbol}</b><select value={symbol} onChange={(event) => setSymbol(event.target.value as SymbolKey)} aria-label="Stock"><option value="NVDA">NVIDIA Corporation</option><option value="MRNA">Moderna, Inc.</option><option value="CRCL">Circle Internet Group</option></select></label>
-        <div className="chart-header-actions"><button className="chart-accent">Analyze setup</button><button>Save settings</button><button>Save drawing</button><button>Details</button></div>
+        <div className="chart-header-actions"><span className="chart-data-state"><i/> Sample data</span><button className="chart-accent">Analyze setup</button><button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
       </header>
 
       <div className="chart-subbar">
         <div className="chart-ranges">{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}<button className="chart-select-button">Daily⌄</button></div>
-        <div className="chart-display-controls"><details><summary>ƒ Indicators</summary><div className="indicator-popover"><label><input type="checkbox" checked={show20} onChange={(e) => setShow20(e.target.checked)}/>20 SMA</label><label><input type="checkbox" checked={show50} onChange={(e) => setShow50(e.target.checked)}/>50 SMA</label><label><input type="checkbox" checked={show200} onChange={(e) => setShow200(e.target.checked)}/>200 SMA</label></div></details><span>BAR STYLE</span><button>Candles · filled⌄</button><span>SCALE</span><button className={!logScale ? "active" : ""} onClick={() => setLogScale(false)}>Lin</button><button className={logScale ? "active" : ""} onClick={() => setLogScale(true)}>Log</button><button>%</button><button>Download / Share</button></div>
+        <div className="chart-display-controls"><details><summary>Indicators</summary><div className="indicator-popover"><label><input type="checkbox" checked={show20} onChange={(e) => setShow20(e.target.checked)}/>20 SMA</label><label><input type="checkbox" checked={show50} onChange={(e) => setShow50(e.target.checked)}/>50 SMA</label><label><input type="checkbox" checked={show200} onChange={(e) => setShow200(e.target.checked)}/>200 SMA</label></div></details><span>SCALE</span><button className={!logScale ? "active" : ""} onClick={() => setLogScale(false)}>Lin</button><button className={logScale ? "active" : ""} onClick={() => setLogScale(true)}>Log</button><div className="chart-viewport-controls" role="group" aria-label="Chart viewport"><button onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)} aria-label="Zoom out" title="Zoom out">−</button><button onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)} aria-label="Zoom in" title="Zoom in">+</button><button onClick={() => chartRef.current?.scrollByDistance(-120, 160)} aria-label="Move backward" title="Move backward">‹</button><button onClick={() => chartRef.current?.scrollToRealTime(180)} aria-label="Move to latest" title="Move to latest">Latest</button></div></div>
       </div>
 
       <div className="chart-stage-area">
@@ -247,15 +265,12 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
         <div className="chart-canvas-shell">
           <div className="chart-ohlc"><span>{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>
           <div className="chart-legend"><span className="ma20">MA20: {movingAverage(bars, 20).at(-1)?.value.toFixed(2) ?? "—"}</span><span className="ma50">MA50: {movingAverage(bars, 50).at(-1)?.value.toFixed(2) ?? "—"}</span><span className="ma200">MA200: {movingAverage(bars, 200).at(-1)?.value.toFixed(2) ?? "—"}</span></div>
-          <div className="bases-toggle"><button className={bases ? "on" : ""} onClick={() => setBases((value) => !value)}>Bases <i/></button></div>
           {!chartReady && <SampleChartFallback rows={bars}/>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
-          {bases && <div className="base-overlay" aria-hidden="true"><div className="base-box base-one"><span>4.1 wks</span></div><div className="base-box base-two"><span>2.8 wks</span></div><div className="base-box base-three"><span>3.4 wks</span><b>pivot {Math.max(...bars.slice(-45).map((bar) => bar.high)).toFixed(2)}</b></div></div>}
           {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
-          <div className="chart-zoom"><button onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)}>−</button><button onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)}>+</button><button onClick={() => chartRef.current?.scrollByDistance(-120, 160)}>←</button><button onClick={() => chartRef.current?.scrollToRealTime(180)}>→</button><button onClick={() => chartRef.current?.scrollToDataIndex(Math.max(0, bars.length - Math.min(bars.length, rangeSize(range))), 180)}>⇥</button></div>
         </div>
       </div>
 
-      <footer className="chart-footer"><span>⚑ contraction</span><span>× failed breakout</span><strong>Sample historical data · KLineChart open-source engine</strong><button>All detected bases (2026)⌄</button></footer>
+      <footer className="chart-footer"><span>Daily candles</span><span>Volume</span><strong>KLineChart · Open-source rendering</strong></footer>
     </section>
   );
 }
