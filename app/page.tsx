@@ -6,6 +6,8 @@ import { supabase, supabaseConfig } from "../lib/supabase";
 import { isLegacyDemoDataset, LOCAL_TRADE_STORAGE_KEY } from "../lib/local-trade-migration";
 import { CatalystDashboard } from "./CatalystDashboard";
 import { TradePlanner } from "./TradePlanner";
+import { ScansDashboard } from "./ScansDashboard";
+import { BacktestDashboard } from "./BacktestDashboard";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -75,6 +77,8 @@ function isoDate(daysAgo = 0) {
 const nav = [
   ["Trade", "target"],
   ["Catalyst", "spark"],
+  ["Scans", "scan"],
+  ["Backtest", "flask"],
   ["Journal", "book"],
 ] as const;
 
@@ -99,6 +103,8 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     shield: <path d="M12 3 20 6v5c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z"/>,
     copy: <><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></>,
     external: <><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></>,
+    scan: <><path d="M4 19V9m5 10V5m5 14v-7m5 7V3"/><path d="M3 19h18"/></>,
+    flask: <><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/><path d="M7.5 16h9"/></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -438,7 +444,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade">("Trade");
+  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade" | "Scans" | "Backtest">("Trade");
   const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -627,11 +633,11 @@ export default function Home() {
         <div className="profile"><span className="avatar">{accountLabel.slice(0, 1)}</span><span><b>{accountLabel}</b><small>{accountEmail}</small></span><Icon name={demoMode ? "spark" : "check"} size={16}/></div>
       </aside>
 
-      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : ""}`}>
+      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : active === "Scans" || active === "Backtest" ? "research-workspace" : ""}`}>
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {nav.map(([label]) => <button key={label} className={active === label ? "active" : ""} onClick={() => setActive(label)}>{label}</button>)}
         </nav>
-        {active === "Catalyst" ? <CatalystDashboard/> : active === "Trade" ? <TradePlanner/> : <>
+        {active === "Catalyst" ? <CatalystDashboard/> : active === "Trade" ? <TradePlanner/> : active === "Scans" ? <ScansDashboard/> : active === "Backtest" ? <BacktestDashboard/> : <>
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">

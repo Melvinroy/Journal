@@ -39,12 +39,14 @@
 - **Built-in demo mode** with realistic sample trades
 - **Dual-cap position sizing** using account risk and maximum symbol allocation
 
-## Journal, Catalyst and Trade workspace
+## Trade, Catalyst, Scans, Backtest and Journal workspace
 
-The signed-in application has three primary tabs:
+The signed-in application has five primary tabs:
 
 - **Journal** — private trades, equity curve, realized-R distribution and setup performance
 - **Catalyst** — Today / 3-day / 5-day signal windows, bullish and bearish leadership, theme concentration, searchable canonical inventory and ticker drill-down
+- **Scans** — date-filtered EP contraction candidates from the current 2× volume-expansion research rule
+- **Backtest** — strategy registry, comparison metrics, rule definitions and plain-language interpretation
 - **Trade** — compact long/short position sizing, Low-of-Day or manual stops, persistent risk defaults and a staged post-fill exit plan
 
 The Catalyst dashboard reads the de-duplicated Table 3 feed from the read-only `catalyst_dashboard_rows` view. If that optional feed has not been installed or populated in a self-hosted Supabase project, the Journal remains fully operational and the Catalyst tab shows a clear unavailable state.
