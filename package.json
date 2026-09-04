@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@supabase/supabase-js": "2.57.0",
     "klinecharts": "^10.0.3",
     "next": "16.2.6",

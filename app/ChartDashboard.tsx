@@ -2,12 +2,26 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Chart, Crosshair, KLineData } from "klinecharts";
+import {
+  ArrowUpRight, ArrowsOutLineHorizontal, ArrowsVertical, CalendarDots, CaretRight, ChartLine,
+  ChartLineDown, ChartLineUp, Crosshair as CrosshairIcon, Cursor, Flag, Function as FunctionIcon, LineSegment,
+  Minus, NotePencil, Path, PencilSimple, Rectangle, Rows, Ruler, Selection, Strategy, Tag, TextT,
+  Trash, TrendUp, WaveSine, type Icon,
+} from "@phosphor-icons/react";
 
 type Bar = KLineData & { volume: number };
 type RangeKey = "1M" | "3M" | "6M" | "1Y" | "Max";
 type SymbolKey = "NVDA" | "MRNA" | "CRCL";
 type ChartTheme = "light" | "dark";
-type DrawingTool = "cursor" | "horizontal" | "vertical" | "trend" | "ray" | "channel" | "fib" | "rectangle" | "circle" | "label" | "note";
+type DrawingTool =
+  | "cursor" | "trend" | "ray" | "segment" | "extended" | "arrow"
+  | "horizontal" | "horizontalRay" | "horizontalSegment" | "vertical" | "verticalRay" | "verticalSegment" | "priceLine"
+  | "parallelChannel" | "priceChannel" | "regressionChannel" | "pitchfork"
+  | "fibRetracement" | "fibExtension" | "fibChannel" | "fibTime"
+  | "brush" | "priceLabel" | "textNote" | "callout" | "flag"
+  | "longPosition" | "shortPosition" | "rangeMeasure" | "dateMarker" | "crosshairMeasure";
+type ToolDefinition = { id: DrawingTool; label: string; icon: Icon; overlay?: string };
+type ToolGroup = { id: string; label: string; icon: Icon; tools: ToolDefinition[] };
 
 const symbols: Record<SymbolKey, { name: string; seed: number; start: number; drift: number }> = {
   NVDA: { name: "NVIDIA Corporation", seed: 17, start: 118, drift: .0031 },
@@ -15,18 +29,52 @@ const symbols: Record<SymbolKey, { name: string; seed: number; start: number; dr
   CRCL: { name: "Circle Internet Group", seed: 73, start: 63, drift: .0042 },
 };
 
-const tools: Array<{ id: DrawingTool; glyph: string; label: string }> = [
-  { id: "cursor", glyph: "↖", label: "Cursor" },
-  { id: "horizontal", glyph: "—", label: "Horizontal line" },
-  { id: "vertical", glyph: "↕", label: "Vertical line" },
-  { id: "trend", glyph: "╱", label: "Trend line" },
-  { id: "ray", glyph: "↗", label: "Ray" },
-  { id: "channel", glyph: "≋", label: "Parallel channel" },
-  { id: "fib", glyph: "≡", label: "Fibonacci retracement" },
-  { id: "rectangle", glyph: "▭", label: "Price channel" },
-  { id: "label", glyph: "⊣", label: "Price label" },
-  { id: "note", glyph: "□", label: "Note" },
+const cursorTool: ToolDefinition = { id: "cursor", label: "Cursor", icon: Cursor };
+const toolGroups: ToolGroup[] = [
+  { id: "trend", label: "Trend tools", icon: TrendUp, tools: [
+    { id: "trend", label: "Trend line", icon: TrendUp, overlay: "straightLine" },
+    { id: "ray", label: "Ray", icon: ArrowUpRight, overlay: "rayLine" },
+    { id: "segment", label: "Line segment", icon: LineSegment, overlay: "segment" },
+    { id: "extended", label: "Extended line", icon: ArrowsOutLineHorizontal, overlay: "straightLine" },
+    { id: "arrow", label: "Arrow", icon: Path, overlay: "rayLine" },
+  ] },
+  { id: "levels", label: "Level tools", icon: Minus, tools: [
+    { id: "horizontal", label: "Horizontal line", icon: Minus, overlay: "horizontalStraightLine" },
+    { id: "horizontalRay", label: "Horizontal ray", icon: ArrowUpRight, overlay: "horizontalRayLine" },
+    { id: "horizontalSegment", label: "Horizontal segment", icon: LineSegment, overlay: "horizontalSegment" },
+    { id: "vertical", label: "Vertical line", icon: ArrowsVertical, overlay: "verticalStraightLine" },
+    { id: "verticalRay", label: "Vertical ray", icon: ArrowsVertical, overlay: "verticalRayLine" },
+    { id: "verticalSegment", label: "Vertical segment", icon: Rows, overlay: "verticalSegment" },
+    { id: "priceLine", label: "Price line", icon: CrosshairIcon, overlay: "priceLine" },
+  ] },
+  { id: "channels", label: "Channel tools", icon: Rows, tools: [
+    { id: "parallelChannel", label: "Parallel channel", icon: Rows, overlay: "parallelStraightLine" },
+    { id: "priceChannel", label: "Price channel", icon: Rectangle, overlay: "priceChannelLine" },
+    { id: "regressionChannel", label: "Regression channel", icon: ChartLine, overlay: "parallelStraightLine" },
+    { id: "pitchfork", label: "Pitchfork", icon: Strategy, overlay: "priceChannelLine" },
+  ] },
+  { id: "fibonacci", label: "Fibonacci tools", icon: FunctionIcon, tools: [
+    { id: "fibRetracement", label: "Fib retracement", icon: FunctionIcon, overlay: "fibonacciLine" },
+    { id: "fibExtension", label: "Fib extension", icon: ChartLineUp, overlay: "fibonacciLine" },
+    { id: "fibChannel", label: "Fib channel", icon: WaveSine, overlay: "fibonacciLine" },
+    { id: "fibTime", label: "Fib time zones", icon: CalendarDots, overlay: "verticalSegment" },
+  ] },
+  { id: "annotation", label: "Annotation tools", icon: PencilSimple, tools: [
+    { id: "brush", label: "Brush", icon: PencilSimple, overlay: "brush" },
+    { id: "priceLabel", label: "Price label", icon: Tag, overlay: "simpleTag" },
+    { id: "textNote", label: "Text note", icon: TextT, overlay: "simpleAnnotation" },
+    { id: "callout", label: "Callout", icon: NotePencil, overlay: "simpleAnnotation" },
+    { id: "flag", label: "Flag marker", icon: Flag, overlay: "simpleTag" },
+  ] },
+  { id: "measure", label: "Position and measure", icon: Ruler, tools: [
+    { id: "longPosition", label: "Long position", icon: ChartLineUp, overlay: "priceChannelLine" },
+    { id: "shortPosition", label: "Short position", icon: ChartLineDown, overlay: "priceChannelLine" },
+    { id: "rangeMeasure", label: "Price range", icon: Ruler, overlay: "priceChannelLine" },
+    { id: "dateMarker", label: "Date marker", icon: CalendarDots, overlay: "verticalStraightLine" },
+    { id: "crosshairMeasure", label: "Crosshair measure", icon: Selection, overlay: "parallelStraightLine" },
+  ] },
 ];
+const drawingTools = [cursorTool, ...toolGroups.flatMap((group) => group.tools)];
 
 function seeded(seed: number) {
   let value = seed >>> 0;
@@ -139,6 +187,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const [symbol, setSymbol] = useState<SymbolKey>("NVDA");
   const [range, setRange] = useState<RangeKey>("6M");
   const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
+  const [openToolGroup, setOpenToolGroup] = useState<string | null>(null);
   const [logScale, setLogScale] = useState(false);
   const [show20, setShow20] = useState(true);
   const [show50, setShow50] = useState(true);
@@ -149,8 +198,6 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const allBars = useMemo(() => makeBars(symbols[symbol]), [symbol]);
   const bars = useMemo(() => allBars.slice(-rangeSize(range)), [allBars, range]);
   const latest = bars.at(-1)!;
-  const previous = bars.at(-2)!;
-  const change = ((latest.close / previous.close) - 1) * 100;
   const [hovered, setHovered] = useState<Bar>(latest);
 
   useEffect(() => setHovered(latest), [latest]);
@@ -202,8 +249,17 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chart.setSymbol({ ticker: symbol, pricePrecision: 2, volumePrecision: 0 });
       chart.setPeriod({ span: 1, type: "day" });
       chart.setDataLoader({ getBars: ({ callback }) => callback(bars) });
-      chart.setBarSpace(range === "1M" ? 18 : range === "3M" ? 10 : range === "6M" ? 6 : 4);
-      chart.setOffsetRightDistance(38);
+      const applyDefaultViewport = () => {
+        const chartWidth = containerRef.current?.clientWidth ?? 1200;
+        const rightSpace = Math.round(chartWidth * .2);
+        const usableWidth = Math.max(260, chartWidth - rightSpace - 58);
+        const fittedBarSpace = Math.max(2.5, Math.min(48, usableWidth / Math.max(bars.length, 1)));
+        chart.setBarSpace(Number(fittedBarSpace.toFixed(2)));
+        chart.setOffsetRightDistance(rightSpace);
+      };
+      applyDefaultViewport();
+      const resizeObserver = new ResizeObserver(applyDefaultViewport);
+      resizeObserver.observe(containerRef.current);
       chart.createIndicator({ name: "VOL", paneId: "volume_pane", styles: { bars: [{ upColor: palette.volumeUp, downColor: palette.volumeDown, noChangeColor: palette.neutral }] } });
       chart.setPaneOptions({ id: "volume_pane", height: 92, minHeight: 58, dragEnabled: true, order: 20 });
       const averages = [[20, "#875fd2", show20], [50, "#4169ca", show50], [200, "#ba7641", show200]] as const;
@@ -222,6 +278,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chartRef.current = chart;
       setChartReady(true);
       disposeChart = () => {
+        resizeObserver.disconnect();
         chart.unsubscribeAction("onCrosshairChange", crosshairHandler);
         dispose(containerRef.current!);
       };
@@ -240,11 +297,8 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
 
   const selectTool = (tool: DrawingTool) => {
     setActiveTool(tool);
-    const overlayNames: Partial<Record<DrawingTool, string>> = {
-      horizontal: "horizontalStraightLine", vertical: "verticalStraightLine", trend: "straightLine", ray: "rayLine",
-      channel: "parallelStraightLine", fib: "fibonacciLine", rectangle: "priceChannelLine", label: "simpleTag", note: "simpleAnnotation",
-    };
-    const overlay = overlayNames[tool];
+    setOpenToolGroup(null);
+    const overlay = drawingTools.find((item) => item.id === tool)?.overlay;
     if (overlay) chartRef.current?.createOverlay({ name: overlay, groupId: "brontide-drawings" });
   };
 
@@ -263,8 +317,17 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
 
       <div className="chart-stage-area">
         <aside className="drawing-rail" aria-label="Drawing tools">
-          {tools.map((tool, index) => <button key={tool.id} className={`${activeTool === tool.id ? "active" : ""} ${[1, 7, 9].includes(index) ? "separated" : ""}`} title={tool.label} aria-label={tool.label} onClick={() => selectTool(tool.id)}>{tool.glyph}</button>)}
-          <button className="drawing-clear" title="Clear drawings" onClick={clearDrawings}>⌫</button>
+          <button className={activeTool === "cursor" ? "active" : ""} title="Cursor" aria-label="Cursor" onClick={() => selectTool("cursor")}><Cursor size={17}/></button>
+          {toolGroups.map((group) => {
+            const GroupIcon = group.icon;
+            const groupActive = group.tools.some((tool) => tool.id === activeTool);
+            const isOpen = openToolGroup === group.id;
+            return <div className="drawing-tool-group" key={group.id}>
+              <button className={groupActive ? "active" : ""} title={group.label} aria-label={group.label} aria-expanded={isOpen} onClick={() => setOpenToolGroup(isOpen ? null : group.id)}><GroupIcon size={17}/><CaretRight className="drawing-group-caret" size={8}/></button>
+              {isOpen && <div className="drawing-tool-menu" role="menu" aria-label={group.label}><div className="drawing-tool-menu-title"><span>{group.label}</span><small>{group.tools.length} tools</small></div>{group.tools.map((tool) => { const ToolIcon = tool.icon; return <button role="menuitem" key={tool.id} className={activeTool === tool.id ? "active" : ""} onClick={() => selectTool(tool.id)}><ToolIcon size={15}/><span>{tool.label}</span></button>; })}</div>}
+            </div>;
+          })}
+          <button className="drawing-clear" aria-label="Clear drawings" title="Clear drawings" onClick={clearDrawings}><Trash size={16}/></button>
         </aside>
 
         <div className="chart-canvas-shell">

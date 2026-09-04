@@ -658,11 +658,19 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .chart-viewport-controls { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--chart-line-strong); }
 .chart-viewport-controls button { min-width: 29px; padding-inline: 8px; }
 .chart-stage-area { min-height: 0; display: grid; grid-template-columns: 43px minmax(0, 1fr); }
-.drawing-rail { z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 5px; background: var(--chart-panel); border-right: 1px solid var(--chart-line); }
-.drawing-rail button { width: 31px; height: 30px; display: grid; place-items: center; padding: 0; color: var(--chart-text-soft); background: transparent; border: 0; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.drawing-rail { z-index: 15; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 5px 6px; overflow: visible; background: var(--chart-panel); border-right: 1px solid var(--chart-line); }
+.drawing-rail button { width: 31px; height: 31px; position: relative; display: grid; place-items: center; padding: 0; color: var(--chart-text-soft); background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
 .drawing-rail button:hover { color: var(--chart-text); background: var(--chart-control-hover); }
 .drawing-rail button.active { color: #f4fff8; background: var(--chart-accent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
-.drawing-rail button.separated { margin-top: 4px; border-top: 1px solid var(--chart-line); border-radius: 0 0 4px 4px; }
+.drawing-tool-group { position: relative; }
+.drawing-tool-group + .drawing-tool-group { padding-top: 3px; border-top: 1px solid var(--chart-line); }
+.drawing-group-caret { position: absolute; right: 1px; bottom: 2px; opacity: .58; }
+.drawing-tool-menu { width: 234px; max-height: min(360px, calc(100dvh - 145px)); position: absolute; z-index: 40; top: -4px; left: 39px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 7px; overflow-y: auto; color: var(--chart-text); background: var(--chart-panel); border: 1px solid var(--chart-line-strong); border-radius: 8px; box-shadow: var(--chart-popover-shadow); }
+.drawing-tool-menu-title { grid-column: 1 / -1; min-height: 29px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 5px 5px; border-bottom: 1px solid var(--chart-line); }
+.drawing-tool-menu-title span { font-size: 9px; font-weight: 760; }
+.drawing-tool-menu-title small { color: var(--chart-text-faint); font-size: 7px; }
+.drawing-rail .drawing-tool-menu button { width: 100%; height: 31px; display: flex; justify-content: flex-start; gap: 7px; padding: 0 7px; border-radius: 4px; font-size: 8px; text-align: left; white-space: nowrap; }
+.drawing-rail .drawing-tool-menu button.active { color: var(--chart-accent); background: color-mix(in srgb, var(--chart-accent) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chart-accent) 28%, transparent); }
 .drawing-rail .drawing-clear { margin-top: auto; color: var(--chart-text-soft); }
 .chart-canvas-shell { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: var(--chart-bg); }
 .market-chart { position: absolute; inset: 0; }
@@ -810,8 +818,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .chart-viewport-controls { margin-left: 1px; padding-left: 6px; }
   .chart-viewport-controls button { min-width: 27px; padding-inline: 7px; }
   .chart-stage-area { grid-template-columns: 34px minmax(0, 1fr); }
-  .drawing-rail { padding-inline: 2px; overflow-y: auto; scrollbar-width: none; }
+  .drawing-rail { padding-inline: 2px; overflow: visible; }
   .drawing-rail button { width: 28px; height: 28px; flex: 0 0 auto; }
+  .drawing-tool-menu { width: min(236px, calc(100vw - 48px)); left: 32px; grid-template-columns: 1fr; }
   .chart-ohlc { right: 8px; gap: 5px; }
   .chart-ohlc span:first-child, .chart-ohlc span:last-child, .chart-legend { display: none; }
   .chart-footer { display: none; }
