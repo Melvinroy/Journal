@@ -1,45 +1,58 @@
 # Brontide chart design QA
 
-- Source visual truth: `/workspace/scratch/84eca3f58433/upload/IMG_D928B69B-1C3A-4415-9563-9E281EEE751C.jpeg` plus the authenticated BananaPatterns full-screen chart captured in the cloud browser.
-- Implementation: deployed GitHub Pages build at `https://melvinroy.github.io/Journal/?demo=1`.
-- Viewport: 1348 × 894 CSS pixels, device scale factor 1.
-- Source pixels: authenticated reference 1348 × 894; supplied photo 1536 × 1152 including browser and monitor framing.
-- Implementation pixels: 1348 × 894.
-- State: dark theme, NVDA sample data, 6M daily range, Bases enabled, Cursor selected.
+- Source visual truth: `/workspace/scratch/84eca3f58433/upload/IMG_D928B69B-1C3A-4415-9563-9E281EEE751C.jpeg`.
+- Implementation screenshot: browser-rendered production capture from `https://melvinroy.github.io/Journal/?demo=1` in this QA run.
+- Viewport: 1,363 × 936 CSS pixels at device scale factor 1.
+- Source pixels: 1,536 × 1,152, including photographed monitor and browser chrome.
+- Implementation pixels: 1,363 × 936.
+- Normalization: compared the chart application region at its natural desktop scale; ignored the source photograph's monitor bezel and browser chrome.
+- State: NVDA sample history, 6M daily range, light theme, linear scale, 20/50/200 moving averages enabled.
 
 ## Full-view comparison evidence
 
-The implementation preserves the reference's full-screen silhouette: two compact command rows, a narrow left drawing rail, a dominant dark chart canvas, bottom legend/filter row, green/red candles, low-contrast dotted grid, volume at the foot of the chart, dashed moving averages, and outlined base regions with a green pivot tag.
+The final production view preserves the reference's compact two-row command structure, narrow drawing rail, dominant white plot, low-contrast grid, right price scale, green/red candles, moving-average overlays, and separate volume pane. The implementation intentionally omits the reference's base rectangles because the user requested removal. Controls stay outside the plotting and volume regions.
 
 ## Focused-region comparison evidence
 
-- Header: source and implementation use the same dense three-part hierarchy: sequence controls, stock identity, then analysis/save/detail actions.
-- Chart controls: timeframe, interval, indicators, bar style, linear/log scale and sharing remain above the canvas.
-- Plot: candle/volume contrast, moving-average colors, price labels, base rectangles and pivot treatment were compared at full browser resolution.
-- Tools: the left rail retains separated drawing families and a persistent cursor state.
+- Header and toolbar: stock identity remains prominent, while secondary actions use compact controls with consistent height and spacing.
+- Plot header: OHLC and moving-average values now occupy two clean lines; native indicator tooltips are disabled so they cannot collide.
+- Volume pane: no floating zoom, navigation, or base controls cover the bars or axis.
+- Theme treatment: light and dark modes use matched semantic tokens for panels, borders, text, axes, grids, crosshairs, candles, volume, and popovers.
+- No separate image asset fidelity issue applies; the reference and implementation are data-chart interfaces rather than image-led screens.
 
 ## Findings and comparison history
 
-1. Initial P1: the interactive chart canvas did not initialize inside the supervised preview, leaving the plot blank while the surrounding interface rendered.
-   - Fix: retained the immediate vector fallback and verified that the deployed KLineChart canvases replace it after initialization.
-2. Deployment P1: hiding the desktop sidebar left the chart workspace in a zero-width grid column.
-   - Fix: changed the chart-mode shell to a single full-width grid column. The deployed chart shell now measures 1,320px inside a 1,363px viewport.
-3. No remaining desktop P0/P1/P2 visual mismatch was visible at the comparison viewport. Typography, spacing rhythm, dark tokens, vector sharpness and product-specific copy were checked.
+1. P1 — floating viewport controls overlapped the volume pane.
+   - Fix: moved zoom out, zoom in, backward, and latest controls into the secondary toolbar.
+   - Post-fix evidence: the entire volume pane is unobstructed in the final production capture.
+2. P1 — base annotations competed with candles and created visual noise.
+   - Fix: removed the base toggle, rectangles, pivot label, and footer selector.
+   - Post-fix evidence: the chart now presents only price, moving averages, crosshair state, and volume.
+3. P2 — duplicate chart chrome and nonfunctional save/share actions reduced trust.
+   - Fix: simplified the header to sample-data status, Analyze setup, and theme controls; renamed the supported price-channel tool accurately.
+4. P2 — native MA tooltip content collided with the custom OHLC/legend layer.
+   - Fix: consolidated moving averages into one indicator and disabled native indicator tooltips globally.
+   - Post-fix evidence: the final capture has one OHLC row, one MA legend row, and visible dashed average lines with no collision.
+5. P2 — previous theme styling was hard-coded and dark-only.
+   - Fix: added semantic light/dark tokens, a labeled toggle, and persisted preference in local storage. Both modes were browser-tested.
 
-## Primary interactions checked
+## Primary interactions tested
 
-- Stock selector, range buttons, indicator controls, Bases toggle, linear/log controls, native drawing overlays, clear drawings, zoom/scroll controls and back navigation are implemented.
-- The live 1M range, logarithmic scale, 200 SMA toggle and horizontal-line drawing flow were executed successfully.
-- Four full-width KLineChart canvases rendered for candles and volume; the TradingView attribution link is absent.
-- Production compilation, TypeScript validation and GitHub Pages deployment passed.
+- Open Charts from the main workspace.
+- Switch light to dark and reload; the saved preference persists.
+- Zoom in and move to latest from the toolbar.
+- Stock selector, range controls, indicator menu, linear/log controls, drawing tools, and clear-drawings control remain exposed with accessible names.
+- Production build and GitHub Pages workflows 51–54 completed successfully.
 
-## Console errors checked
+## Accessibility and responsive checks
 
-No application error was surfaced. The only recorded browser message came from the cloud-browser extension metadata bridge, outside the application.
+- Visible keyboard focus rings were added to buttons, summaries, and selects.
+- Toolbar buttons have accessible labels; the theme toggle communicates the destination and pressed state.
+- At the mobile breakpoint, the header uses three bounded columns, Analyze setup is removed from the constrained row, toolbars scroll rather than overlap, viewport controls remain in the toolbar, the chart receives a dedicated bottom-navigation row, and the footer is removed.
+- The cloud browser has a fixed desktop viewport, so the mobile breakpoint was code-reviewed but not captured on a physical iPhone-sized browser. This is a P3 device-verification gap, not a known layout defect.
 
-## Implementation checklist
+## Remaining findings
 
-- Capture and inspect the live screen on an iPhone-sized viewport.
-- Replace sample data with the selected market-data feed in the next phase.
+No actionable P0, P1, or P2 finding remains in the browser-rendered desktop production state. The remaining follow-up is physical-device verification at common phone widths.
 
 final result: passed
