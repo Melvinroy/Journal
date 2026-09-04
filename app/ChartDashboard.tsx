@@ -1,22 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  CandlestickSeries,
-  ColorType,
-  createChart,
-  CrosshairMode,
-  HistogramSeries,
-  LineSeries,
-  LineStyle,
-  PriceScaleMode,
-  type CandlestickData,
-  type IChartApi,
-  type ISeriesApi,
-  type Time,
-} from "lightweight-charts";
+import type { Chart, Crosshair, KLineData } from "klinecharts";
 
-type Bar = CandlestickData<Time> & { volume: number };
+type Bar = KLineData & { volume: number };
 type RangeKey = "1M" | "3M" | "6M" | "1Y" | "Max";
 type SymbolKey = "NVDA" | "MRNA" | "CRCL";
 type DrawingTool = "cursor" | "horizontal" | "vertical" | "trend" | "ray" | "channel" | "fib" | "rectangle" | "circle" | "label" | "note";
@@ -69,7 +56,7 @@ function makeBars(config: typeof symbols[SymbolKey]): Bar[] {
       const eventBoost = shock ? 4.4 : 1;
       const volume = Math.round((28_000_000 + random() * 44_000_000) * eventBoost);
       rows.push({
-        time: date.toISOString().slice(0, 10),
+        timestamp: date.getTime(),
         open: Number(open.toFixed(2)),
         high: Number(high.toFixed(2)),
         low: Number(low.toFixed(2)),
@@ -87,7 +74,7 @@ function movingAverage(rows: Bar[], period: number) {
   return rows.flatMap((bar, index) => {
     if (index < period - 1) return [];
     const value = rows.slice(index - period + 1, index + 1).reduce((sum, item) => sum + item.close, 0) / period;
-    return [{ time: bar.time, value }];
+    return [{ timestamp: bar.timestamp, value }];
   });
 }
 
@@ -97,6 +84,10 @@ function rangeSize(range: RangeKey) {
 
 function formatVolume(value: number) {
   return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : `${Math.round(value / 1000)}K`;
+}
+
+function formatDate(timestamp: number) {
+  return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 function SampleChartFallback({ rows }: { rows: Bar[] }) {
@@ -128,7 +119,7 @@ function SampleChartFallback({ rows }: { rows: Bar[] }) {
       const bodyTop = y(Math.max(bar.open, bar.close));
       const bodyHeight = Math.max(1.7, Math.abs(y(bar.open) - y(bar.close)));
       const volumeHeight = (bar.volume / maxVolume) * 78;
-      return <g key={String(bar.time)} className={up ? "fallback-up" : "fallback-down"}>
+      return <g key={bar.timestamp} className={up ? "fallback-up" : "fallback-down"}>
         <line x1={posX} x2={posX} y1={y(bar.high)} y2={y(bar.low)} className="fallback-wick"/>
         <rect x={posX - candleWidth / 2} y={bodyTop} width={candleWidth} height={bodyHeight} rx=".4" className="fallback-body"/>
         <rect x={posX - candleWidth / 2} y={volumeBottom - volumeHeight} width={candleWidth} height={volumeHeight} className="fallback-volume"/>
@@ -138,15 +129,13 @@ function SampleChartFallback({ rows }: { rows: Bar[] }) {
       const price = maxPrice - (tick / 4) * (maxPrice - minPrice);
       return <text key={tick} x="1127" y={y(price) + 3} className="fallback-axis">{price.toFixed(0)}</text>;
     })}
-    {rows.filter((_, index) => index % Math.max(1, Math.floor(rows.length / 5)) === 0).map((bar, index) => <text key={String(bar.time)} x={x(index * Math.max(1, Math.floor(rows.length / 5)))} y="696" className="fallback-date">{String(bar.time).slice(5)}</text>)}
+    {rows.filter((_, index) => index % Math.max(1, Math.floor(rows.length / 5)) === 0).map((bar, index) => <text key={bar.timestamp} x={x(index * Math.max(1, Math.floor(rows.length / 5)))} y="696" className="fallback-date">{formatDate(bar.timestamp).slice(5)}</text>)}
   </svg>;
 }
 
 export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candleRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const priceLinesRef = useRef<Array<ReturnType<ISeriesApi<"Candlestick">["createPriceLine"]>>>([]);
+  const chartRef = useRef<Chart | null>(null);
   const [symbol, setSymbol] = useState<SymbolKey>("NVDA");
   const [range, setRange] = useState<RangeKey>("6M");
   const [bases, setBases] = useState(true);
@@ -167,68 +156,73 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
 
   useEffect(() => {
     if (!containerRef.current) return;
+    let cancelled = false;
+    let disposeChart: (() => void) | undefined;
 
-    const chart = createChart(containerRef.current, {
-      autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: "#0d1117" }, textColor: "#7f8996", fontFamily: "Inter, ui-sans-serif, system-ui", fontSize: 10 },
-      grid: { vertLines: { color: "#202630", style: LineStyle.Dotted }, horzLines: { color: "#202630", style: LineStyle.Dotted } },
-      rightPriceScale: { borderColor: "#222a35", scaleMargins: { top: .08, bottom: .2 }, mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
-      timeScale: { borderColor: "#222a35", timeVisible: false, rightOffset: 4, barSpacing: range === "1M" ? 18 : range === "3M" ? 10 : range === "6M" ? 6 : 4, minBarSpacing: 2.5 },
-      crosshair: { mode: CrosshairMode.Normal, vertLine: { color: "#7b8796", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#26303b" }, horzLine: { color: "#7b8796", width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#148c50" } },
-      handleScroll: true,
-      handleScale: true,
+    void import("klinecharts").then(({ dispose, init }) => {
+      if (cancelled || !containerRef.current) return;
+      const chart = init(containerRef.current, {
+        timezone: "Etc/UTC",
+        layout: { barSpaceLimit: { min: 2.5, max: 28 }, yAxis: { position: "right", inside: false, gap: { top: .08, bottom: .04 } } },
+        styles: {
+          grid: { horizontal: { color: "#202630", style: "dashed", dashedValue: [2, 4] }, vertical: { color: "#202630", style: "dashed", dashedValue: [2, 4] } },
+          candle: {
+            type: "candle_solid",
+            bar: { compareRule: "current_open", upColor: "#38c985", downColor: "#df4b53", noChangeColor: "#8b95a1", upBorderColor: "#38c985", downBorderColor: "#df4b53", noChangeBorderColor: "#8b95a1", upWickColor: "#38c985", downWickColor: "#df4b53", noChangeWickColor: "#8b95a1" },
+            priceMark: { high: { show: false }, low: { show: false }, last: { line: { style: "dashed", dashedValue: [4, 4] } } },
+            tooltip: { showRule: "none" },
+          },
+          xAxis: { axisLine: { color: "#222a35" }, tickLine: { color: "#222a35" }, tickText: { color: "#697582", family: "Inter, ui-sans-serif, system-ui", size: 9 } },
+          yAxis: { axisLine: { color: "#222a35" }, tickLine: { color: "#222a35" }, tickText: { color: "#697582", family: "Inter, ui-sans-serif, system-ui", size: 9 } },
+          crosshair: { horizontal: { line: { color: "#7b8796", style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: "#148c50" } }, vertical: { line: { color: "#7b8796", style: "dashed", dashedValue: [4, 4] }, text: { backgroundColor: "#26303b" } } },
+          separator: { color: "#222a35", activeBackgroundColor: "#303946" },
+        },
+      });
+      if (!chart) return;
+      chart.overrideYAxis({ paneId: "candle_pane", name: logScale ? "logarithm" : "normal" });
+      chart.setSymbol({ ticker: symbol, pricePrecision: 2, volumePrecision: 0 });
+      chart.setPeriod({ span: 1, type: "day" });
+      chart.setDataLoader({ getBars: ({ callback }) => callback(bars) });
+      chart.setBarSpace(range === "1M" ? 18 : range === "3M" ? 10 : range === "6M" ? 6 : 4);
+      chart.setOffsetRightDistance(38);
+      chart.createIndicator({ name: "VOL", paneId: "volume_pane", styles: { bars: [{ upColor: "#197b55aa", downColor: "#8f3038aa", noChangeColor: "#68727e88" }] } });
+      chart.setPaneOptions({ id: "volume_pane", height: 92, minHeight: 58, dragEnabled: true, order: 20 });
+      const averages = [[20, "#875fd2", show20], [50, "#4169ca", show50], [200, "#ba7641", show200]] as const;
+      averages.forEach(([period, color, visible]) => {
+        if (visible) chart.createIndicator({ name: "MA", paneId: "candle_pane", calcParams: [period], styles: { lines: [{ color, size: 1, style: "dashed", dashedValue: [5, 4] }] } });
+      });
+      const crosshairHandler = (data?: unknown) => {
+        const point = data as Crosshair | undefined;
+        if (point?.kLineData) setHovered(point.kLineData as Bar);
+      };
+      chart.subscribeAction("onCrosshairChange", crosshairHandler);
+      chartRef.current = chart;
+      setChartReady(true);
+      disposeChart = () => {
+        chart.unsubscribeAction("onCrosshairChange", crosshairHandler);
+        dispose(containerRef.current!);
+      };
     });
-
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: "#38c985", downColor: "#df4b53", borderVisible: false, wickUpColor: "#38c985", wickDownColor: "#df4b53", priceLineVisible: true, priceLineColor: "#25a966", priceLineStyle: LineStyle.Dashed,
-    });
-    candles.setData(bars);
-
-    const volume = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "volume", lastValueVisible: false, priceLineVisible: false });
-    volume.priceScale().applyOptions({ scaleMargins: { top: .83, bottom: 0 } });
-    volume.setData(bars.map((bar) => ({ time: bar.time, value: bar.volume, color: bar.close >= bar.open ? "#197b55aa" : "#8f3038aa" })));
-
-    const addAverage = (period: number, color: string, visible: boolean) => {
-      const line = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false, visible });
-      line.setData(movingAverage(bars, period));
-    };
-    addAverage(20, "#875fd2", show20);
-    addAverage(50, "#4169ca", show50);
-    addAverage(200, "#ba7641", show200);
-
-    chart.subscribeCrosshairMove((param) => {
-      const point = param.seriesData.get(candles) as CandlestickData<Time> | undefined;
-      if (!point) return;
-      const source = bars.find((bar) => bar.time === point.time);
-      if (source) setHovered(source);
-    });
-
-    chart.subscribeClick((param) => {
-      if (activeTool !== "horizontal" || !param.point) return;
-      const price = candles.coordinateToPrice(param.point.y);
-      if (price == null) return;
-      const line = candles.createPriceLine({ price, color: "#d7a84a", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: "level" });
-      priceLinesRef.current.push(line);
-      setActiveTool("cursor");
-    });
-
-    chart.timeScale().fitContent();
-    chartRef.current = chart;
-    candleRef.current = candles;
-    setChartReady(true);
     return () => {
-      chart.remove();
+      cancelled = true;
+      disposeChart?.();
       chartRef.current = null;
-      candleRef.current = null;
-      priceLinesRef.current = [];
       setChartReady(false);
     };
-  }, [bars, range, show20, show50, show200, logScale, activeTool]);
+  }, [bars, range, show20, show50, show200, symbol, logScale]);
 
   const clearDrawings = () => {
-    const series = candleRef.current;
-    if (series) priceLinesRef.current.forEach((line) => series.removePriceLine(line));
-    priceLinesRef.current = [];
+    chartRef.current?.removeOverlay();
+  };
+
+  const selectTool = (tool: DrawingTool) => {
+    setActiveTool(tool);
+    const overlayNames: Partial<Record<DrawingTool, string>> = {
+      horizontal: "horizontalStraightLine", vertical: "verticalStraightLine", trend: "straightLine", ray: "rayLine",
+      channel: "parallelStraightLine", fib: "fibonacciLine", rectangle: "priceChannelLine", label: "simpleTag", note: "simpleAnnotation",
+    };
+    const overlay = overlayNames[tool];
+    if (overlay) chartRef.current?.createOverlay({ name: overlay, groupId: "brontide-drawings" });
   };
 
   return (
@@ -246,22 +240,22 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
 
       <div className="chart-stage-area">
         <aside className="drawing-rail" aria-label="Drawing tools">
-          {tools.map((tool, index) => <button key={tool.id} className={`${activeTool === tool.id ? "active" : ""} ${[1, 7, 9].includes(index) ? "separated" : ""}`} title={tool.label} aria-label={tool.label} onClick={() => setActiveTool(tool.id)}>{tool.glyph}</button>)}
+          {tools.map((tool, index) => <button key={tool.id} className={`${activeTool === tool.id ? "active" : ""} ${[1, 7, 9].includes(index) ? "separated" : ""}`} title={tool.label} aria-label={tool.label} onClick={() => selectTool(tool.id)}>{tool.glyph}</button>)}
           <button className="drawing-clear" title="Clear drawings" onClick={clearDrawings}>⌫</button>
         </aside>
 
         <div className="chart-canvas-shell">
-          <div className="chart-ohlc"><span>{String(hovered.time)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>
+          <div className="chart-ohlc"><span>{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>
           <div className="chart-legend"><span className="ma20">MA20: {movingAverage(bars, 20).at(-1)?.value.toFixed(2) ?? "—"}</span><span className="ma50">MA50: {movingAverage(bars, 50).at(-1)?.value.toFixed(2) ?? "—"}</span><span className="ma200">MA200: {movingAverage(bars, 200).at(-1)?.value.toFixed(2) ?? "—"}</span></div>
           <div className="bases-toggle"><button className={bases ? "on" : ""} onClick={() => setBases((value) => !value)}>Bases <i/></button></div>
           {!chartReady && <SampleChartFallback rows={bars}/>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
           {bases && <div className="base-overlay" aria-hidden="true"><div className="base-box base-one"><span>4.1 wks</span></div><div className="base-box base-two"><span>2.8 wks</span></div><div className="base-box base-three"><span>3.4 wks</span><b>pivot {Math.max(...bars.slice(-45).map((bar) => bar.high)).toFixed(2)}</b></div></div>}
           {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
-          <div className="chart-zoom"><button onClick={() => chartRef.current?.timeScale().applyOptions({barSpacing: 4})}>−</button><button onClick={() => chartRef.current?.timeScale().applyOptions({barSpacing: 10})}>+</button><button onClick={() => chartRef.current?.timeScale().scrollToPosition(8, true)}>←</button><button onClick={() => chartRef.current?.timeScale().scrollToRealTime()}>→</button><button onClick={() => chartRef.current?.timeScale().fitContent()}>⇥</button></div>
+          <div className="chart-zoom"><button onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)}>−</button><button onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)}>+</button><button onClick={() => chartRef.current?.scrollByDistance(-120, 160)}>←</button><button onClick={() => chartRef.current?.scrollToRealTime(180)}>→</button><button onClick={() => chartRef.current?.scrollToDataIndex(Math.max(0, bars.length - Math.min(bars.length, rangeSize(range))), 180)}>⇥</button></div>
         </div>
       </div>
 
-      <footer className="chart-footer"><span>⚑ contraction</span><span>× failed breakout</span><strong>Sample historical data · chart interactions are functional</strong><button>All detected bases (2026)⌄</button></footer>
+      <footer className="chart-footer"><span>⚑ contraction</span><span>× failed breakout</span><strong>Sample historical data · KLineChart open-source engine</strong><button>All detected bases (2026)⌄</button></footer>
     </section>
   );
 }
