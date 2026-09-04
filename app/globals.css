@@ -639,6 +639,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .chart-symbol-select b { color: var(--chart-text-soft); font-size: 8px; }
 .chart-symbol-select select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .chart-header-actions { justify-self: end; }
+.auto-trend-toggle { display: inline-flex; align-items: center; gap: 6px; }
+.chart-header-actions .auto-trend-toggle.active { color: #effff6; background: var(--chart-accent); border-color: var(--chart-accent); }
 .chart-header-actions .chart-accent { color: #f2fff8; background: var(--chart-accent); border-color: var(--chart-accent); }
 .chart-header-actions .chart-accent:hover { background: var(--chart-accent-hover); }
 .chart-data-state { display: inline-flex; align-items: center; gap: 6px; color: var(--chart-text-faint); font-size: 8px; white-space: nowrap; }
@@ -695,6 +697,11 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .chart-ohlc .up { color: #36c780; }
 .chart-ohlc .down { color: #e0555c; }
 .chart-legend { position: absolute; z-index: 4; top: 25px; left: 12px; display: flex; gap: 10px; pointer-events: none; font-size: 7px; }
+.chart-legend .auto-trend-legend { font-weight: 720; }
+.chart-legend .auto-trend-legend.resistance { color: #d04b55; }
+.chart-legend .auto-trend-legend.support { color: #0b8f54; }
+.theme-dark .chart-legend .auto-trend-legend.resistance { color: #ef6a72; }
+.theme-dark .chart-legend .auto-trend-legend.support { color: #38c985; }
 .chart-legend .ma20 { color: #9f7fe5; }
 .chart-legend .ma50 { color: #668ae0; }
 .chart-legend .ma200 { color: #d18b55; }
@@ -808,6 +815,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .chart-symbol-select span { max-width: 34vw; font-size: 12px; }
   .chart-symbol-select b { display: none; }
   .chart-header-actions { justify-self: end; }
+  .chart-header-actions .auto-trend-toggle { width: 31px; padding: 0; justify-content: center; }
+  .chart-header-actions .auto-trend-toggle span { display: none; }
   .chart-header-actions .chart-accent { display: none; }
   .chart-header-actions .theme-toggle { height: 30px; min-width: 44px; padding-inline: 7px; font-size: 8px; }
   .chart-subbar { align-items: stretch; flex-direction: column; justify-content: center; gap: 4px; padding: 5px 7px; }

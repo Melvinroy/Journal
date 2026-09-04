@@ -22,6 +22,15 @@ type DrawingTool =
   | "longPosition" | "shortPosition" | "rangeMeasure" | "dateMarker" | "crosshairMeasure";
 type ToolDefinition = { id: DrawingTool; label: string; icon: Icon; overlay?: string };
 type ToolGroup = { id: string; label: string; icon: Icon; tools: ToolDefinition[] };
+type AutoTrendKind = "support" | "resistance";
+type AutoTrend = {
+  kind: AutoTrendKind;
+  start: Bar;
+  end: Bar;
+  touches: number;
+  confidence: number;
+  direction: "rising" | "falling" | "flat";
+};
 
 const symbols: Record<SymbolKey, { name: string; seed: number; start: number; drift: number }> = {
   NVDA: { name: "NVIDIA Corporation", seed: 17, start: 118, drift: .0031 },
@@ -126,6 +135,102 @@ function movingAverage(rows: Bar[], period: number) {
   });
 }
 
+function atrSeries(rows: Bar[], period = 14) {
+  return rows.map((_, index) => {
+    const first = Math.max(0, index - period + 1);
+    let total = 0;
+    let count = 0;
+    for (let cursor = first; cursor <= index; cursor += 1) {
+      const bar = rows[cursor];
+      const previousClose = cursor > 0 ? rows[cursor - 1].close : bar.close;
+      total += Math.max(bar.high - bar.low, Math.abs(bar.high - previousClose), Math.abs(bar.low - previousClose));
+      count += 1;
+    }
+    return total / Math.max(count, 1);
+  });
+}
+
+function findAutoTrends(rows: Bar[], lookback = 90, pivotSpan = 5): AutoTrend[] {
+  const source = rows.slice(-Math.min(rows.length, lookback));
+  if (source.length < pivotSpan * 2 + 3) return [];
+  const atr = atrSeries(source);
+  const pivotIndexes = (kind: AutoTrendKind) => source.flatMap((bar, index) => {
+    if (index < pivotSpan || index >= source.length - pivotSpan) return [];
+    const value = kind === "resistance" ? bar.high : bar.low;
+    const neighbors = source.slice(index - pivotSpan, index + pivotSpan + 1);
+    const isPivot = kind === "resistance"
+      ? neighbors.every((neighbor, offset) => offset === pivotSpan || neighbor.high <= value)
+      : neighbors.every((neighbor, offset) => offset === pivotSpan || neighbor.low >= value);
+    return isPivot ? [index] : [];
+  });
+
+  const bestFor = (kind: AutoTrendKind): AutoTrend | null => {
+    const pivots = pivotIndexes(kind);
+    let best: (AutoTrend & { score: number }) | null = null;
+    for (let a = 0; a < pivots.length - 1; a += 1) {
+      for (let b = a + 1; b < pivots.length; b += 1) {
+        const first = pivots[a];
+        const second = pivots[b];
+        const length = second - first;
+        const age = source.length - 1 - second;
+        if (length < 6 || age > 45) continue;
+        const firstValue = kind === "resistance" ? source[first].high : source[first].low;
+        const secondValue = kind === "resistance" ? source[second].high : source[second].low;
+        const slope = (secondValue - firstValue) / length;
+        const valueAt = (index: number) => firstValue + slope * (index - first);
+        let touches = 0;
+        let baseViolations = 0;
+        let closeStreak = 0;
+        let maxCloseStreak = 0;
+
+        for (const pivot of pivots) {
+          if (pivot < first) continue;
+          const pivotValue = kind === "resistance" ? source[pivot].high : source[pivot].low;
+          if (Math.abs(pivotValue - valueAt(pivot)) <= atr[pivot] * .35) touches += 1;
+        }
+        for (let index = first; index <= second; index += 1) {
+          const tolerance = atr[index] * .35;
+          const breached = kind === "resistance"
+            ? source[index].high > valueAt(index) + tolerance
+            : source[index].low < valueAt(index) - tolerance;
+          if (breached) baseViolations += 1;
+        }
+        for (let index = second + 1; index < source.length; index += 1) {
+          const tolerance = atr[index] * .35;
+          const breached = kind === "resistance"
+            ? source[index].close > valueAt(index) + tolerance
+            : source[index].close < valueAt(index) - tolerance;
+          closeStreak = breached ? closeStreak + 1 : 0;
+          maxCloseStreak = Math.max(maxCloseStreak, closeStreak);
+        }
+        if (touches < 2 || maxCloseStreak >= 3) continue;
+
+        const latestIndex = source.length - 1;
+        const distanceInAtr = Math.abs(source[latestIndex].close - valueAt(latestIndex)) / Math.max(atr[latestIndex], .01);
+        const score = Math.min(42, touches * 12)
+          + Math.max(0, 24 - baseViolations * 7)
+          + Math.max(0, 19 * (1 - age / 46))
+          + Math.min(15, length / 2)
+          - Math.min(22, distanceInAtr * 3);
+        if (!best || score > best.score) {
+          best = {
+            kind,
+            start: source[first],
+            end: source[second],
+            touches,
+            confidence: Math.max(1, Math.min(99, Math.round(score))),
+            direction: Math.abs(slope) < atr[latestIndex] * .002 ? "flat" : slope > 0 ? "rising" : "falling",
+            score,
+          };
+        }
+      }
+    }
+    return best;
+  };
+
+  return [bestFor("resistance"), bestFor("support")].filter((line): line is AutoTrend => Boolean(line));
+}
+
 function rangeSize(range: RangeKey) {
   return range === "1M" ? 22 : range === "3M" ? 66 : range === "6M" ? 132 : range === "1Y" ? 252 : 9999;
 }
@@ -192,11 +297,13 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const [show20, setShow20] = useState(true);
   const [show50, setShow50] = useState(true);
   const [show200, setShow200] = useState(true);
+  const [autoTrend, setAutoTrend] = useState(false);
   const [theme, setTheme] = useState<ChartTheme>("light");
   const [themeLoaded, setThemeLoaded] = useState(false);
   const [chartReady, setChartReady] = useState(false);
   const allBars = useMemo(() => makeBars(symbols[symbol]), [symbol]);
   const bars = useMemo(() => allBars.slice(-rangeSize(range)), [allBars, range]);
+  const autoTrends = useMemo(() => findAutoTrends(bars), [bars]);
   const latest = bars.at(-1)!;
   const [hovered, setHovered] = useState<Bar>(latest);
 
@@ -214,6 +321,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
 
   useEffect(() => {
     if (!containerRef.current) return;
+    setChartReady(false);
     let cancelled = false;
     let disposeChart: (() => void) | undefined;
     const palette = theme === "light" ? {
@@ -291,8 +399,35 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
     };
   }, [bars, range, show20, show50, show200, symbol, logScale, theme]);
 
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !chartReady) return;
+    chart.removeOverlay({ groupId: "brontide-auto-trends" });
+    if (!autoTrend) return;
+    const colors: Record<AutoTrendKind, string> = theme === "light"
+      ? { resistance: "#d04b55", support: "#0b8f54" }
+      : { resistance: "#ef6a72", support: "#38c985" };
+    for (const trend of autoTrends) {
+      chart.createOverlay({
+        name: "rayLine",
+        groupId: "brontide-auto-trends",
+        lock: true,
+        zLevel: 6,
+        needDefaultPointFigure: false,
+        needDefaultXAxisFigure: false,
+        needDefaultYAxisFigure: false,
+        points: [
+          { timestamp: trend.start.timestamp, value: trend.kind === "resistance" ? trend.start.high : trend.start.low },
+          { timestamp: trend.end.timestamp, value: trend.kind === "resistance" ? trend.end.high : trend.end.low },
+        ],
+        styles: { line: { color: colors[trend.kind], size: 1.35, style: "solid", dashedValue: [5, 4] } },
+      });
+    }
+  }, [autoTrend, autoTrends, chartReady, theme]);
+
   const clearDrawings = () => {
     chartRef.current?.removeOverlay();
+    setAutoTrend(false);
   };
 
   const selectTool = (tool: DrawingTool) => {
@@ -307,7 +442,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       <header className="chart-commandbar">
         <div className="chart-sequence"><button aria-label="Back" onClick={onExit}>‹</button><button className="chart-stage">EP contractions⌄</button><button aria-label="Previous">‹</button><span>1 of 14</span><button aria-label="Next">›</button></div>
         <label className="chart-symbol-select"><span>{symbols[symbol].name}</span><b>{symbol}</b><select value={symbol} onChange={(event) => setSymbol(event.target.value as SymbolKey)} aria-label="Stock"><option value="NVDA">NVIDIA Corporation</option><option value="MRNA">Moderna, Inc.</option><option value="CRCL">Circle Internet Group</option></select></label>
-        <div className="chart-header-actions"><span className="chart-data-state"><i/> Sample data</span><button className="chart-accent">Analyze setup</button><button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
+        <div className="chart-header-actions"><button className={`auto-trend-toggle ${autoTrend ? "active" : ""}`} onClick={() => setAutoTrend((value) => !value)} aria-pressed={autoTrend} title="Detect recent support and resistance"><TrendUp size={14}/><span>Auto Trend</span></button><span className="chart-data-state"><i/> Sample data</span><button className="chart-accent">Analyze setup</button><button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
       </header>
 
       <div className="chart-subbar">
@@ -332,7 +467,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
 
         <div className="chart-canvas-shell">
           <div className="chart-ohlc"><span>{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>
-          <div className="chart-legend">{show20 && <span className="ma20">MA20: {movingAverage(bars, 20).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {movingAverage(bars, 50).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {movingAverage(bars, 200).at(-1)?.value.toFixed(2) ?? "—"}</span>}</div>
+          <div className="chart-legend">{show20 && <span className="ma20">MA20: {movingAverage(bars, 20).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {movingAverage(bars, 50).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {movingAverage(bars, 200).at(-1)?.value.toFixed(2) ?? "—"}</span>}{autoTrend && autoTrends.map((trend) => <span key={trend.kind} className={`auto-trend-legend ${trend.kind}`}>{trend.kind === "resistance" ? "R" : "S"}: {trend.touches} touches · {trend.confidence}%</span>)}</div>
           {!chartReady && <SampleChartFallback rows={bars}/>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
           {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
         </div>
