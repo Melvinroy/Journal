@@ -422,12 +422,15 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chart.overrideYAxis({ paneId: "candle_pane", name: logScale ? "logarithm" : "normal" });
       chart.setSymbol({ ticker: symbol, pricePrecision: 2, volumePrecision: 0 });
       chart.setPeriod({ span: 1, type: "day" });
-      chart.setDataLoader({ getBars: ({ type, callback }) => callback(type === "init" ? allBars : [], false) });
+      chart.setDataLoader({ getBars: ({ type, callback }) => callback(type === "init" ? bars : [], false) });
       const applyDefaultViewport = () => {
         const chartWidth = containerRef.current?.clientWidth ?? 1200;
         const rightSpace = Math.round(Math.max(1, chartWidth - 58) * .2);
         const usableWidth = Math.max(1, chartWidth - rightSpace - 58);
         const fittedBarSpace = Math.max(.05, usableWidth / Math.max(bars.length, 1));
+        const rightVisibleBars = Math.ceil(rightSpace / Math.max(fittedBarSpace, .05));
+        chart.setRightMinVisibleBarCount(rightVisibleBars);
+        chart.setMaxOffsetRightDistance(rightSpace);
         chart.setBarSpace(Number(fittedBarSpace.toFixed(2)));
         chart.setOffsetRightDistance(rightSpace);
       };
