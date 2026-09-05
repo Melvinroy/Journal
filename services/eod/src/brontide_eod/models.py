@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Any
 
 
@@ -49,3 +49,16 @@ class QualityIssue:
     session_date: date
     code: str
     detail: str
+
+
+@dataclass(frozen=True)
+class MarketSession:
+    session_date: date
+    open_time: time
+    close_time: time
+    session_open: str | None = None
+    session_close: str | None = None
+    settlement_date: date | None = None
+
+    def as_record(self) -> dict[str, Any]:
+        return asdict(self)

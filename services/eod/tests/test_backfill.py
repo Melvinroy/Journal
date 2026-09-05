@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 
 import httpx
@@ -10,6 +10,7 @@ from brontide_eod.ingest import (
     PIPELINE_VERSION,
     RequestRateLimiter,
     backfill_sessions,
+    calendar_fingerprint,
     ingestion_config_fingerprint,
     is_market_session,
     market_sessions,
@@ -19,7 +20,7 @@ from brontide_eod.ingest import (
     refresh_universe,
     universe_fingerprint,
 )
-from brontide_eod.models import DailyBar, Instrument
+from brontide_eod.models import DailyBar, Instrument, MarketSession
 from brontide_eod.store import DuckDBStore
 
 
@@ -51,15 +52,43 @@ def bar(symbol: str = "AAPL", session: date = date(2026, 9, 3)) -> DailyBar:
     )
 
 
+def calendar_session(day: date, *, close_time: time = time(16, 0)) -> MarketSession:
+    return MarketSession(
+        session_date=day,
+        open_time=time(9, 30),
+        close_time=close_time,
+        session_open="0400",
+        session_close="1700" if close_time == time(13, 0) else "2000",
+        settlement_date=day,
+    )
+
+
+def corrected_calendar() -> list[MarketSession]:
+    return [
+        calendar_session(date(2025, 1, 8)),
+        calendar_session(date(2025, 1, 10)),
+    ]
+
+
 class FakeProvider:
-    def __init__(self, *, fail_once: bool = False, out_of_range: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_once: bool = False,
+        out_of_range: bool = False,
+        market_dates: set[date] | None = None,
+    ) -> None:
         self.fail_once = fail_once
         self.out_of_range = out_of_range
+        self.market_dates = market_dates
         self.calls = 0
         self.ranges: list[tuple[date, date]] = []
 
     def list_instruments(self, *, status: str = "active") -> list[Instrument]:
         return [instrument()]
+
+    def get_market_calendar(self, start: date, end: date) -> list[MarketSession]:
+        return [calendar_session(day) for day in market_sessions(start, end)]
 
     def get_daily_bars(self, symbols: list[str], start: date, end: date) -> list[DailyBar]:
         self.calls += 1
@@ -73,7 +102,7 @@ class FakeProvider:
         rows = []
         session = start
         while session <= end:
-            if is_market_session(session):
+            if session in self.market_dates if self.market_dates is not None else is_market_session(session):
                 rows.extend(bar(symbol, session) for symbol in symbols)
             session = date.fromordinal(session.toordinal() + 1)
         return rows
@@ -87,6 +116,31 @@ def test_market_sessions_skip_weekends_and_us_holidays() -> None:
     assert not is_market_session(date(2026, 9, 5))
     assert not is_market_session(date(2026, 1, 1))
     assert not is_market_session(date(2026, 4, 3))
+
+
+def test_authoritative_calendar_excludes_january_9_2025() -> None:
+    calendar = corrected_calendar()
+
+    assert is_market_session(date(2025, 1, 8), calendar)
+    assert not is_market_session(date(2025, 1, 9), calendar)
+    assert is_market_session(date(2025, 1, 10), calendar)
+    assert list(market_sessions(date(2025, 1, 8), date(2025, 1, 10), calendar)) == [
+        date(2025, 1, 8),
+        date(2025, 1, 10),
+    ]
+
+
+def test_authoritative_calendar_skips_standard_holidays() -> None:
+    calendar = [calendar_session(date(2026, 1, 2))]
+
+    assert list(market_sessions(date(2026, 1, 1), date(2026, 1, 2), calendar)) == [date(2026, 1, 2)]
+
+
+def test_calendar_fingerprint_includes_early_close_times() -> None:
+    regular = [calendar_session(date(2025, 7, 3))]
+    early = [calendar_session(date(2025, 7, 3), close_time=time(13, 0))]
+
+    assert calendar_fingerprint(regular) != calendar_fingerprint(early)
 
 
 def test_backfill_retries_rate_limits_and_records_completion(tmp_path: Path) -> None:
@@ -146,6 +200,89 @@ def test_feed_adjustment_asof_or_schema_changes_invalidate_checkpoint() -> None:
         universe_fingerprint=fingerprint,
         pipeline_version=f"{PIPELINE_VERSION}_next",
     ) != base
+    assert ingestion_config_fingerprint(
+        universe_fingerprint=fingerprint,
+        calendar_fingerprint=calendar_fingerprint(corrected_calendar()),
+    ) != base
+
+
+def test_same_session_with_corrected_calendar_is_reprocessed(tmp_path: Path) -> None:
+    old_calendar = [calendar_session(date(2025, 1, 9))]
+    new_calendar = corrected_calendar()
+
+    class SwitchingCalendarProvider(FakeProvider):
+        def get_daily_bars(self, symbols: list[str], start: date, end: date) -> list[DailyBar]:
+            self.market_dates = (
+                {date(2025, 1, 9)}
+                if self.calls == 0
+                else {session.session_date for session in new_calendar}
+            )
+            return super().get_daily_bars(symbols, start, end)
+
+    provider = SwitchingCalendarProvider()
+    with DuckDBStore(tmp_path / "brontide.duckdb") as store:
+        store.upsert_instruments([instrument("AAPL")])
+        first = backfill_sessions(
+            provider,
+            store,
+            date(2025, 1, 9),
+            date(2025, 1, 9),
+            calendar=old_calendar,
+            sleep=lambda _: None,
+        )
+        second = backfill_sessions(
+            provider,
+            store,
+            date(2025, 1, 8),
+            date(2025, 1, 10),
+            calendar=new_calendar,
+            sleep=lambda _: None,
+        )
+
+        assert first["completed"] == 1
+        assert second["completed"] == 2
+        assert second["skipped_non_market"] == 1
+        assert provider.calls == 2
+        assert store.connection.execute(
+            "SELECT status FROM data_ingest_runs WHERE session_date = DATE '2025-01-09' ORDER BY completed_at DESC LIMIT 1"
+        ).fetchone() == ("skipped",)
+
+
+def test_corrected_calendar_can_adopt_valid_existing_bars_without_redownload(tmp_path: Path) -> None:
+    old_calendar = [calendar_session(date(2025, 1, 8)), calendar_session(date(2025, 1, 9))]
+    new_calendar = [calendar_session(date(2025, 1, 8))]
+    provider = FakeProvider(market_dates={session.session_date for session in old_calendar})
+    with DuckDBStore(tmp_path / "brontide.duckdb") as store:
+        store.upsert_instruments([instrument("AAPL")])
+        first = backfill_sessions(
+            provider,
+            store,
+            date(2025, 1, 8),
+            date(2025, 1, 9),
+            calendar=old_calendar,
+            sleep=lambda _: None,
+        )
+        provider.calls = 0
+        second = backfill_sessions(
+            provider,
+            store,
+            date(2025, 1, 8),
+            date(2025, 1, 9),
+            calendar=new_calendar,
+            sleep=lambda _: None,
+        )
+
+        assert first["completed"] == 2
+        assert second["completed"] == 1
+        assert second["bars"] == 0
+        assert provider.calls == 0
+        assert store.connection.execute(
+            """
+            SELECT status, detail FROM data_ingest_runs
+            WHERE session_date = DATE '2025-01-09'
+            ORDER BY completed_at DESC LIMIT 1
+            """
+        ).fetchone() == ("skipped", "non-market day")
 
 
 def test_older_checkpoint_history_remains_available(tmp_path: Path) -> None:
@@ -199,8 +336,15 @@ def test_legacy_september_3_checkpoint_is_not_skipped_for_historical_universe(tm
         assert provider.calls == 1
 
 
-def test_full_historical_range_has_672_market_sessions() -> None:
-    assert len(list(market_sessions(date(2024, 1, 1), date(2026, 9, 3)))) == 672
+def test_full_historical_range_has_671_authoritative_market_sessions() -> None:
+    removed = {date(2025, 1, 9)}
+    calendar = [
+        calendar_session(day)
+        for day in market_sessions(date(2024, 1, 1), date(2026, 9, 3))
+        if day not in removed
+    ]
+
+    assert len(list(market_sessions(date(2024, 1, 1), date(2026, 9, 3), calendar))) == 671
 
 
 def test_backfill_does_not_redownload_completed_sessions_inside_range(tmp_path: Path) -> None:

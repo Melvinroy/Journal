@@ -80,7 +80,8 @@ def main() -> None:
                 print(json.dumps(ingest_session(provider, store, args.session, batch_size=settings.alpaca_batch_size)))
             elif args.command == "backfill":
                 batch_size = args.batch_size if args.batch_size is not None else settings.alpaca_batch_size
-                preflight_session = next(market_sessions(args.start, args.end))
+                calendar = provider.get_market_calendar(args.start, args.end)
+                preflight_session = next(market_sessions(args.start, args.end, calendar))
                 refresh_result = refresh_historical_universe_details(provider, store)
                 print(json.dumps(backfill_sessions(
                     provider,
@@ -97,6 +98,7 @@ def main() -> None:
                     source_population=refresh_result.source_population,
                     duplicates_removed=refresh_result.duplicates_removed,
                     source_symbols=refresh_result.deduped_symbols,
+                    calendar=calendar,
                     emit=print_progress,
                 )))
 

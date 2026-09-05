@@ -5,7 +5,7 @@ from typing import Any, Callable, Sequence
 
 import httpx
 
-from brontide_eod.models import DailyBar, Instrument
+from brontide_eod.models import DailyBar, Instrument, MarketSession
 
 
 class AlpacaProvider:
@@ -74,6 +74,14 @@ class AlpacaProvider:
         response.raise_for_status()
         return [self._parse_instrument(row) for row in response.json()]
 
+    def get_market_calendar(self, start: date, end: date) -> list[MarketSession]:
+        response = self._get(
+            f"{self._trading_base_url}/v2/calendar",
+            params={"start": start.isoformat(), "end": end.isoformat()},
+        )
+        response.raise_for_status()
+        return [self._parse_market_session(row) for row in response.json()]
+
     def get_daily_bars(
         self,
         symbols: Sequence[str],
@@ -141,4 +149,19 @@ class AlpacaProvider:
             trade_count=int(row["n"]) if row.get("n") is not None else None,
             vwap=float(row["vw"]) if row.get("vw") is not None else None,
             source_timestamp=timestamp,
+        )
+
+    @staticmethod
+    def _parse_market_session(row: dict[str, Any]) -> MarketSession:
+        return MarketSession(
+            session_date=date.fromisoformat(str(row["date"])),
+            open_time=time.fromisoformat(str(row["open"])),
+            close_time=time.fromisoformat(str(row["close"])),
+            session_open=str(row["session_open"]) if row.get("session_open") is not None else None,
+            session_close=str(row["session_close"]) if row.get("session_close") is not None else None,
+            settlement_date=(
+                date.fromisoformat(str(row["settlement_date"]))
+                if row.get("settlement_date") is not None
+                else None
+            ),
         )

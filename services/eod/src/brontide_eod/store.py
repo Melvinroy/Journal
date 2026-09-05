@@ -6,7 +6,7 @@ from typing import Iterable
 
 import duckdb
 
-from brontide_eod.models import DailyBar, Instrument, QualityIssue
+from brontide_eod.models import DailyBar, Instrument, MarketSession, QualityIssue
 
 
 SIP_SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9]*(?:[.-][A-Z0-9]+)?$")
@@ -60,6 +60,25 @@ CREATE TABLE IF NOT EXISTS data_ingest_runs (
   issue_count INTEGER NOT NULL DEFAULT 0,
   detail VARCHAR
 );
+CREATE TABLE IF NOT EXISTS market_calendar_snapshots (
+  calendar_fingerprint VARCHAR PRIMARY KEY,
+  provider VARCHAR NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  session_count INTEGER NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
+);
+CREATE TABLE IF NOT EXISTS market_calendar_sessions (
+  calendar_fingerprint VARCHAR NOT NULL,
+  session_date DATE NOT NULL,
+  open_time TIME NOT NULL,
+  close_time TIME NOT NULL,
+  session_open VARCHAR,
+  session_close VARCHAR,
+  settlement_date DATE,
+  ordinal INTEGER NOT NULL,
+  PRIMARY KEY (calendar_fingerprint, session_date)
+);
 CREATE TABLE IF NOT EXISTS universe_memberships (
   universe_fingerprint VARCHAR NOT NULL,
   symbol VARCHAR NOT NULL,
@@ -76,6 +95,7 @@ CREATE TABLE IF NOT EXISTS ingestion_configs (
   asof_value VARCHAR NOT NULL,
   symbol_validation_rules VARCHAR NOT NULL,
   universe_fingerprint VARCHAR NOT NULL,
+  calendar_fingerprint VARCHAR NOT NULL DEFAULT '-',
   pipeline_version VARCHAR NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
 );
@@ -131,6 +151,12 @@ class DuckDBStore:
             self.connection.execute("ALTER TABLE data_ingest_runs ADD COLUMN universe_fingerprint VARCHAR")
         if "config_fingerprint" not in columns:
             self.connection.execute("ALTER TABLE data_ingest_runs ADD COLUMN config_fingerprint VARCHAR")
+        config_columns = {
+            row[0]
+            for row in self.connection.execute("DESCRIBE ingestion_configs").fetchall()
+        }
+        if "calendar_fingerprint" not in config_columns:
+            self.connection.execute("ALTER TABLE ingestion_configs ADD COLUMN calendar_fingerprint VARCHAR DEFAULT '-'")
         instrument_columns = {
             row[0]
             for row in self.connection.execute("DESCRIBE instruments").fetchall()
@@ -367,12 +393,13 @@ class DuckDBStore:
         asof: str,
         symbol_validation_rules: str,
         universe_fingerprint: str,
+        calendar_fingerprint: str,
         pipeline_version: str,
     ) -> None:
         existing = self.connection.execute(
             """
             SELECT provider, feed, timeframe, adjustment, asof_value, symbol_validation_rules,
-              universe_fingerprint, pipeline_version
+              universe_fingerprint, calendar_fingerprint, pipeline_version
             FROM ingestion_configs
             WHERE config_fingerprint = ?
             """,
@@ -386,6 +413,7 @@ class DuckDBStore:
             asof,
             symbol_validation_rules,
             universe_fingerprint,
+            calendar_fingerprint,
             pipeline_version,
         )
         if existing:
@@ -396,10 +424,80 @@ class DuckDBStore:
             """
             INSERT INTO ingestion_configs (
               config_fingerprint, provider, feed, timeframe, adjustment, asof_value,
-              symbol_validation_rules, universe_fingerprint, pipeline_version
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              symbol_validation_rules, universe_fingerprint, calendar_fingerprint, pipeline_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (config_fingerprint, *payload),
+        )
+
+    def record_market_calendar(
+        self,
+        *,
+        calendar_fingerprint: str,
+        provider: str,
+        start: object,
+        end: object,
+        sessions: Iterable[MarketSession],
+    ) -> None:
+        rows = list(sessions)
+        existing = self.connection.execute(
+            """
+            SELECT session_date, open_time, close_time, session_open, session_close, settlement_date
+            FROM market_calendar_sessions
+            WHERE calendar_fingerprint = ?
+            ORDER BY ordinal
+            """,
+            [calendar_fingerprint],
+        ).fetchall()
+        payload = [
+            (
+                row.session_date,
+                row.open_time,
+                row.close_time,
+                row.session_open,
+                row.session_close,
+                row.settlement_date,
+            )
+            for row in sorted(rows, key=lambda item: item.session_date)
+        ]
+        if existing:
+            if [tuple(row) for row in existing] != payload:
+                raise ValueError("market calendar fingerprint conflict")
+            return
+        self.connection.execute(
+            """
+            INSERT INTO market_calendar_snapshots (
+              calendar_fingerprint, provider, start_date, end_date, session_count
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            [calendar_fingerprint, provider, start, end, len(rows)],
+        )
+        if not rows:
+            return
+        values_sql = ",\n".join(
+            "(" + ", ".join((
+                _sql_string(calendar_fingerprint),
+                _sql_string(row.session_date.isoformat()),
+                _sql_string(row.open_time.isoformat(timespec="minutes")),
+                _sql_string(row.close_time.isoformat(timespec="minutes")),
+                "null" if row.session_open is None else _sql_string(row.session_open),
+                "null" if row.session_close is None else _sql_string(row.session_close),
+                "null" if row.settlement_date is None else _sql_string(row.settlement_date.isoformat()),
+                str(index),
+            )) + ")"
+            for index, row in enumerate(sorted(rows, key=lambda item: item.session_date))
+        )
+        self.connection.execute(
+            f"""
+            INSERT INTO market_calendar_sessions (
+              calendar_fingerprint, session_date, open_time, close_time,
+              session_open, session_close, settlement_date, ordinal
+            )
+            SELECT * FROM (VALUES {values_sql}) AS row(
+              calendar_fingerprint, session_date, open_time, close_time,
+              session_open, session_close, settlement_date, ordinal
+            )
+            """
         )
 
     def live_scan_symbols(self) -> list[str]:

@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import httpx
 
-from brontide_eod.models import Instrument
+from brontide_eod.models import Instrument, MarketSession
 from brontide_eod.providers.base import MarketDataProvider
 from brontide_eod.quality import validate_bars
 from brontide_eod.store import DuckDBStore
@@ -29,6 +29,7 @@ INGEST_ASOF = "-"
 SYMBOL_VALIDATION_RULES = "active_inactive_non_otc_sip_symbol_v1"
 PIPELINE_VERSION = "historical_sip_backfill_v2"
 RUN_PROVIDER = "alpaca_sip"
+LEGACY_CALENDAR_FINGERPRINT = "-"
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class IngestionConfig:
     asof: str
     symbol_validation_rules: str
     universe_fingerprint: str
+    calendar_fingerprint: str
     pipeline_version: str
     config_fingerprint: str
 
@@ -73,6 +75,21 @@ def universe_fingerprint(symbols: Iterable[str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def calendar_fingerprint(sessions: Iterable[MarketSession]) -> str:
+    payload = [
+        {
+            "close": session.close_time.isoformat(timespec="minutes"),
+            "date": session.session_date.isoformat(),
+            "open": session.open_time.isoformat(timespec="minutes"),
+            "session_close": session.session_close,
+            "session_open": session.session_open,
+            "settlement_date": session.settlement_date.isoformat() if session.settlement_date else None,
+        }
+        for session in sorted(sessions, key=lambda item: item.session_date)
+    ]
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
 def ingestion_config_fingerprint(
     *,
     provider: str = INGEST_PROVIDER,
@@ -82,6 +99,7 @@ def ingestion_config_fingerprint(
     asof: str = INGEST_ASOF,
     symbol_validation_rules: str = SYMBOL_VALIDATION_RULES,
     universe_fingerprint: str,
+    calendar_fingerprint: str = LEGACY_CALENDAR_FINGERPRINT,
     pipeline_version: str = PIPELINE_VERSION,
 ) -> str:
     payload = {
@@ -93,14 +111,30 @@ def ingestion_config_fingerprint(
         "symbol_validation_rules": symbol_validation_rules,
         "timeframe": timeframe,
         "universe_fingerprint": universe_fingerprint,
+        "calendar_fingerprint": calendar_fingerprint,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def historical_ingestion_config(store: DuckDBStore, symbols: list[str] | None = None) -> tuple[list[str], IngestionConfig]:
+def historical_ingestion_config(
+    store: DuckDBStore,
+    symbols: list[str] | None = None,
+    *,
+    calendar: list[MarketSession] | None = None,
+    start: date | None = None,
+    end: date | None = None,
+) -> tuple[list[str], IngestionConfig]:
     symbols = sorted(symbols if symbols is not None else store.historical_symbols())
     fingerprint = universe_fingerprint(symbols)
-    config_fingerprint = ingestion_config_fingerprint(universe_fingerprint=fingerprint)
+    cal_fingerprint = LEGACY_CALENDAR_FINGERPRINT
+    if calendar is not None:
+        cal_fingerprint = calendar_fingerprint(calendar)
+        if start is None or end is None:
+            raise ValueError("calendar start and end dates are required when recording a calendar snapshot")
+    config_fingerprint = ingestion_config_fingerprint(
+        universe_fingerprint=fingerprint,
+        calendar_fingerprint=cal_fingerprint,
+    )
     config = IngestionConfig(
         provider=INGEST_PROVIDER,
         feed=INGEST_FEED,
@@ -109,10 +143,19 @@ def historical_ingestion_config(store: DuckDBStore, symbols: list[str] | None = 
         asof=INGEST_ASOF,
         symbol_validation_rules=SYMBOL_VALIDATION_RULES,
         universe_fingerprint=fingerprint,
+        calendar_fingerprint=cal_fingerprint,
         pipeline_version=PIPELINE_VERSION,
         config_fingerprint=config_fingerprint,
     )
     _record_fingerprints(store, symbols, config)
+    if calendar is not None:
+        store.record_market_calendar(
+            calendar_fingerprint=cal_fingerprint,
+            provider=INGEST_PROVIDER,
+            start=start,
+            end=end,
+            sessions=calendar,
+        )
     return symbols, config
 
 
@@ -216,13 +259,20 @@ class RequestRateLimiter:
         self.requests += 1
 
 
-def is_market_session(day: date) -> bool:
+def is_market_session(day: date, calendar: Iterable[MarketSession] | None = None) -> bool:
+    if calendar is not None:
+        return day in {session.session_date for session in calendar}
     if day.weekday() >= 5:
         return False
     return day not in _market_holidays(day.year)
 
 
-def market_sessions(start: date, end: date) -> Iterator[date]:
+def market_sessions(start: date, end: date, calendar: Iterable[MarketSession] | None = None) -> Iterator[date]:
+    if calendar is not None:
+        for session in sorted(calendar, key=lambda item: item.session_date):
+            if start <= session.session_date <= end:
+                yield session.session_date
+        return
     current = start
     while current <= end:
         if is_market_session(current):
@@ -248,6 +298,7 @@ def backfill_sessions(
     source_population: int | None = None,
     duplicates_removed: int = 0,
     source_symbols: Iterable[str] | None = None,
+    calendar: list[MarketSession] | None = None,
 ) -> dict[str, int]:
     if end < start:
         raise ValueError("end date must be on or after start date")
@@ -256,7 +307,7 @@ def backfill_sessions(
     if session_chunk_size * batch_size > 9_000:
         raise ValueError("session_chunk_size * batch_size must stay below the 10,000-bar page limit")
 
-    sessions = list(market_sessions(start, end))
+    sessions = list(market_sessions(start, end, calendar))
     session_set = set(sessions)
     skipped_non_market = 0
     completed = 0
@@ -280,7 +331,7 @@ def backfill_sessions(
             source_symbols=source_symbols,
         )
     current_symbols = store.historical_symbols(source_symbols=source_symbols)
-    symbols, config = historical_ingestion_config(store, symbols=current_symbols)
+    symbols, config = historical_ingestion_config(store, symbols=current_symbols, calendar=calendar, start=start, end=end)
 
     for day in _date_range(start, end):
         if day in session_set:
@@ -302,6 +353,21 @@ def backfill_sessions(
                     store, session, "skipped", remaining, 0, bars, 0, failures=failed,
                     requests=rate_limiter.requests if rate_limiter else 0,
                     total_symbols=len(symbols),
+                ))
+            continue
+        adopted_bars = _adopt_valid_existing_session(store, session, config)
+        if adopted_bars is not None:
+            if current_chunk:
+                pending_chunks.append(current_chunk)
+                current_chunk = []
+            completed += 1
+            if emit:
+                emit(_progress(
+                    store, session, "completed", remaining, adopted_bars, bars, 0,
+                    failures=failed,
+                    requests=rate_limiter.requests if rate_limiter else 0,
+                    total_symbols=len(symbols),
+                    detail="validated existing bars under corrected calendar fingerprint",
                 ))
             continue
         current_chunk.append(session)
@@ -623,6 +689,92 @@ def _session_completed(store: DuckDBStore, session: date, config_fingerprint: st
         [RUN_PROVIDER, session, config_fingerprint],
     ).fetchone()
     return bool(row and row[0])
+
+
+def _adopt_valid_existing_session(store: DuckDBStore, session: date, config: IngestionConfig) -> int | None:
+    compatible = store.connection.execute(
+        """
+        SELECT count(*)
+        FROM data_ingest_runs AS runs
+        JOIN ingestion_configs AS old_config USING (config_fingerprint)
+        JOIN ingestion_configs AS current_config
+          ON current_config.config_fingerprint = ?
+        WHERE runs.provider = ? AND runs.session_date = ? AND runs.status = 'completed'
+          AND old_config.provider = current_config.provider
+          AND old_config.feed = current_config.feed
+          AND old_config.timeframe = current_config.timeframe
+          AND old_config.adjustment = current_config.adjustment
+          AND old_config.asof_value = current_config.asof_value
+          AND old_config.symbol_validation_rules = current_config.symbol_validation_rules
+          AND old_config.universe_fingerprint = current_config.universe_fingerprint
+          AND old_config.pipeline_version = current_config.pipeline_version
+          AND old_config.calendar_fingerprint <> current_config.calendar_fingerprint
+        """,
+        [config.config_fingerprint, RUN_PROVIDER, session],
+    ).fetchone()[0]
+    if not compatible:
+        return None
+    bars = store.connection.execute(
+        """
+        SELECT count(*)
+        FROM daily_bars AS bars
+        JOIN universe_memberships AS universe
+          ON bars.symbol = universe.symbol
+         AND universe.universe_fingerprint = ?
+        WHERE bars.session_date = ?
+        """,
+        [config.universe_fingerprint, session],
+    ).fetchone()[0]
+    if bars == 0:
+        return None
+    duplicate_keys = store.connection.execute(
+        """
+        SELECT count(*)
+        FROM (
+          SELECT symbol, session_date, timeframe, adjustment, source, count(*) AS row_count
+          FROM daily_bars
+          WHERE session_date = ?
+          GROUP BY 1, 2, 3, 4, 5
+          HAVING row_count > 1
+        )
+        """,
+        [session],
+    ).fetchone()[0]
+    invalid = store.connection.execute(
+        """
+        SELECT count(*)
+        FROM daily_bars
+        WHERE session_date = ?
+          AND (
+            low > open OR low > high OR low > close
+            OR high < open OR high < close
+            OR volume IS NULL OR volume < 0
+          )
+        """,
+        [session],
+    ).fetchone()[0]
+    if duplicate_keys or invalid:
+        return None
+    store.connection.execute(
+        """
+        INSERT INTO data_ingest_runs (
+          run_id, provider, session_date, completed_at, status, detail,
+          universe_fingerprint, config_fingerprint, instrument_count, bar_count, issue_count
+        )
+        VALUES (?, ?, ?, current_timestamp, 'completed', ?, ?, ?, ?, ?, 0)
+        """,
+        [
+            str(uuid4()),
+            RUN_PROVIDER,
+            session,
+            "validated existing bars under corrected calendar fingerprint",
+            config.universe_fingerprint,
+            config.config_fingerprint,
+            len(store.universe_symbols(config.universe_fingerprint)),
+            bars,
+        ],
+    )
+    return int(bars)
 
 
 def _record_skipped(store: DuckDBStore, session: date, detail: str, config: IngestionConfig) -> None:
