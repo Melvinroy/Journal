@@ -9,6 +9,10 @@ import {
   Trash, TrendUp, WaveSine, type Icon,
 } from "@phosphor-icons/react";
 
+import { getLocalJson, toChartBars, type ChartResponse, type Instrument } from "../lib/chart-data";
+
+const localBuild = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
+
 type Bar = KLineData & { volume: number };
 type RangeKey = "1M" | "3M" | "6M" | "1Y" | "Max";
 type SymbolKey = "NVDA" | "MRNA" | "CRCL";
@@ -252,7 +256,7 @@ function SampleChartFallback({ rows }: { rows: Bar[] }) {
   const maxPrice = Math.max(...rows.map((bar) => bar.high)) * 1.035;
   const minPrice = Math.min(...rows.map((bar) => bar.low)) * .965;
   const maxVolume = Math.max(...rows.map((bar) => bar.volume));
-  const x = (index: number) => 22 + (index / Math.max(rows.length - 1, 1)) * 1092;
+  const x = (index: number) => 22 + (index / Math.max(rows.length - 1, 1)) * 860;
   const y = (price: number) => plotTop + ((maxPrice - price) / (maxPrice - minPrice)) * (plotBottom - plotTop);
   const maPath = (period: number) => movingAverage(rows, period).map((point, index) => {
     const sourceIndex = index + period - 1;
@@ -289,7 +293,7 @@ function SampleChartFallback({ rows }: { rows: Bar[] }) {
 export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
-  const [symbol, setSymbol] = useState<SymbolKey>("NVDA");
+  const [symbol, setSymbol] = useState<string>("NVDA");
   const [range, setRange] = useState<RangeKey>("6M");
   const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
   const [openToolGroup, setOpenToolGroup] = useState<string | null>(null);
@@ -301,13 +305,73 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const [theme, setTheme] = useState<ChartTheme>("light");
   const [themeLoaded, setThemeLoaded] = useState(false);
   const [chartReady, setChartReady] = useState(false);
-  const allBars = useMemo(() => makeBars(symbols[symbol]), [symbol]);
+  const [mode, setMode] = useState<"local" | "sample">(localBuild ? "local" : "sample");
+  const [adjustment, setAdjustment] = useState("all");
+  const [payload, setPayload] = useState<ChartResponse | null>(null);
+  const [localBars, setLocalBars] = useState<Bar[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "empty" | "error">("loading");
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [matches, setMatches] = useState<Instrument[]>([]);
+  const [searchStatus, setSearchStatus] = useState("");
+  const sampleSymbol = (symbol in symbols ? symbol : "NVDA") as SymbolKey;
+  const sampleBars = useMemo(() => makeBars(symbols[sampleSymbol]), [sampleSymbol]);
+  const allBars = mode === "sample" ? sampleBars : localBars;
   const bars = useMemo(() => allBars.slice(-rangeSize(range)), [allBars, range]);
+  const latestAverages = useMemo(() => Object.fromEntries([20, 50, 200].map((period) => [period,
+    allBars.length >= period ? allBars.slice(-period).reduce((total, bar) => total + bar.close, 0) / period : undefined,
+  ])), [allBars]);
   const autoTrends = useMemo(() => findAutoTrends(bars), [bars]);
-  const latest = bars.at(-1)!;
-  const [hovered, setHovered] = useState<Bar>(latest);
+  const latest = bars.at(-1);
+  const [hovered, setHovered] = useState<Bar | undefined>(latest);
+  const [renderError, setRenderError] = useState(false);
+  const name = mode === "sample" ? symbols[sampleSymbol].name : payload?.instrument.name ?? symbol;
+  const statusLabel = mode === "sample" ? "Sample data" : loadState === "loading" ? "Loading EOD" : loadState === "error" ? "API error" : loadState === "empty" ? "No bars" : payload?.status.freshness === "stale" ? "Stale EOD" : payload?.status.freshness === "unknown" ? "EOD · check freshness" : "Local EOD";
 
   useEffect(() => setHovered(latest), [latest]);
+
+  useEffect(() => {
+    if (mode !== "local") return;
+    const controller = new AbortController();
+    let expired = false;
+    const timeout = setTimeout(() => { expired = true; controller.abort(); }, 15000);
+    setLoadState("loading"); setLocalBars([]); setPayload(null); setError("");
+    getLocalJson<ChartResponse>(`/v1/chart/${encodeURIComponent(symbol)}?limit=5000&adjustment=${adjustment}`, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        const rows = toChartBars(result);
+        setPayload(result); setLocalBars(rows); setLoadState(rows.length ? "ready" : "empty");
+      }).catch((cause: unknown) => {
+        if (controller.signal.aborted && !expired) return;
+        setError(expired ? "Local API timed out. Retry when the service is ready." : cause instanceof Error ? cause.message : "Could not reach the local API.");
+        setLoadState("error");
+      }).finally(() => clearTimeout(timeout));
+    return () => { clearTimeout(timeout); controller.abort(); };
+  }, [mode, symbol, adjustment, retry]);
+
+  useEffect(() => {
+    if (!searchOpen || mode !== "local") return;
+    const controller = new AbortController();
+    setMatches([]); setSearchStatus("Searching…");
+    const timer = setTimeout(() => {
+      getLocalJson<Instrument[]>(`/v1/instruments?q=${encodeURIComponent(query.trim())}&limit=20`, controller.signal)
+        .then((items) => { if (!controller.signal.aborted) { setMatches(items); setSearchStatus(items.length ? "" : "No matching instruments"); } })
+        .catch(() => { if (!controller.signal.aborted) setSearchStatus("Search unavailable. Check the local API."); }).finally(() => clearTimeout(timeout));
+    }, 200);
+    const timeout = setTimeout(() => { setSearchStatus("Search timed out. Try again."); controller.abort(); }, 15000);
+    return () => { clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
+  }, [query, searchOpen, mode]);
+
+  const changeSymbol = (value: string) => {
+    setLocalBars([]); setPayload(null); setLoadState("loading"); setHovered(undefined);
+    setSymbol(value); setRetry((value) => value + 1); setSearchOpen(false); setQuery("");
+  };
+
+  const changeMode = (value: "local" | "sample") => {
+    changeSymbol("NVDA"); setMode(value);
+  };
 
   useEffect(() => {
     const saved = window.localStorage.getItem("brontide-chart-theme");
@@ -320,7 +384,9 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   }, [theme, themeLoaded]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !bars.length) return;
+    const chartContainer = containerRef.current;
+    setRenderError(false);
     setChartReady(false);
     let cancelled = false;
     let disposeChart: (() => void) | undefined;
@@ -336,7 +402,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       if (cancelled || !containerRef.current) return;
       const chart = init(containerRef.current, {
         timezone: "Etc/UTC",
-        layout: { barSpaceLimit: { min: 2.5, max: 28 }, yAxis: { position: "right", inside: false, gap: { top: .08, bottom: .04 } } },
+        layout: { barSpaceLimit: { min: .05, max: 1000 }, yAxis: { position: "right", inside: false, gap: { top: .08, bottom: .04 } } },
         styles: {
           grid: { horizontal: { color: palette.grid, style: "dashed", dashedValue: [2, 4] }, vertical: { color: palette.grid, style: "dashed", dashedValue: [2, 4] } },
           candle: {
@@ -352,16 +418,16 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
           separator: { color: palette.separator, activeBackgroundColor: palette.axis },
         },
       });
-      if (!chart) return;
+      if (!chart) { setRenderError(true); return; }
       chart.overrideYAxis({ paneId: "candle_pane", name: logScale ? "logarithm" : "normal" });
       chart.setSymbol({ ticker: symbol, pricePrecision: 2, volumePrecision: 0 });
       chart.setPeriod({ span: 1, type: "day" });
-      chart.setDataLoader({ getBars: ({ callback }) => callback(bars) });
+      chart.setDataLoader({ getBars: ({ type, callback }) => callback(type === "init" ? allBars : [], false) });
       const applyDefaultViewport = () => {
         const chartWidth = containerRef.current?.clientWidth ?? 1200;
-        const rightSpace = Math.round(chartWidth * .2);
-        const usableWidth = Math.max(260, chartWidth - rightSpace - 58);
-        const fittedBarSpace = Math.max(2.5, Math.min(48, usableWidth / Math.max(bars.length, 1)));
+        const rightSpace = Math.round(Math.max(1, chartWidth - 58) * .2);
+        const usableWidth = Math.max(1, chartWidth - rightSpace - 58);
+        const fittedBarSpace = Math.max(.05, usableWidth / Math.max(bars.length, 1));
         chart.setBarSpace(Number(fittedBarSpace.toFixed(2)));
         chart.setOffsetRightDistance(rightSpace);
       };
@@ -388,16 +454,16 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       disposeChart = () => {
         resizeObserver.disconnect();
         chart.unsubscribeAction("onCrosshairChange", crosshairHandler);
-        dispose(containerRef.current!);
+        dispose(chartContainer);
       };
-    });
+    }).catch(() => { if (!cancelled) setRenderError(true); });
     return () => {
       cancelled = true;
       disposeChart?.();
       chartRef.current = null;
       setChartReady(false);
     };
-  }, [bars, range, show20, show50, show200, symbol, logScale, theme]);
+  }, [allBars, bars, range, retry, show20, show50, show200, symbol, logScale, theme]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -441,10 +507,17 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
     <section className={`chart-dashboard theme-${theme}`}>
       <header className="chart-commandbar">
         <div className="chart-sequence"><button aria-label="Back" onClick={onExit}>‹</button><button className="chart-stage">EP contractions⌄</button><button aria-label="Previous">‹</button><span>1 of 14</span><button aria-label="Next">›</button></div>
-        <label className="chart-symbol-select"><span>{symbols[symbol].name}</span><b>{symbol}</b><select value={symbol} onChange={(event) => setSymbol(event.target.value as SymbolKey)} aria-label="Stock"><option value="NVDA">NVIDIA Corporation</option><option value="MRNA">Moderna, Inc.</option><option value="CRCL">Circle Internet Group</option></select></label>
-        <div className="chart-header-actions"><button className={`auto-trend-toggle ${autoTrend ? "active" : ""}`} onClick={() => setAutoTrend((value) => !value)} aria-pressed={autoTrend} title="Detect recent support and resistance"><TrendUp size={14}/><span>Auto Trend</span></button><span className="chart-data-state"><i/> Sample data</span><button className="chart-accent">Analyze setup</button><button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
+        {mode === "sample" ? <label className="chart-symbol-select"><span>{name}</span><b>{sampleSymbol}</b><select value={sampleSymbol} onChange={(event) => changeSymbol(event.target.value)} aria-label="Stock"><option value="NVDA">NVIDIA Corporation</option><option value="MRNA">Moderna, Inc.</option><option value="CRCL">Circle Internet Group</option></select></label> :
+          <div className="chart-symbol-search"><button className="chart-search-trigger" onClick={() => setSearchOpen((value) => !value)} aria-expanded={searchOpen} aria-label={`Search stock, selected ${symbol}`}><b>{symbol}</b><span>{name}</span></button>
+            {searchOpen && <div className="chart-search-popover" onKeyDown={(event) => { if (event.key === "Escape") setSearchOpen(false); }}><label>Find an instrument<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map((item) => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
+          </div>}
+        <div className="chart-header-actions"><button className={`auto-trend-toggle ${autoTrend ? "active" : ""}`} disabled={!bars.length} onClick={() => setAutoTrend((value) => !value)} aria-pressed={autoTrend} aria-label="Auto Trend" title="Detect recent support and resistance"><TrendUp size={14}/><span>Auto Trend</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span><button className="chart-accent">Analyze setup</button><button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
       </header>
 
+      <div className="chart-sourcebar">
+        {localBuild && <label>Data <select aria-label="Data mode" value={mode} onChange={(event) => changeMode(event.target.value as "local" | "sample")}><option value="local">Local EOD</option><option value="sample">Sample demo</option></select></label>}
+        {mode === "local" ? <><label>Prices <select aria-label="Price adjustment" value={adjustment} onChange={(event) => { setLocalBars([]); setPayload(null); setLoadState("loading"); setAdjustment(event.target.value); }}><option value="all">All adjusted</option><option value="raw">Raw</option></select></label><span>{payload ? `Alpaca SIP · ${payload.status.last_session ?? "No sessions"}${payload.status.freshness === "stale" ? ` · Missing through ${payload.status.expected_session}` : payload.status.freshness === "unknown" ? " · Calendar coverage needs updating" : ""}` : statusLabel}</span><button onClick={() => setRetry((value) => value + 1)}>Refresh</button></> : <span>Generated sample prices · For demonstration only</span>}
+      </div>
       <div className="chart-subbar">
         <div className="chart-ranges">{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}<button className="chart-select-button">Daily⌄</button></div>
         <div className="chart-display-controls"><details><summary>Indicators</summary><div className="indicator-popover"><label><input type="checkbox" checked={show20} onChange={(e) => setShow20(e.target.checked)}/>20 SMA</label><label><input type="checkbox" checked={show50} onChange={(e) => setShow50(e.target.checked)}/>50 SMA</label><label><input type="checkbox" checked={show200} onChange={(e) => setShow200(e.target.checked)}/>200 SMA</label></div></details><span>SCALE</span><button className={!logScale ? "active" : ""} onClick={() => setLogScale(false)}>Lin</button><button className={logScale ? "active" : ""} onClick={() => setLogScale(true)}>Log</button><div className="chart-viewport-controls" role="group" aria-label="Chart viewport"><button onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)} aria-label="Zoom out" title="Zoom out">−</button><button onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)} aria-label="Zoom in" title="Zoom in">+</button><button onClick={() => chartRef.current?.scrollByDistance(-120, 160)} aria-label="Move backward" title="Move backward">‹</button><button onClick={() => chartRef.current?.scrollToRealTime(180)} aria-label="Move to latest" title="Move to latest">Latest</button></div></div>
@@ -466,9 +539,11 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
         </aside>
 
         <div className="chart-canvas-shell">
-          <div className="chart-ohlc"><span>{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>
-          <div className="chart-legend">{show20 && <span className="ma20">MA20: {movingAverage(bars, 20).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {movingAverage(bars, 50).at(-1)?.value.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {movingAverage(bars, 200).at(-1)?.value.toFixed(2) ?? "—"}</span>}{autoTrend && autoTrends.map((trend) => <span key={trend.kind} className={`auto-trend-legend ${trend.kind}`}>{trend.kind === "resistance" ? "R" : "S"}: {trend.touches} touches · {trend.confidence}%</span>)}</div>
-          {!chartReady && <SampleChartFallback rows={bars}/>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
+          {hovered && <div className="chart-ohlc"><span>{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>}
+          <div className="chart-legend">{show20 && <span className="ma20">MA20: {latestAverages[20]?.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {latestAverages[50]?.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {latestAverages[200]?.toFixed(2) ?? "—"}</span>}{autoTrend && autoTrends.map((trend) => <span key={trend.kind} className={`auto-trend-legend ${trend.kind}`}>{trend.kind === "resistance" ? "R" : "S"}: {trend.touches} touches · {trend.confidence}%</span>)}</div>
+          {!chartReady && bars.length > 0 && <SampleChartFallback rows={bars}/>}
+          {!bars.length && <div className="chart-message" role={loadState === "error" ? "alert" : "status"}><strong>{loadState === "loading" ? "Loading daily bars…" : loadState === "empty" ? "No stored bars for this price series" : "Local data unavailable"}</strong><p>{loadState === "error" ? error : loadState === "empty" ? "Choose another instrument or price adjustment." : "Reading your local EOD data."}</p>{loadState === "error" && <button onClick={() => setRetry((value) => value + 1)}>Retry</button>}</div>}
+          {renderError && <div className="drawing-hint" role="alert">Interactive chart unavailable · Static preview <button onClick={() => setRetry((value) => value + 1)}>Retry</button></div>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
           {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
         </div>
       </div>

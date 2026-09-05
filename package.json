@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/next-dev.mjs",
-    "build": "next build",
-    "start": "next start"
+    "build": "node scripts/build.mjs",
+    "start": "next start",
+    "local": "node scripts/local.mjs",
+    "test:chart": "node --test tests/chart-data.test.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
