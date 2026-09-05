@@ -942,3 +942,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .chart-sourcebar > span { flex-basis: 100%; order: 3; }
   .chart-sourcebar button { margin-left: auto; }
 }
+
+/* Keep simulated prices identifiable even when mobile hides the header status. */
+.chart-demo-disclosure { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 3px 0 3px 8px; border-left: 3px solid #b77c18; }
+.chart-demo-disclosure strong { color: var(--chart-text); font-size: 10px; letter-spacing: .04em; }
+.chart-demo-disclosure > span { line-height: 1.4; }
+.chart-demo-watermark { position: absolute; z-index: 4; right: 65px; bottom: 125px; pointer-events: none; padding: 5px 7px; color: var(--chart-text-soft); background: var(--chart-panel-muted); border: 1px solid var(--chart-line); border-radius: 4px; font-size: 9px; letter-spacing: .06em; }
