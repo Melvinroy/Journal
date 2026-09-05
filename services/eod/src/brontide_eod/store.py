@@ -416,7 +416,14 @@ class DuckDBStore:
             if is_sip_symbol(symbol)
         ]
 
-    def historical_universe_reconciliation(self, *, source_count: int | None = None, duplicates_removed: int = 0) -> dict[str, int]:
+    def historical_universe_reconciliation(
+        self,
+        *,
+        source_count: int | None = None,
+        duplicates_removed: int = 0,
+        source_symbols: Iterable[str] | None = None,
+    ) -> dict[str, int]:
+        source_symbol_set = set(source_symbols) if source_symbols is not None else None
         rows = self.connection.execute(
             """
             SELECT symbol, exchange, coalesce(sip_queryable, true)
@@ -433,6 +440,8 @@ class DuckDBStore:
             "excluded_other": 0,
         }
         for symbol, exchange, sip_queryable in rows:
+            if source_symbol_set is not None and symbol not in source_symbol_set:
+                continue
             if exchange == "OTC":
                 counts["excluded_otc"] += 1
             elif not is_sip_symbol(symbol):

@@ -58,6 +58,7 @@ class HistoricalUniverseRefreshResult:
     source_population: int
     deduped_instruments: int
     duplicates_removed: int
+    deduped_symbols: tuple[str, ...]
 
 
 def batched(values: Iterable[T], size: int) -> Iterator[list[T]]:
@@ -136,6 +137,7 @@ def refresh_historical_universe_details(
         source_population=len(instruments),
         deduped_instruments=upserted,
         duplicates_removed=len(instruments) - deduped_count,
+        deduped_symbols=tuple(sorted({instrument.symbol for instrument in instruments})),
     )
 
 
@@ -150,6 +152,7 @@ def preflight_historical_universe(
     sleep: Callable[[float], None] = time.sleep,
     source_population: int | None = None,
     duplicates_removed: int = 0,
+    source_symbols: Iterable[str] | None = None,
 ) -> UniversePreflightResult:
     initial_symbols = store.historical_symbols()
     rejected: dict[str, str] = {}
@@ -172,6 +175,7 @@ def preflight_historical_universe(
     reconciliation = store.historical_universe_reconciliation(
         source_count=source_population,
         duplicates_removed=duplicates_removed,
+        source_symbols=source_symbols,
     )
     if reconciliation["included"] != len(store.historical_symbols()):
         raise ValueError("historical universe reconciliation included count does not match final symbols")
@@ -242,6 +246,7 @@ def backfill_sessions(
     stop_on_error: bool = False,
     source_population: int | None = None,
     duplicates_removed: int = 0,
+    source_symbols: Iterable[str] | None = None,
 ) -> dict[str, int]:
     if end < start:
         raise ValueError("end date must be on or after start date")
@@ -271,6 +276,7 @@ def backfill_sessions(
             sleep=sleep,
             source_population=source_population,
             duplicates_removed=duplicates_removed,
+            source_symbols=source_symbols,
         )
     symbols, config = historical_ingestion_config(store)
 

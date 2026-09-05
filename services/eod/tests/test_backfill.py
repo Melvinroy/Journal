@@ -375,6 +375,24 @@ def test_universe_reconciliation_fails_closed_on_unexplained_counts(tmp_path: Pa
             raise AssertionError("expected reconciliation failure")
 
 
+def test_universe_reconciliation_ignores_stale_store_rows_outside_current_source(tmp_path: Path) -> None:
+    with DuckDBStore(tmp_path / "brontide.duckdb") as store:
+        store.upsert_instruments([instrument("AAPL"), instrument("STALE")])
+
+        assert store.historical_universe_reconciliation(
+            source_count=1,
+            source_symbols=["AAPL"],
+        ) == {
+            "included": 1,
+            "rejected_by_alpaca": 0,
+            "excluded_malformed": 0,
+            "excluded_otc": 0,
+            "removed_duplicate": 0,
+            "excluded_other": 0,
+            "source_population": 1,
+        }
+
+
 def test_progress_separates_historical_density_from_live_coverage(tmp_path: Path) -> None:
     events: list[dict[str, object]] = []
     provider = FakeProvider()

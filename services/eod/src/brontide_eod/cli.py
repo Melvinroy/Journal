@@ -96,6 +96,7 @@ def main() -> None:
                     stop_on_error=True,
                     source_population=refresh_result.source_population,
                     duplicates_removed=refresh_result.duplicates_removed,
+                    source_symbols=refresh_result.deduped_symbols,
                     emit=print_progress,
                 )))
 
