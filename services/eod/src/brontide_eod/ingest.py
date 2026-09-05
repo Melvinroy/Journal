@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import httpx
 
+from brontide_eod.models import Instrument
 from brontide_eod.providers.base import MarketDataProvider
 from brontide_eod.quality import validate_bars
 from brontide_eod.store import DuckDBStore
@@ -41,6 +42,22 @@ class IngestionConfig:
     universe_fingerprint: str
     pipeline_version: str
     config_fingerprint: str
+
+
+@dataclass(frozen=True)
+class UniversePreflightResult:
+    initial_symbols: int
+    accepted_symbols: int
+    rejected_symbols: tuple[str, ...]
+    probe_session: date
+    reconciliation: dict[str, int]
+
+
+@dataclass(frozen=True)
+class HistoricalUniverseRefreshResult:
+    source_population: int
+    deduped_instruments: int
+    duplicates_removed: int
 
 
 def batched(values: Iterable[T], size: int) -> Iterator[list[T]]:
@@ -79,8 +96,8 @@ def ingestion_config_fingerprint(
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
-def historical_ingestion_config(store: DuckDBStore) -> tuple[list[str], IngestionConfig]:
-    symbols = store.historical_symbols()
+def historical_ingestion_config(store: DuckDBStore, symbols: list[str] | None = None) -> tuple[list[str], IngestionConfig]:
+    symbols = sorted(symbols if symbols is not None else store.historical_symbols())
     fingerprint = universe_fingerprint(symbols)
     config_fingerprint = ingestion_config_fingerprint(universe_fingerprint=fingerprint)
     config = IngestionConfig(
@@ -103,10 +120,68 @@ def refresh_universe(provider: MarketDataProvider, store: DuckDBStore) -> int:
 
 
 def refresh_historical_universe(provider: MarketDataProvider, store: DuckDBStore) -> int:
+    return refresh_historical_universe_details(provider, store).deduped_instruments
+
+
+def refresh_historical_universe_details(
+    provider: MarketDataProvider,
+    store: DuckDBStore,
+) -> HistoricalUniverseRefreshResult:
     instruments = []
     for status in ("active", "inactive"):
         instruments.extend(provider.list_instruments(status=status))
-    return store.upsert_instruments(instruments)
+    deduped_count = _deduped_instrument_count(instruments)
+    upserted = store.upsert_instruments(instruments)
+    return HistoricalUniverseRefreshResult(
+        source_population=len(instruments),
+        deduped_instruments=upserted,
+        duplicates_removed=len(instruments) - deduped_count,
+    )
+
+
+def preflight_historical_universe(
+    provider: MarketDataProvider,
+    store: DuckDBStore,
+    *,
+    probe_session: date,
+    batch_size: int = 200,
+    max_retries: int = 5,
+    base_delay_seconds: float = 2.0,
+    sleep: Callable[[float], None] = time.sleep,
+    source_population: int | None = None,
+    duplicates_removed: int = 0,
+) -> UniversePreflightResult:
+    initial_symbols = store.historical_symbols()
+    rejected: dict[str, str] = {}
+    for symbols in batched(initial_symbols, batch_size):
+        try:
+            _with_retries(
+                lambda symbols=symbols: provider.get_daily_bars(symbols, probe_session, probe_session),
+                max_retries=max_retries,
+                base_delay_seconds=base_delay_seconds,
+                sleep=sleep,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 400:
+                raise
+            _confirm_control_request(provider, probe_session, max_retries, base_delay_seconds, sleep)
+            rejected.update(_bisect_bad_symbols(provider, symbols, probe_session, max_retries, base_delay_seconds, sleep))
+    if rejected:
+        for symbol, reason in rejected.items():
+            store.mark_symbols_not_sip_queryable([symbol], reason)
+    reconciliation = store.historical_universe_reconciliation(
+        source_count=source_population,
+        duplicates_removed=duplicates_removed,
+    )
+    if reconciliation["included"] != len(store.historical_symbols()):
+        raise ValueError("historical universe reconciliation included count does not match final symbols")
+    return UniversePreflightResult(
+        initial_symbols=len(initial_symbols),
+        accepted_symbols=len(store.historical_symbols()),
+        rejected_symbols=tuple(sorted(rejected)),
+        probe_session=probe_session,
+        reconciliation=reconciliation,
+    )
 
 
 class RequestRateLimiter:
@@ -163,6 +238,10 @@ def backfill_sessions(
     rate_limiter: RequestRateLimiter | None = None,
     sleep: Callable[[float], None] = time.sleep,
     emit: Callable[[dict[str, object]], None] | None = None,
+    preflight_session: date | None = None,
+    stop_on_error: bool = False,
+    source_population: int | None = None,
+    duplicates_removed: int = 0,
 ) -> dict[str, int]:
     if end < start:
         raise ValueError("end date must be on or after start date")
@@ -181,6 +260,18 @@ def backfill_sessions(
     issues = 0
     pending_chunks: list[list[date]] = []
     current_chunk: list[date] = []
+    if preflight_session is not None:
+        preflight_historical_universe(
+            provider,
+            store,
+            probe_session=preflight_session,
+            batch_size=batch_size,
+            max_retries=max_retries,
+            base_delay_seconds=base_delay_seconds,
+            sleep=sleep,
+            source_population=source_population,
+            duplicates_removed=duplicates_removed,
+        )
     symbols, config = historical_ingestion_config(store)
 
     for day in _date_range(start, end):
@@ -238,6 +329,8 @@ def backfill_sessions(
                         total_symbols=len(symbols),
                     ))
                 remaining += 1
+            if stop_on_error:
+                raise
             continue
         completed += len(chunk)
         bars += int(result["bars"])
@@ -329,11 +422,13 @@ def _ingest_session_chunk(
     base_delay_seconds: float,
     sleep: Callable[[float], None],
 ) -> dict[str, object]:
-    run_ids = _start_session_runs(store, sessions, config)
     bars_by_session = {session: 0 for session in sessions}
     issues_by_session = {session: 0 for session in sessions}
     session_set = set(sessions)
+    run_ids: dict[date, str] = {}
     try:
+        store.begin()
+        run_ids = _start_session_runs(store, sessions, config)
         for batch_symbols in batched(symbols, batch_size):
             bars = _with_retries(
                 lambda symbols=batch_symbols: provider.get_daily_bars(symbols, sessions[0], sessions[-1]),
@@ -352,18 +447,14 @@ def _ingest_session_chunk(
                 bars_by_session[session] += len(ready)
                 issues_by_session[session] += store.write_issues(run_ids[session], issues)
             store.upsert_bars(ready_bars)
-    except Exception as exc:
-        _finish_session_runs(
-            store,
-            run_ids,
-            "failed",
-            bars_by_session,
-            issues_by_session,
-            instrument_count=len(symbols),
-            detail=str(exc)[:2_000],
-        )
+        _finish_session_runs(store, run_ids, "completed", bars_by_session, issues_by_session, instrument_count=len(symbols))
+        store.commit()
+        store.checkpoint()
+    except Exception:
+        store.rollback()
+        _record_failed_session_runs(store, sessions, config, len(symbols), _exception_detail())
+        store.checkpoint()
         raise
-    _finish_session_runs(store, run_ids, "completed", bars_by_session, issues_by_session, instrument_count=len(symbols))
     return {
         "bars": sum(bars_by_session.values()),
         "issues": sum(issues_by_session.values()),
@@ -400,6 +491,68 @@ def _with_retries(
                 raise
             sleep(_jittered(base_delay_seconds * (2 ** attempt)))
             attempt += 1
+
+
+def _confirm_control_request(
+    provider: MarketDataProvider,
+    probe_session: date,
+    max_retries: int,
+    base_delay_seconds: float,
+    sleep: Callable[[float], None],
+) -> None:
+    try:
+        _with_retries(
+            lambda: provider.get_daily_bars(["AAPL"], probe_session, probe_session),
+            max_retries=max_retries,
+            base_delay_seconds=base_delay_seconds,
+            sleep=sleep,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 400:
+            raise RuntimeError("systemic Alpaca request failure: AAPL control request also returned HTTP 400") from exc
+        raise
+
+
+def _bisect_bad_symbols(
+    provider: MarketDataProvider,
+    symbols: list[str],
+    probe_session: date,
+    max_retries: int,
+    base_delay_seconds: float,
+    sleep: Callable[[float], None],
+) -> dict[str, str]:
+    try:
+        _with_retries(
+            lambda: provider.get_daily_bars(symbols, probe_session, probe_session),
+            max_retries=max_retries,
+            base_delay_seconds=base_delay_seconds,
+            sleep=sleep,
+        )
+        return {}
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 400:
+            raise
+        if len(symbols) == 1:
+            return {symbols[0]: _sanitized_provider_reason(exc)}
+        midpoint = len(symbols) // 2
+        return (
+            _bisect_bad_symbols(provider, symbols[:midpoint], probe_session, max_retries, base_delay_seconds, sleep)
+            | _bisect_bad_symbols(provider, symbols[midpoint:], probe_session, max_retries, base_delay_seconds, sleep)
+        )
+
+
+def _sanitized_provider_reason(exc: httpx.HTTPStatusError) -> str:
+    body = exc.response.text.strip()
+    return f"Alpaca SIP bars HTTP {exc.response.status_code}: {body}"[:2_000]
+
+
+def _deduped_instrument_count(instruments: Iterable[Instrument]) -> int:
+    by_symbol: dict[str, Instrument] = {}
+    for instrument in instruments:
+        existing = by_symbol.get(instrument.symbol)
+        if existing is None or (existing.status != "active" and instrument.status == "active"):
+            by_symbol[instrument.symbol] = instrument
+    return len(by_symbol)
 
 
 def _retry_delay(exc: httpx.HTTPStatusError, base_delay_seconds: float, attempt: int) -> float:
@@ -477,6 +630,45 @@ def _record_skipped(store: DuckDBStore, session: date, detail: str, config: Inge
     )
 
 
+def _record_failed_session_runs(
+    store: DuckDBStore,
+    sessions: list[date],
+    config: IngestionConfig,
+    instrument_count: int,
+    detail: str,
+) -> None:
+    store.begin()
+    try:
+        for session in sessions:
+            store.connection.execute(
+                """
+                INSERT INTO data_ingest_runs (
+                  run_id, provider, session_date, completed_at, status,
+                  universe_fingerprint, config_fingerprint, instrument_count, detail
+                ) VALUES (?, ?, ?, current_timestamp, 'failed', ?, ?, ?, ?)
+                """,
+                [
+                    str(uuid4()),
+                    RUN_PROVIDER,
+                    session,
+                    config.universe_fingerprint,
+                    config.config_fingerprint,
+                    instrument_count,
+                    detail[:2_000],
+                ],
+            )
+        store.commit()
+    except Exception:
+        store.rollback()
+        raise
+
+
+def _exception_detail() -> str:
+    import traceback
+
+    return traceback.format_exc()
+
+
 def _start_session_runs(store: DuckDBStore, sessions: list[date], config: IngestionConfig) -> dict[date, str]:
     run_ids = {session: str(uuid4()) for session in sessions}
     for session, run_id in run_ids.items():
@@ -525,16 +717,20 @@ def _progress(
     total_symbols: int | None = None,
     detail: str | None = None,
 ) -> dict[str, object]:
-    total_symbols = total_symbols if total_symbols is not None else _active_tradable_count(store)
+    total_symbols = total_symbols if total_symbols is not None else len(store.historical_symbols())
     loaded_symbols = _loaded_symbol_count(store, session)
-    coverage = (loaded_symbols / total_symbols * 100) if total_symbols else 0.0
+    historical_density = (loaded_symbols / total_symbols * 100) if total_symbols else 0.0
+    live_symbols = len(store.live_scan_symbols())
+    live_loaded_symbols = _loaded_live_symbol_count(store, session)
+    live_coverage = (live_loaded_symbols / live_symbols * 100) if live_symbols else 0.0
     event: dict[str, object] = {
         "session": session.isoformat(),
         "status": status,
         "remaining_sessions": remaining,
         "session_bars": session_bar_count,
         "total_bars": total_bar_count,
-        "coverage_percent": round(coverage, 2),
+        "historical_response_density_percent": round(historical_density, 2),
+        "live_universe_coverage_percent": round(live_coverage, 2),
         "issues": issue_count,
         "failures": failures,
         "requests": requests,
@@ -554,6 +750,27 @@ def _loaded_symbol_count(store: DuckDBStore, session: date) -> int:
         "SELECT count(DISTINCT symbol) FROM daily_bars WHERE session_date = ?",
         [session],
     ).fetchone()[0]
+
+
+def _loaded_live_symbol_count(store: DuckDBStore, session: date) -> int:
+    live_symbols = store.live_scan_symbols()
+    if not live_symbols:
+        return 0
+    values_sql = ", ".join(_sql_value(symbol) for symbol in live_symbols)
+    return store.connection.execute(
+        f"""
+        WITH live_symbols(symbol) AS (VALUES {values_sql})
+        SELECT count(DISTINCT daily_bars.symbol)
+        FROM daily_bars
+        JOIN live_symbols USING (symbol)
+        WHERE session_date = ?
+        """,
+        [session],
+    ).fetchone()[0]
+
+
+def _sql_value(value: str) -> str:
+    return "('" + value.replace("'", "''") + "')"
 
 
 def _market_holidays(year: int) -> set[date]:

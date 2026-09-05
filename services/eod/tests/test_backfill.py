@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
+import pytest
 
 from brontide_eod.ingest import (
     PIPELINE_VERSION,
@@ -12,6 +13,8 @@ from brontide_eod.ingest import (
     ingestion_config_fingerprint,
     is_market_session,
     market_sessions,
+    preflight_historical_universe,
+    refresh_historical_universe_details,
     refresh_historical_universe,
     refresh_universe,
     universe_fingerprint,
@@ -241,7 +244,7 @@ def test_backfill_requests_multiple_sessions_per_symbol_batch(tmp_path: Path) ->
         assert store.connection.execute("SELECT count(*) FROM daily_bars").fetchone()[0] == 8
 
 
-def test_failed_chunk_retains_bars_but_leaves_sessions_incomplete(tmp_path: Path) -> None:
+def test_failed_chunk_rolls_back_partial_bars_and_leaves_sessions_incomplete(tmp_path: Path) -> None:
     class PartlyFailingProvider(FakeProvider):
         def get_daily_bars(self, symbols: list[str], start: date, end: date) -> list[DailyBar]:
             rows = super().get_daily_bars(symbols, start, end)
@@ -264,8 +267,9 @@ def test_failed_chunk_retains_bars_but_leaves_sessions_incomplete(tmp_path: Path
             sleep=lambda _: None,
         )
         assert result["failed"] == 1
-        assert store.connection.execute("SELECT count(*) FROM daily_bars").fetchone()[0] == 1
+        assert store.connection.execute("SELECT count(*) FROM daily_bars").fetchone()[0] == 0
         assert store.connection.execute("SELECT count(*) FROM data_ingest_runs WHERE status = 'completed'").fetchone()[0] == 0
+        assert store.connection.execute("SELECT count(*) FROM data_ingest_runs WHERE status = 'failed'").fetchone()[0] == 1
 
 
 def test_backfill_rejects_bars_outside_requested_session_range(tmp_path: Path) -> None:
@@ -275,6 +279,178 @@ def test_backfill_rejects_bars_outside_requested_session_range(tmp_path: Path) -
         result = backfill_sessions(provider, store, date(2026, 9, 3), date(2026, 9, 3), sleep=lambda _: None)
         assert result["failed"] == 1
         assert store.connection.execute("SELECT count(*) FROM daily_bars").fetchone()[0] == 0
+
+
+def test_historical_universe_preflight_excludes_bisected_bad_symbols(tmp_path: Path) -> None:
+    class BadSymbolProvider(FakeProvider):
+        def get_daily_bars(self, symbols: list[str], start: date, end: date) -> list[DailyBar]:
+            if "BAD" in symbols:
+                request = httpx.Request("GET", "https://data.alpaca.markets/v2/stocks/bars")
+                response = httpx.Response(400, json={"message": "invalid symbol: BAD"}, request=request)
+                raise httpx.HTTPStatusError("bad request", request=request, response=response)
+            return super().get_daily_bars(symbols, start, end)
+
+    provider = BadSymbolProvider()
+    with DuckDBStore(tmp_path / "brontide.duckdb") as store:
+        store.upsert_instruments([instrument("AAPL"), instrument("BAD"), instrument("MSFT")])
+        result = preflight_historical_universe(
+            provider,
+            store,
+            probe_session=date(2026, 9, 3),
+            batch_size=200,
+            sleep=lambda _: None,
+        )
+
+        assert result.rejected_symbols == ("BAD",)
+        assert store.historical_symbols() == ["AAPL", "MSFT"]
+        assert store.connection.execute(
+            "SELECT sip_queryable, sip_queryable_reason FROM instruments WHERE symbol = 'BAD'"
+        ).fetchone() == (
+            False,
+            'Alpaca SIP bars HTTP 400: {"message":"invalid symbol: BAD"}',
+        )
+        assert result.reconciliation == {
+            "included": 2,
+            "rejected_by_alpaca": 1,
+            "excluded_malformed": 0,
+            "excluded_otc": 0,
+            "removed_duplicate": 0,
+            "excluded_other": 0,
+            "source_population": 3,
+        }
+
+
+def test_universe_reconciliation_partitions_every_source_candidate(tmp_path: Path) -> None:
+    class MixedUniverseProvider(FakeProvider):
+        def list_instruments(self, *, status: str = "active") -> list[Instrument]:
+            if status == "active":
+                return [
+                    instrument("LIVE"),
+                    instrument("LIVE"),
+                    Instrument("OTCA", "OTC Active", "OTC", "us_equity", "active", True, False, "OTCA"),
+                    Instrument("044CNT012", "Contra", "NYSE", "us_equity", "active", False, False, "044CNT012"),
+                    instrument("BAD"),
+                ]
+            return [instrument("OLD")]
+
+        def get_daily_bars(self, symbols: list[str], start: date, end: date) -> list[DailyBar]:
+            if "BAD" in symbols:
+                request = httpx.Request("GET", "https://data.alpaca.markets/v2/stocks/bars")
+                response = httpx.Response(400, json={"message": "invalid symbol: BAD"}, request=request)
+                raise httpx.HTTPStatusError("bad request", request=request, response=response)
+            return super().get_daily_bars(symbols, start, end)
+
+    provider = MixedUniverseProvider()
+    with DuckDBStore(tmp_path / "brontide.duckdb") as store:
+        refresh = refresh_historical_universe_details(provider, store)
+        preflight = preflight_historical_universe(
+            provider,
+            store,
+            probe_session=date(2026, 9, 3),
+            source_population=refresh.source_population,
+            duplicates_removed=refresh.duplicates_removed,
+            sleep=lambda _: None,
+        )
+
+        assert preflight.reconciliation == {
+            "included": 2,
+            "rejected_by_alpaca": 1,
+            "excluded_malformed": 1,
+            "excluded_otc": 1,
+            "removed_duplicate": 1,
+            "excluded_other": 0,
+            "source_population": 6,
+        }
+        assert sum(value for key, value in preflight.reconciliation.items() if key != "source_population") == 6
+
+
+def test_universe_reconciliation_fails_closed_on_unexplained_counts(tmp_path: Path) -> None:
+    with DuckDBStore(tmp_path / "brontide.duckdb") as store:
+        store.upsert_instruments([instrument("AAPL")])
+        try:
+            store.historical_universe_reconciliation(source_count=0)
+        except ValueError as exc:
+            assert "over-assigned" in str(exc)
+        else:
+            raise AssertionError("expected reconciliation failure")
+
+
+def test_progress_separates_historical_density_from_live_coverage(tmp_path: Path) -> None:
+    events: list[dict[str, object]] = []
+    provider = FakeProvider()
+    with DuckDBStore(tmp_path / "brontide.duckdb") as store:
+        store.upsert_instruments([
+            instrument("AAPL"),
+            Instrument("OLD", "Old", "NYSE", "us_equity", "inactive", False, False, "OLD"),
+        ])
+        backfill_sessions(
+            provider,
+            store,
+            date(2026, 9, 3),
+            date(2026, 9, 3),
+            sleep=lambda _: None,
+            emit=events.append,
+        )
+
+    assert "historical_response_density_percent" in events[-1]
+    assert "live_universe_coverage_percent" in events[-1]
+    assert events[-1]["historical_response_density_percent"] == 100.0
+    assert events[-1]["live_universe_coverage_percent"] == 100.0
+
+
+def test_file_backed_chunk_failure_rolls_back_and_reopens_cleanly(tmp_path: Path) -> None:
+    class PartlyFailingProvider(FakeProvider):
+        def get_daily_bars(self, symbols: list[str], start: date, end: date) -> list[DailyBar]:
+            rows = super().get_daily_bars(symbols, start, end)
+            if self.calls == 2:
+                request = httpx.Request("GET", "https://data.alpaca.markets/v2/stocks/bars")
+                response = httpx.Response(400, json={"message": "invalid symbol"}, request=request)
+                raise httpx.HTTPStatusError("bad request", request=request, response=response)
+            return rows
+
+    db_path = tmp_path / "brontide.duckdb"
+    with DuckDBStore(db_path) as store:
+        store.upsert_instruments([instrument("AAPL"), instrument("MSFT")])
+        with pytest.raises(httpx.HTTPStatusError):
+            backfill_sessions(
+                PartlyFailingProvider(),
+                store,
+                date(2026, 9, 3),
+                date(2026, 9, 3),
+                batch_size=1,
+                max_retries=0,
+                sleep=lambda _: None,
+                stop_on_error=True,
+            )
+
+    with DuckDBStore(db_path) as reopened:
+        assert reopened.connection.execute("SELECT count(*) FROM daily_bars").fetchone()[0] == 0
+        assert reopened.connection.execute("SELECT count(*) FROM data_ingest_runs WHERE status = 'failed'").fetchone()[0] == 1
+
+
+def test_interruption_between_chunks_preserves_completed_chunk(tmp_path: Path) -> None:
+    db_path = tmp_path / "brontide.duckdb"
+    with DuckDBStore(db_path) as store:
+        store.upsert_instruments([instrument("AAPL")])
+
+        def interrupt_after_first_chunk(event: dict[str, object]) -> None:
+            if event["status"] == "completed":
+                raise KeyboardInterrupt()
+
+        with pytest.raises(KeyboardInterrupt):
+            backfill_sessions(
+                FakeProvider(),
+                store,
+                date(2026, 9, 3),
+                date(2026, 9, 4),
+                session_chunk_size=1,
+                sleep=lambda _: None,
+                emit=interrupt_after_first_chunk,
+            )
+
+    with DuckDBStore(db_path) as reopened:
+        assert reopened.connection.execute("SELECT count(*) FROM daily_bars").fetchone()[0] == 1
+        assert reopened.connection.execute("SELECT count(*) FROM data_ingest_runs WHERE status = 'completed'").fetchone()[0] == 1
 
 
 def test_rate_limiter_targets_requested_request_spacing() -> None:

@@ -9,7 +9,9 @@ from brontide_eod.ingest import (
     RequestRateLimiter,
     backfill_sessions,
     ingest_session,
+    market_sessions,
     print_progress,
+    refresh_historical_universe_details,
     refresh_historical_universe,
     refresh_universe,
 )
@@ -78,6 +80,8 @@ def main() -> None:
                 print(json.dumps(ingest_session(provider, store, args.session, batch_size=settings.alpaca_batch_size)))
             elif args.command == "backfill":
                 batch_size = args.batch_size if args.batch_size is not None else settings.alpaca_batch_size
+                preflight_session = next(market_sessions(args.start, args.end))
+                refresh_result = refresh_historical_universe_details(provider, store)
                 print(json.dumps(backfill_sessions(
                     provider,
                     store,
@@ -88,6 +92,10 @@ def main() -> None:
                     rate_limiter=rate_limiter,
                     max_retries=args.max_retries,
                     base_delay_seconds=args.base_delay_seconds,
+                    preflight_session=preflight_session,
+                    stop_on_error=True,
+                    source_population=refresh_result.source_population,
+                    duplicates_removed=refresh_result.duplicates_removed,
                     emit=print_progress,
                 )))
 

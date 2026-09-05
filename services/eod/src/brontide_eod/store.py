@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS instruments (
   fractionable BOOLEAN NOT NULL,
   provider_id VARCHAR NOT NULL,
   source VARCHAR NOT NULL,
+  sip_queryable BOOLEAN NOT NULL DEFAULT true,
+  sip_queryable_reason VARCHAR,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
 );
 CREATE TABLE IF NOT EXISTS daily_bars (
@@ -129,6 +131,30 @@ class DuckDBStore:
             self.connection.execute("ALTER TABLE data_ingest_runs ADD COLUMN universe_fingerprint VARCHAR")
         if "config_fingerprint" not in columns:
             self.connection.execute("ALTER TABLE data_ingest_runs ADD COLUMN config_fingerprint VARCHAR")
+        instrument_columns = {
+            row[0]
+            for row in self.connection.execute("DESCRIBE instruments").fetchall()
+        }
+        if "sip_queryable" not in instrument_columns:
+            self.connection.execute("ALTER TABLE instruments ADD COLUMN sip_queryable BOOLEAN DEFAULT true")
+            self.connection.execute("UPDATE instruments SET sip_queryable = true WHERE sip_queryable IS NULL")
+        if "sip_queryable_reason" not in instrument_columns:
+            self.connection.execute("ALTER TABLE instruments ADD COLUMN sip_queryable_reason VARCHAR")
+
+    def begin(self) -> None:
+        self.connection.execute("BEGIN TRANSACTION")
+
+    def commit(self) -> None:
+        self.connection.execute("COMMIT")
+
+    def rollback(self) -> None:
+        try:
+            self.connection.execute("ROLLBACK")
+        except duckdb.TransactionException:
+            pass
+
+    def checkpoint(self) -> None:
+        self.connection.execute("CHECKPOINT")
 
     def __enter__(self) -> "DuckDBStore":
         return self
@@ -164,20 +190,56 @@ class DuckDBStore:
             """
         )
         self.connection.execute(
+            """
+            CREATE OR REPLACE TEMP TABLE existing_instrument_flags AS
+            SELECT symbol, sip_queryable, sip_queryable_reason
+            FROM instruments
+            WHERE symbol IN (SELECT symbol FROM incoming_instruments)
+            """
+        )
+        self.connection.execute(
             "DELETE FROM instruments WHERE symbol IN (SELECT symbol FROM incoming_instruments)"
         )
         self.connection.execute(
             """
             INSERT INTO instruments (
               symbol, name, exchange, asset_class, status, tradable,
-              fractionable, provider_id, source, updated_at
+              fractionable, provider_id, source, sip_queryable,
+              sip_queryable_reason, updated_at
             )
             SELECT symbol, name, exchange, asset_class, status, tradable,
-              fractionable, provider_id, source, now()
+              fractionable, provider_id, source,
+              coalesce(existing.sip_queryable, true),
+              existing.sip_queryable_reason,
+              now()
             FROM incoming_instruments
+            LEFT JOIN existing_instrument_flags AS existing USING (symbol)
             """
         )
+        self.connection.execute("DROP TABLE existing_instrument_flags")
         self.connection.execute("DROP TABLE incoming_instruments")
+        return len(rows)
+
+    def mark_symbols_not_sip_queryable(self, symbols: Iterable[str], reason: str) -> int:
+        rows = sorted(set(symbols))
+        if not rows:
+            return 0
+        values_sql = ",\n".join(f"({_sql_string(symbol)})" for symbol in rows)
+        self.connection.execute(
+            f"""
+            CREATE OR REPLACE TEMP TABLE rejected_symbols AS
+            SELECT * FROM (VALUES {values_sql}) AS row(symbol)
+            """
+        )
+        self.connection.execute(
+            """
+            UPDATE instruments
+            SET sip_queryable=false, sip_queryable_reason=?
+            WHERE symbol IN (SELECT symbol FROM rejected_symbols)
+            """,
+            [reason[:2_000]],
+        )
+        self.connection.execute("DROP TABLE rejected_symbols")
         return len(rows)
 
     def upsert_bars(self, bars: Iterable[DailyBar]) -> int:
@@ -345,9 +407,50 @@ class DuckDBStore:
 
     def historical_symbols(self) -> list[str]:
         return [
-            symbol for symbol in self.symbols(statuses=["active", "inactive"], tradable_only=False, exclude_otc=True)
+            symbol for symbol in self.symbols(
+                statuses=["active", "inactive"],
+                tradable_only=False,
+                exclude_otc=True,
+                sip_queryable_only=True,
+            )
             if is_sip_symbol(symbol)
         ]
+
+    def historical_universe_reconciliation(self, *, source_count: int | None = None, duplicates_removed: int = 0) -> dict[str, int]:
+        rows = self.connection.execute(
+            """
+            SELECT symbol, exchange, coalesce(sip_queryable, true)
+            FROM instruments
+            WHERE status IN ('active', 'inactive')
+            """
+        ).fetchall()
+        counts = {
+            "included": 0,
+            "rejected_by_alpaca": 0,
+            "excluded_malformed": 0,
+            "excluded_otc": 0,
+            "removed_duplicate": duplicates_removed,
+            "excluded_other": 0,
+        }
+        for symbol, exchange, sip_queryable in rows:
+            if exchange == "OTC":
+                counts["excluded_otc"] += 1
+            elif not is_sip_symbol(symbol):
+                counts["excluded_malformed"] += 1
+            elif not sip_queryable:
+                counts["rejected_by_alpaca"] += 1
+            else:
+                counts["included"] += 1
+        population = source_count if source_count is not None else len(rows) + duplicates_removed
+        assigned = sum(counts.values())
+        if assigned > population:
+            raise ValueError(f"historical universe reconciliation over-assigned {assigned} > {population}")
+        counts["excluded_other"] = population - assigned
+        assigned = sum(counts.values())
+        if assigned != population:
+            raise ValueError(f"historical universe reconciliation mismatch {assigned} != {population}")
+        counts["source_population"] = population
+        return counts
 
     def symbols(
         self,
@@ -355,6 +458,7 @@ class DuckDBStore:
         statuses: list[str] | None = None,
         tradable_only: bool = True,
         exclude_otc: bool = False,
+        sip_queryable_only: bool = False,
     ) -> list[str]:
         clauses = []
         if statuses:
@@ -366,6 +470,8 @@ class DuckDBStore:
             clauses.append("tradable")
         if exclude_otc:
             clauses.append("exchange <> 'OTC'")
+        if sip_queryable_only:
+            clauses.append("coalesce(sip_queryable, true)")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         return [row[0] for row in self.connection.execute(f"SELECT symbol FROM instruments {where} ORDER BY symbol").fetchall()]
 
