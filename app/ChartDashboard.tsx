@@ -12,6 +12,8 @@ import {
 import { getLocalJson, toChartBars, type ChartResponse, type Instrument } from "../lib/chart-data";
 import { Watchlist } from "./Watchlist";
 import { chartStorageKey, movingAverageByTime, readStored, writeStored, type MarketContext } from "../lib/workspace-state";
+import { findAutoTrends, projectTrendPoints, restoreTrendPoints, EMPTY_TRENDS, validTrendSettings, AUTO_TREND_VERSION } from "../lib/auto-trendlines";
+import { useBrowserStore } from "../lib/use-browser-store";
 import { extraOverlays } from "../lib/chart-overlays";
 
 const localBuild = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
@@ -30,16 +32,6 @@ type DrawingTool =
   | "longPosition" | "shortPosition" | "rangeMeasure" | "dateMarker" | "crosshairMeasure";
 type ToolDefinition = { id: DrawingTool; label: string; icon: Icon; overlay?: string };
 type ToolGroup = { id: string; label: string; icon: Icon; tools: ToolDefinition[] };
-type AutoTrendKind = "support" | "resistance";
-type AutoTrend = {
-  kind: AutoTrendKind;
-  start: Bar;
-  end: Bar;
-  touches: number;
-  confidence: number;
-  direction: "rising" | "falling" | "flat";
-};
-
 const symbols: Record<SymbolKey, { name: string; seed: number; start: number; drift: number }> = {
   NVDA: { name: "NVIDIA Corporation", seed: 17, start: 118, drift: .0031 },
   MRNA: { name: "Moderna, Inc.", seed: 41, start: 92, drift: .0015 },
@@ -133,102 +125,6 @@ function movingAverage(rows: Bar[], period: number) {
   });
 }
 
-function atrSeries(rows: Bar[], period = 14) {
-  return rows.map((_, index) => {
-    const first = Math.max(0, index - period + 1);
-    let total = 0;
-    let count = 0;
-    for (let cursor = first; cursor <= index; cursor += 1) {
-      const bar = rows[cursor];
-      const previousClose = cursor > 0 ? rows[cursor - 1].close : bar.close;
-      total += Math.max(bar.high - bar.low, Math.abs(bar.high - previousClose), Math.abs(bar.low - previousClose));
-      count += 1;
-    }
-    return total / Math.max(count, 1);
-  });
-}
-
-function findAutoTrends(rows: Bar[], lookback = 90, pivotSpan = 5): AutoTrend[] {
-  const source = rows.slice(-Math.min(rows.length, lookback));
-  if (source.length < pivotSpan * 2 + 3) return [];
-  const atr = atrSeries(source);
-  const pivotIndexes = (kind: AutoTrendKind) => source.flatMap((bar, index) => {
-    if (index < pivotSpan || index >= source.length - pivotSpan) return [];
-    const value = kind === "resistance" ? bar.high : bar.low;
-    const neighbors = source.slice(index - pivotSpan, index + pivotSpan + 1);
-    const isPivot = kind === "resistance"
-      ? neighbors.every((neighbor, offset) => offset === pivotSpan || neighbor.high <= value)
-      : neighbors.every((neighbor, offset) => offset === pivotSpan || neighbor.low >= value);
-    return isPivot ? [index] : [];
-  });
-
-  const bestFor = (kind: AutoTrendKind): AutoTrend | null => {
-    const pivots = pivotIndexes(kind);
-    let best: (AutoTrend & { score: number }) | null = null;
-    for (let a = 0; a < pivots.length - 1; a += 1) {
-      for (let b = a + 1; b < pivots.length; b += 1) {
-        const first = pivots[a];
-        const second = pivots[b];
-        const length = second - first;
-        const age = source.length - 1 - second;
-        if (length < 6 || age > 45) continue;
-        const firstValue = kind === "resistance" ? source[first].high : source[first].low;
-        const secondValue = kind === "resistance" ? source[second].high : source[second].low;
-        const slope = (secondValue - firstValue) / length;
-        const valueAt = (index: number) => firstValue + slope * (index - first);
-        let touches = 0;
-        let baseViolations = 0;
-        let closeStreak = 0;
-        let maxCloseStreak = 0;
-
-        for (const pivot of pivots) {
-          if (pivot < first) continue;
-          const pivotValue = kind === "resistance" ? source[pivot].high : source[pivot].low;
-          if (Math.abs(pivotValue - valueAt(pivot)) <= atr[pivot] * .35) touches += 1;
-        }
-        for (let index = first; index <= second; index += 1) {
-          const tolerance = atr[index] * .35;
-          const breached = kind === "resistance"
-            ? source[index].high > valueAt(index) + tolerance
-            : source[index].low < valueAt(index) - tolerance;
-          if (breached) baseViolations += 1;
-        }
-        for (let index = second + 1; index < source.length; index += 1) {
-          const tolerance = atr[index] * .35;
-          const breached = kind === "resistance"
-            ? source[index].close > valueAt(index) + tolerance
-            : source[index].close < valueAt(index) - tolerance;
-          closeStreak = breached ? closeStreak + 1 : 0;
-          maxCloseStreak = Math.max(maxCloseStreak, closeStreak);
-        }
-        if (touches < 2 || maxCloseStreak >= 3) continue;
-
-        const latestIndex = source.length - 1;
-        const distanceInAtr = Math.abs(source[latestIndex].close - valueAt(latestIndex)) / Math.max(atr[latestIndex], .01);
-        const score = Math.min(42, touches * 12)
-          + Math.max(0, 24 - baseViolations * 7)
-          + Math.max(0, 19 * (1 - age / 46))
-          + Math.min(15, length / 2)
-          - Math.min(22, distanceInAtr * 3);
-        if (!best || score > best.score) {
-          best = {
-            kind,
-            start: source[first],
-            end: source[second],
-            touches,
-            confidence: Math.max(1, Math.min(99, Math.round(score))),
-            direction: Math.abs(slope) < atr[latestIndex] * .002 ? "flat" : slope > 0 ? "rising" : "falling",
-            score,
-          };
-        }
-      }
-    }
-    return best;
-  };
-
-  return [bestFor("resistance"), bestFor("support")].filter((line): line is AutoTrend => Boolean(line));
-}
-
 function rangeSize(range: RangeKey) {
   return range === "1M" ? 22 : range === "3M" ? 66 : range === "6M" ? 132 : range === "1Y" ? 252 : 9999;
 }
@@ -295,10 +191,10 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
   const [show20, setShow20] = useState(true);
   const [show50, setShow50] = useState(true);
   const [show200, setShow200] = useState(true);
-  const [autoTrend, setAutoTrend] = useState(false);
   const [theme, setTheme] = useState<ChartTheme>("light");
   const [themeLoaded, setThemeLoaded] = useState(false);
   const [chartReady, setChartReady] = useState(false);
+  const [chartGeneration, setChartGeneration] = useState(0);
   const [mode, setMode] = useState<"local" | "sample">(localBuild ? "local" : "sample");
   const [adjustment, setAdjustment] = useState("all");
   const [payload, setPayload] = useState<ChartResponse | null>(null);
@@ -324,7 +220,24 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
   const latestAverages = useMemo(() => Object.fromEntries([20, 50, 200].map((period) => [period,
     allBars.length >= period ? allBars.slice(-period).reduce((total, bar) => total + bar.close, 0) / period : undefined,
   ])), [allBars]);
-  const autoTrends = useMemo(() => findAutoTrends(bars), [bars]);
+  const trendStore = useBrowserStore(`brontide-auto:${AUTO_TREND_VERSION}:${mode}:${symbol}:${adjustment}:${logScale?"log":"linear"}:${asOf??"latest"}`, EMPTY_TRENDS, validTrendSettings);
+  const autoTrend = trendStore.ready && trendStore.value.enabled;
+  const trendResult = useMemo(() => {
+    try { return {lines:findAutoTrends(allBars,{logarithmic:logScale}),error:""}; }
+    catch { return {lines:[],error:"Auto Trend cannot analyze these bars. Check the data source."}; }
+  }, [allBars,logScale]);
+  const autoTrends = trendResult.lines;
+  const displayedTrends = useMemo(() => {
+    const generated = autoTrends.filter(line=>!(line.id in trendStore.value.edits)).map(line=>({...line,edited:false}));
+    const edited = Object.entries(trendStore.value.edits).flatMap(([id,points])=>points ? [{
+      id,kind:id.includes(":resistance:")?"resistance" as const:"support" as const,points,edited:true,
+      touches:0,violations:0,fitATR:0,evaluatedAt:0,latestTouch:0,
+    }] : []);
+    return [...generated,...edited];
+  },[autoTrends,trendStore.value]);
+  // Overlay callbacks read the current store rather than a stale render closure.
+  const trendStoreRef = useRef(trendStore);
+  trendStoreRef.current = trendStore;
   const latest = bars.at(-1);
   const [hovered, setHovered] = useState<Bar | undefined>(latest);
   const [renderError, setRenderError] = useState(false);
@@ -493,6 +406,7 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
         drawingsWritable.current = true;
       } catch {setStorageError("Saved drawings could not be restored. Existing storage was retained.");}
       setChartReady(true);
+      setChartGeneration(value=>value+1);
       disposeChart = () => {
         resizeObserver.disconnect();
         chart.unsubscribeAction("onCrosshairChange", crosshairHandler);
@@ -512,32 +426,52 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
     if (!chart || !chartReady) return;
     chart.removeOverlay({ groupId: "brontide-auto-trends" });
     if (!autoTrend) return;
-    const colors: Record<AutoTrendKind, string> = theme === "light"
+    const colors = theme === "light"
       ? { resistance: "#d04b55", support: "#0b8f54" }
       : { resistance: "#ef6a72", support: "#38c985" };
-    for (const trend of autoTrends) {
+    for (const trend of displayedTrends) {
+      let projected;
+      try {projected=projectTrendPoints(trend.points,allBars,bars.length);}
+      catch {setStorageError("A saved trend anchor is outside loaded history. Load more history or reset auto lines.");continue;}
       chart.createOverlay({
-        name: "rayLine",
-        groupId: "brontide-auto-trends",
-        lock: true,
-        zLevel: 6,
-        needDefaultPointFigure: false,
-        needDefaultXAxisFigure: false,
-        needDefaultYAxisFigure: false,
-        points: [
-          { timestamp: trend.start.timestamp, value: trend.kind === "resistance" ? trend.start.high : trend.start.low },
-          { timestamp: trend.end.timestamp, value: trend.kind === "resistance" ? trend.end.high : trend.end.low },
-        ],
-        styles: { line: { color: colors[trend.kind], size: 1.35, style: "solid", dashedValue: [5, 4] } },
+        id:trend.id, name:"rayLine", groupId:"brontide-auto-trends", lock:false, zLevel:6,
+        needDefaultPointFigure:true, needDefaultXAxisFigure:false, needDefaultYAxisFigure:false,
+        points:projected,
+        onSelected:({overlay})=>setSelectedDrawing(overlay.id),
+        onRightClick:({preventDefault})=>{
+          preventDefault?.();
+          const current=trendStoreRef.current;
+          if(current.save({...current.value,edits:{...current.value.edits,[trend.id]:null}}))setSelectedDrawing(null);
+        },
+        onPressedMoveEnd:({overlay})=>{
+          const current=trendStoreRef.current;
+          try {
+            const points=restoreTrendPoints(overlay.points,allBars,bars.length);
+            if (!current.save({...current.value,edits:{...current.value.edits,[trend.id]:points}}))
+              chart.overrideOverlay({id:trend.id,points:projected});
+          } catch {setStorageError("Keep trend anchors in chronological order within loaded sessions and above zero.");chart.overrideOverlay({id:trend.id,points:projected});}
+        },
+        styles:{line:{color:colors[trend.kind],size:1.5,style:trend.edited?"dashed":"solid",dashedValue:[5,4]}},
       });
     }
-  }, [autoTrend, autoTrends, chartReady, theme]);
+  }, [autoTrend, displayedTrends, chartReady, chartGeneration, theme, allBars, bars, logScale]);
+
+  const deleteSelectedDrawing = () => {
+    if (!selectedDrawing) return;
+    if (selectedDrawing.startsWith(AUTO_TREND_VERSION+":")) {
+      if (!trendStore.save({...trendStore.value,edits:{...trendStore.value.edits,[selectedDrawing]:null}})) return;
+    } else {
+      chartRef.current?.removeOverlay({id:selectedDrawing});
+      persistDrawings();
+    }
+    setSelectedDrawing(null);
+  };
 
   const clearDrawings = () => {
     if (!window.confirm("Remove saved drawings for this instrument and price basis?")) return;
     chartRef.current?.removeOverlay({groupId:"brontide-drawings"});
     persistDrawings();
-    setAutoTrend(false);
+    trendStore.save({...trendStore.value,enabled:false});
   };
 
   const persistDrawings = () => {
@@ -565,7 +499,7 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
           <div className="chart-symbol-search"><button className="chart-search-trigger" onClick={() => setSearchOpen((value) => !value)} aria-expanded={searchOpen} aria-label={`Search stock, selected ${symbol}`}><b>{symbol}</b><span>{name}</span></button>
             {searchOpen && <div className="chart-search-popover" onKeyDown={(event) => { if (event.key === "Escape") setSearchOpen(false); }}><label>Find an instrument<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map((item) => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
           </div>}
-        <div className="chart-header-actions"><button className="auto-trend-toggle" disabled title="Research and validation scheduled for E6"><TrendUp size={14}/><span>Auto Trend · planned</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span>{onPlan && <button className="chart-accent" onClick={()=>onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol===symbol?{signalId:context.signalId,strategyId:context.strategyId}:{})})}>Create trade plan</button>}<button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
+        <div className="chart-header-actions"><button className={`auto-trend-toggle${autoTrend?" active":""}`} aria-label="Auto Trendline" disabled={!chartReady || !trendStore.ready || !!trendResult.error} aria-pressed={autoTrend} title="Confirmed pivots · latest 120 sessions · minimum 3 touches" onClick={()=>trendStore.save({...trendStore.value,enabled:!autoTrend})}><TrendUp size={14}/><span>Auto Trendline</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span>{onPlan && <button className="chart-accent" onClick={()=>onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol===symbol?{signalId:context.signalId,strategyId:context.strategyId}:{})})}>Create trade plan</button>}<button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
       </header>
 
       <div className="chart-sourcebar">
@@ -573,8 +507,19 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
         {mode === "local" ? <><label>Prices <select aria-label="Price adjustment" value={adjustment} onChange={(event) => { setLocalBars([]); setPayload(null); setLoadState("loading"); setAdjustment(event.target.value); }}><option value="all">All adjusted</option><option value="raw">Raw</option></select></label><span>{payload ? `Alpaca SIP · ${payload.status.last_session ?? "No sessions"}${payload.status.freshness === "stale" ? ` · Missing through ${payload.status.expected_session}` : payload.status.freshness === "unknown" ? " · Calendar coverage needs updating" : ""}` : statusLabel}</span><button onClick={() => setRetry((value) => value + 1)}>Refresh</button></> : <span className="chart-demo-disclosure"><strong>DEMO · SIMULATED PRICES</strong><span>These candles do not represent {sampleSymbol} market history. Real EOD data is available in local mode.</span></span>}
       </div>
       {asOf && <p className="workspace-notice">Historical view through {asOf}. Later bars are hidden. <button onClick={()=>setAsOf(undefined)}>Review later bars</button></p>}
+      {trendStore.error && <p className="workspace-notice" role="alert">{trendStore.error}</p>}
+      {trendResult.error && <p className="workspace-notice" role="alert">{trendResult.error}</p>}
       {storageError && <p className="workspace-notice" role="alert">{storageError}</p>}
-      <div className="chart-sourcebar"><label>Drawing note <input value={note} maxLength={120} onChange={event=>setNote(event.target.value)}/></label><button onClick={persistDrawings} disabled={!chartReady}>Save drawings</button><button disabled={!selectedDrawing} onClick={()=>{chartRef.current?.removeOverlay({id:selectedDrawing!});setSelectedDrawing(null);persistDrawings();}}>Delete selected drawing</button></div>
+      <div className="chart-sourcebar"><label>Drawing note <input value={note} maxLength={120} onChange={event=>setNote(event.target.value)}/></label><button onClick={persistDrawings} disabled={!chartReady}>Save drawings</button><button disabled={!selectedDrawing} onClick={deleteSelectedDrawing}>Delete selected drawing</button></div>
+      {autoTrend && <div className="chart-sourcebar" aria-label="Auto trendline evidence">
+        <span>Recent trend · {logScale?"log-price":"linear price"} · 120 sessions</span>
+        {displayedTrends.length===0 && <span role="status">No qualifying lines (3 confirmed touches required).</span>}
+        {displayedTrends.map(line=><span key={line.id} title={line.edited?"User-edited geometry; original qualification no longer applies.":`Evaluated ${formatDate(line.evaluatedAt)} · mean fit ${line.fitATR.toFixed(2)} ATR`}>
+          {line.kind==="support"?"Support":"Resistance"}: {line.edited?"edited":`${line.touches} touches · ${line.violations} violations`}
+        </span>)}
+        <span>Drag to edit · select a line to delete · edits save automatically</span>
+        <button onClick={()=>{if(window.confirm("Reset automatic line edits and deletions for this chart context?")){trendStore.save({enabled:true,edits:{}});setSelectedDrawing(null);}}}>Reset auto lines</button>
+      </div>}
       <div className="chart-subbar">
         <div className="chart-ranges">{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}<span>Daily</span></div>
         <div className="chart-display-controls"><details><summary>Indicators</summary><div className="indicator-popover"><label><input type="checkbox" checked={show20} onChange={(e) => setShow20(e.target.checked)}/>20 SMA</label><label><input type="checkbox" checked={show50} onChange={(e) => setShow50(e.target.checked)}/>50 SMA</label><label><input type="checkbox" checked={show200} onChange={(e) => setShow200(e.target.checked)}/>200 SMA</label></div></details><span>SCALE</span><button className={!logScale ? "active" : ""} onClick={() => setLogScale(false)}>Lin</button><button className={logScale ? "active" : ""} onClick={() => setLogScale(true)}>Log</button><div className="chart-viewport-controls" role="group" aria-label="Chart viewport"><button onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)} aria-label="Zoom out" title="Zoom out">−</button><button onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)} aria-label="Zoom in" title="Zoom in">+</button><button onClick={() => chartRef.current?.scrollByDistance(-120, 160)} aria-label="Move backward" title="Move backward">‹</button><button onClick={() => chartRef.current?.scrollToRealTime(180)} aria-label="Move to latest" title="Move to latest">Latest</button></div></div>
@@ -598,7 +543,7 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
         <div className="chart-canvas-shell">
           {mode === "sample" && <span className="chart-demo-watermark" aria-hidden="true">SIMULATED DATA</span>}
           {hovered && <div className="chart-ohlc"><span>{mode === "sample" ? "Demo session · " : ""}{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>}
-          <div className="chart-legend">{show20 && <span className="ma20">MA20: {latestAverages[20]?.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {latestAverages[50]?.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {latestAverages[200]?.toFixed(2) ?? "—"}</span>}{autoTrend && autoTrends.map((trend) => <span key={trend.kind} className={`auto-trend-legend ${trend.kind}`}>{trend.kind === "resistance" ? "R" : "S"}: {trend.touches} touches · {trend.confidence}%</span>)}</div>
+          <div className="chart-legend">{show20 && <span className="ma20">MA20: {latestAverages[20]?.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {latestAverages[50]?.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {latestAverages[200]?.toFixed(2) ?? "—"}</span>}</div>
           {!chartReady && bars.length > 0 && <SampleChartFallback rows={bars}/>}
           {!bars.length && <div className="chart-message" role={loadState === "error" ? "alert" : "status"}><strong>{loadState === "loading" ? "Loading daily bars…" : loadState === "empty" ? "No stored bars for this price series" : "Local data unavailable"}</strong><p>{loadState === "error" ? error : loadState === "empty" ? "Choose another instrument or price adjustment." : "Reading your local EOD data."}</p>{loadState === "error" && <button onClick={() => setRetry((value) => value + 1)}>Retry</button>}</div>}
           {renderError && <div className="drawing-hint" role="alert">Interactive chart unavailable · Static preview <button onClick={() => setRetry((value) => value + 1)}>Retry</button></div>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
