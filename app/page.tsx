@@ -11,6 +11,7 @@ import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { TradingWorkspace } from "./TradingWorkspace";
 import { ChartDashboard } from "./ChartDashboard";
+import { withAuthTimeout } from "../lib/auth-ready";
 import type { MarketContext } from "../lib/workspace-state";
 
 type Grade = "A" | "B" | "C";
@@ -494,7 +495,7 @@ export default function Home() {
       setAuthReady(true);
       return;
     }
-    supabase.auth.getSession().then(({ data }) => {
+    withAuthTimeout(supabase.auth.getSession(), 5000, { data: { session: null }, error: null }).then(({ data }) => {
       setSession(data.session);
       setAuthReady(true);
     });
