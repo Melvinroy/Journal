@@ -8,7 +8,10 @@ import { CatalystDashboard } from "./CatalystDashboard";
 import { TradePlanner } from "./TradePlanner";
 import { ScansDashboard } from "./ScansDashboard";
 import { BacktestDashboard } from "./BacktestDashboard";
+import { ResearchWorkspace } from "./ResearchWorkspace";
+import { TradingWorkspace } from "./TradingWorkspace";
 import { ChartDashboard } from "./ChartDashboard";
+import type { MarketContext } from "../lib/workspace-state";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -76,12 +79,10 @@ function isoDate(daysAgo = 0) {
 }
 
 const nav = [
-  ["Trade", "target"],
+  ["Discover", "scan"],
   ["Charts", "candles"],
-  ["Catalyst", "spark"],
-  ["Scans", "scan"],
-  ["Backtest", "flask"],
-  ["Journal", "book"],
+  ["Strategies", "flask"],
+  ["Trading", "target"],
 ] as const;
 
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
@@ -446,7 +447,13 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest">("Trade");
+  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest">("Charts");
+  const [chartContext, setChartContext] = useState<MarketContext>();
+  const [planContext, setPlanContext] = useState<MarketContext>();
+  const primary = active === "Scans" || active === "Catalyst" ? "Discover" : active === "Backtest" ? "Strategies" : active === "Charts" ? "Charts" : "Trading";
+  const navigate = (tab: typeof nav[number][0]) => setActive(tab === "Discover" ? "Scans" : tab === "Strategies" ? "Backtest" : tab === "Trading" ? "Trade" : "Charts");
+  const openChart = (context: MarketContext) => {setChartContext(context);setActive("Charts");};
+  const localWorkspace = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
   const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -483,7 +490,7 @@ export default function Home() {
     const now = new Date();
     setTodayLabel(new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric" }).format(now));
     setGreeting(`${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Trader`);
-    if (isDemo || !supabase) {
+    if (isDemo || localWorkspace || !supabase) {
       setAuthReady(true);
       return;
     }
@@ -619,8 +626,8 @@ export default function Home() {
 
   if (!authReady) return <main className="loading-shell"><span className="loading-mark"><Icon name="spark" size={21}/></span><p>Opening your journal…</p></main>;
   if (setupPreview) return <SetupScreen forceUnconfigured/>;
-  if (!demoMode && !supabaseConfig.isConfigured) return <SetupScreen/>;
-  if (!demoMode && (!session || recovering)) return <AuthScreen mode={authMode} setMode={setAuthMode} onRecovered={() => { setRecovering(false); setAuthMode("signin"); }}/>;
+  if (!localWorkspace && !demoMode && !supabaseConfig.isConfigured) return <SetupScreen/>;
+  if (!localWorkspace && !demoMode && (!session || recovering)) return <AuthScreen mode={authMode} setMode={setAuthMode} onRecovered={() => { setRecovering(false); setAuthMode("signin"); }}/>;
 
   return (
     <main className="app-shell">
@@ -628,7 +635,7 @@ export default function Home() {
         <div className="brand"><span className="brand-mark"><Icon name="spark" size={17}/></span><span>Brontide</span></div>
         <nav aria-label="Main navigation">
           <p className="nav-label">Workspace</p>
-          {nav.map(([label, icon]) => <button key={label} className={`nav-item ${active === label ? "active" : ""}`} aria-current={active === label ? "page" : undefined} onClick={() => setActive(label)}><Icon name={icon}/><span>{label}</span></button>)}
+          {nav.map(([label, icon]) => <button key={label} className={`nav-item ${primary === label ? "active" : ""}`} aria-current={primary === label ? "page" : undefined} onClick={() => navigate(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
         <div className="sidebar-spacer"/>
         {!demoMode && <div className="utility-nav"><button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="settings"/><span>Cloud settings</span></button></div>}
@@ -637,16 +644,24 @@ export default function Home() {
 
       <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : active === "Charts" ? "chart-workspace" : active === "Scans" || active === "Backtest" ? "research-workspace" : ""}`}>
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
-          {nav.map(([label]) => <button key={label} className={active === label ? "active" : ""} onClick={() => setActive(label)}>{label}</button>)}
+          {nav.map(([label]) => <button key={label} className={primary === label ? "active" : ""} onClick={() => navigate(label)}>{label}</button>)}
         </nav>
-        {active === "Catalyst" ? <CatalystDashboard/> : active === "Trade" ? <TradePlanner/> : active === "Charts" ? <ChartDashboard onExit={() => setActive("Trade")}/> : active === "Scans" ? <ScansDashboard/> : active === "Backtest" ? <BacktestDashboard/> : <>
+        {primary === "Discover" && <nav className="workspace-subtabs" aria-label="Discover views"><button className={active==="Scans"?"active":""} onClick={()=>setActive("Scans")}>Scans</button><button className={active==="Catalyst"?"active":""} onClick={()=>setActive("Catalyst")}>Catalysts</button></nav>}
+        {primary === "Trading" && <nav className="workspace-subtabs" aria-label="Trading views"><button className={active==="Trade"?"active":""} onClick={()=>setActive("Trade")}>Plans &amp; Positions</button><button className={active==="Journal"?"active":""} onClick={()=>setActive("Journal")}>Journal</button></nav>}
+        <div hidden={active!=="Catalyst"}><CatalystDashboard onChart={openChart}/></div>
+        <div hidden={active!=="Trade"}><TradingWorkspace context={planContext} onChart={openChart}/></div>
+        {active === "Charts" && <ChartDashboard context={chartContext} onExit={()=>setActive("Scans")} onPlan={context=>{setPlanContext({...context});setActive("Trade");}}/>}
+        <div hidden={active!=="Scans"}><ResearchWorkspace kind="scan" onChart={openChart}/></div>
+        <div hidden={active!=="Backtest"}><ResearchWorkspace kind="backtest" onChart={openChart}/></div>
+        <div hidden={active!=="Journal"}>
+        {localWorkspace && !session && <p className="workspace-notice">Cloud Journal is not connected in local mode. Local plans and fills remain in Trading; existing cloud records are unchanged.</p>}
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">
             <span className={`sync-state ${cloudError ? "has-error" : ""}`}><i/>{demoMode ? "Live demo" : cloudBusy ? "Syncing…" : cloudError ? "Sync issue" : "Cloud synced"}</span>
             <label className="range-control"><Icon name="calendar" size={16}/><span className="sr-only">Date range</span><select value={range} onChange={(event) => setRange(event.target.value as RangeKey)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="ytd">This year</option><option value="all">All time</option></select></label>
             <button className="secondary-button auth-button" onClick={signOut}>{demoMode ? "Exit demo" : "Sign out"}</button>
-            <button className="primary-button" onClick={() => setModal(true)}><Icon name="plus" size={17}/> Log trade</button>
+            <button className="primary-button" disabled={localWorkspace && !session && !demoMode} onClick={() => setModal(true)}><Icon name="plus" size={17}/> Log trade</button>
           </div>
         </header>
 
@@ -695,7 +710,7 @@ export default function Home() {
             <div className="setup-table"><div className="setup-row setup-head"><span>Setup</span><span>Trades</span><span>Avg R</span></div>{setupPerformance.map((item) => <div className="setup-row" key={item.setup}><span>{item.setup}</span><span>{item.count}</span><b className={item.avgR >= 0 ? "positive" : "negative"}>{formatR(item.avgR)}</b></div>)}</div>
           </article>
         </section>
-        </>}
+        </div>
       </section>
 
       {modal && <div className="modal-backdrop" role="presentation" onMouseDown={() => setModal(false)}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}><div className="modal-heading"><div><p className="eyebrow">New journal entry</p><h2 id="modal-title">Log a trade</h2></div><button className="icon-button" aria-label="Close" onClick={() => setModal(false)}><Icon name="close"/></button></div><form onSubmit={addTrade}><div className="form-row"><label>Symbol<input name="symbol" placeholder="NVDA" required autoFocus/></label><label>Trade date<input name="date" type="date" defaultValue={isoDate()} required/></label></div><div className="form-row"><label>Side<select name="side"><option>Long</option><option>Short</option></select></label><label>Setup<select name="setup">{setups.map((setup) => <option key={setup}>{setup}</option>)}</select></label></div><div className="form-row"><label>Dollar risk<input name="risk" type="number" min="1" placeholder="150" required/></label><label>Planned reward<input name="plannedR" type="number" min=".1" step=".1" placeholder="5.0" required/></label></div><div className="form-row"><label>Final P&amp;L<input name="pnl" type="number" placeholder="750" required/></label><label>Execution grade<select name="grade"><option value="A">A · Followed every rule</option><option value="B">B · Minor deviation</option><option value="C">C · Broke the plan</option></select></label></div><p className="form-help">Realized R is calculated automatically as final P&amp;L ÷ dollar risk.</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(false)}>Cancel</button><button type="submit" className="primary-button"><Icon name="check" size={16}/> Save trade</button></div></form></section></div>}

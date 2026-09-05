@@ -16,7 +16,7 @@ const build = spawnSync(process.execPath, [path.join(root, 'scripts/build.mjs')]
 });
 if (build.status !== 0) process.exit(build.status ?? 1);
 writeFileSync(path.join(root, 'out/brontide-local.json'), JSON.stringify({ mode: 'local' }));
-console.log('Open the chart at http://127.0.0.1:8765/charts/ (or your configured API port).');
+console.log('Open Brontide at http://127.0.0.1:8765/; standalone chart: /charts/ (or your configured API port).');
 const child = spawn(python, ['-m', 'brontide_eod.cli', 'serve'], { cwd: service, stdio: 'inherit' });
 child.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
 child.on('exit', (code) => { process.exitCode = code ?? 1; });

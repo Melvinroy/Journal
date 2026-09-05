@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import type { MarketContext } from "../lib/workspace-state";
 
 type WindowDays = 1 | 3 | 5;
 type Direction = "bullish" | "bearish" | "neutral";
@@ -160,7 +161,7 @@ function SignalCard({ row, rank }: { row: CatalystRow; rank: number }) {
   );
 }
 
-export function CatalystDashboard() {
+export function CatalystDashboard({onChart}:{onChart?:(context:MarketContext)=>void}) {
   const [days, setDays] = useState<WindowDays>(1);
   const [direction, setDirection] = useState<DirectionFilter>("all");
   const [search, setSearch] = useState("");
@@ -335,6 +336,9 @@ export function CatalystDashboard() {
         <button type="button" className="catalyst-detail-close" aria-label="Close catalyst detail" onClick={() => setSelected(null)}>×</button>
         <div className="catalyst-detail-top"><span className={`catalyst-grade grade-${selected.direction}`}>{selected.catalyst_quality_direction}</span><span>{selected.importance_score}/100</span></div>
         <h2>{selected.ticker}</h2><h3>{selected.primary_catalyst_category} · {selected.theme}</h3>
+        <p>Report generated {selected.generated_at_sgt} SGT · event date {selected.catalyst_event_date??"not supplied"}. Report generation is not the source publication time.</p>
+        {onChart&&<button onClick={()=>onChart({symbol:selected.ticker,mode:process.env.NEXT_PUBLIC_BRONTIDE_LOCAL==="1"?"local":"sample",adjustment:"all",asOf:selected.trading_date_checked})}>Open chart at report session</button>}
+        {(selected.primary_source_evidence.match(/https?:\/\/[^\s<>"\)]+/g)??[]).map((url,i)=><p key={`${url}-${i}`}><a href={url} target="_blank" rel="noopener noreferrer">Source evidence {i+1}</a></p>)}
         <div className="catalyst-detail-section"><span>Catalyst</span><p>{selected.catalyst_summary}</p></div>
         <div className="catalyst-detail-section"><span>Trade read</span><p>{selected.trade_read}</p></div>
         <div className="catalyst-detail-section risk"><span>Risk / invalidator</span><p>{selected.risk_invalidator}</p></div>

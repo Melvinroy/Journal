@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { calculateTradePlan, type TradeSide } from "../lib/trade-planner";
+import type { MarketContext } from "../lib/workspace-state";
 
 const RISK_OPTIONS = [.25, .5, .75, 1] as const;
 const ALLOCATION_OPTIONS = [3, 5, 10, 15, 20, 25] as const;
@@ -43,7 +44,7 @@ function distributeShares(total: number, count: number) {
   return Array.from({ length: count }, (_, index) => index === count - 1 ? total - base * (count - 1) : base);
 }
 
-export function TradePlanner() {
+export function TradePlanner({ context, onChart }: {context?:MarketContext;onChart?:(context:MarketContext)=>void}) {
   const [symbol, setSymbol] = useState("NVDA");
   const [side, setSide] = useState<TradeSide>("Long");
   const [entryPrice, setEntryPrice] = useState(120);
@@ -191,6 +192,7 @@ export function TradePlanner() {
           <button type="button" onClick={() => setSettingsOpen(true)}>Change</button>
         </div>
       </header>
+      {context && <p className="workspace-notice">Chart context: {context.symbol} · {context.mode} · {context.adjustment}{context.asOf?` · ${context.asOf}`:""}. Existing saved plan was not changed. <button onClick={()=>{if(window.confirm("Use this instrument for the current draft? Saved plan will become a draft.")){editPlan();setSymbol(context.symbol);setEntryPrice(0);setStopPrice(0);}}}>Use instrument</button> <button onClick={()=>onChart?.(context)}>Open chart</button></p>}
 
       <section className="trade-actionbar" aria-label="Quick trade actions">
         <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={stageState === "draft" && (!result.valid || !symbol.trim())} onClick={stageState === "staged" ? cancelStage : stageEntry}>

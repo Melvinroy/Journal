@@ -10,6 +10,9 @@ import {
 } from "@phosphor-icons/react";
 
 import { getLocalJson, toChartBars, type ChartResponse, type Instrument } from "../lib/chart-data";
+import { Watchlist } from "./Watchlist";
+import { chartStorageKey, movingAverageByTime, readStored, writeStored, type MarketContext } from "../lib/workspace-state";
+import { extraOverlays } from "../lib/chart-overlays";
 
 const localBuild = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
 
@@ -18,6 +21,7 @@ type RangeKey = "1M" | "3M" | "6M" | "1Y" | "Max";
 type SymbolKey = "NVDA" | "MRNA" | "CRCL";
 type ChartTheme = "light" | "dark";
 type DrawingTool =
+  | "box" | "ellipse"
   | "cursor" | "trend" | "ray" | "segment" | "extended" | "arrow"
   | "horizontal" | "horizontalRay" | "horizontalSegment" | "vertical" | "verticalRay" | "verticalSegment" | "priceLine"
   | "parallelChannel" | "priceChannel" | "regressionChannel" | "pitchfork"
@@ -45,11 +49,10 @@ const symbols: Record<SymbolKey, { name: string; seed: number; start: number; dr
 const cursorTool: ToolDefinition = { id: "cursor", label: "Cursor", icon: Cursor };
 const toolGroups: ToolGroup[] = [
   { id: "trend", label: "Trend tools", icon: TrendUp, tools: [
-    { id: "trend", label: "Trend line", icon: TrendUp, overlay: "straightLine" },
+    { id: "trend", label: "Extended line", icon: TrendUp, overlay: "straightLine" },
     { id: "ray", label: "Ray", icon: ArrowUpRight, overlay: "rayLine" },
     { id: "segment", label: "Line segment", icon: LineSegment, overlay: "segment" },
-    { id: "extended", label: "Extended line", icon: ArrowsOutLineHorizontal, overlay: "straightLine" },
-    { id: "arrow", label: "Arrow", icon: Path, overlay: "rayLine" },
+    { id: "arrow", label: "Arrow", icon: Path, overlay: "brontide-arrow" },
   ] },
   { id: "levels", label: "Level tools", icon: Minus, tools: [
     { id: "horizontal", label: "Horizontal line", icon: Minus, overlay: "horizontalStraightLine" },
@@ -63,28 +66,19 @@ const toolGroups: ToolGroup[] = [
   { id: "channels", label: "Channel tools", icon: Rows, tools: [
     { id: "parallelChannel", label: "Parallel channel", icon: Rows, overlay: "parallelStraightLine" },
     { id: "priceChannel", label: "Price channel", icon: Rectangle, overlay: "priceChannelLine" },
-    { id: "regressionChannel", label: "Regression channel", icon: ChartLine, overlay: "parallelStraightLine" },
-    { id: "pitchfork", label: "Pitchfork", icon: Strategy, overlay: "priceChannelLine" },
+    { id: "box", label: "Rectangle", icon: Rectangle, overlay: "brontide-box" },
+    { id: "ellipse", label: "Ellipse", icon: WaveSine, overlay: "brontide-ellipse" },
   ] },
   { id: "fibonacci", label: "Fibonacci tools", icon: FunctionIcon, tools: [
     { id: "fibRetracement", label: "Fib retracement", icon: FunctionIcon, overlay: "fibonacciLine" },
-    { id: "fibExtension", label: "Fib extension", icon: ChartLineUp, overlay: "fibonacciLine" },
-    { id: "fibChannel", label: "Fib channel", icon: WaveSine, overlay: "fibonacciLine" },
-    { id: "fibTime", label: "Fib time zones", icon: CalendarDots, overlay: "verticalSegment" },
   ] },
   { id: "annotation", label: "Annotation tools", icon: PencilSimple, tools: [
     { id: "brush", label: "Brush", icon: PencilSimple, overlay: "brush" },
     { id: "priceLabel", label: "Price label", icon: Tag, overlay: "simpleTag" },
     { id: "textNote", label: "Text note", icon: TextT, overlay: "simpleAnnotation" },
-    { id: "callout", label: "Callout", icon: NotePencil, overlay: "simpleAnnotation" },
-    { id: "flag", label: "Flag marker", icon: Flag, overlay: "simpleTag" },
   ] },
   { id: "measure", label: "Position and measure", icon: Ruler, tools: [
-    { id: "longPosition", label: "Long position", icon: ChartLineUp, overlay: "priceChannelLine" },
-    { id: "shortPosition", label: "Short position", icon: ChartLineDown, overlay: "priceChannelLine" },
-    { id: "rangeMeasure", label: "Price range", icon: Ruler, overlay: "priceChannelLine" },
-    { id: "dateMarker", label: "Date marker", icon: CalendarDots, overlay: "verticalStraightLine" },
-    { id: "crosshairMeasure", label: "Crosshair measure", icon: Selection, overlay: "parallelStraightLine" },
+    { id: "rangeMeasure", label: "Price / percentage range", icon: Ruler, overlay: "brontide-measure" },
   ] },
 ];
 const drawingTools = [cursorTool, ...toolGroups.flatMap((group) => group.tools)];
@@ -290,7 +284,7 @@ function SampleChartFallback({ rows }: { rows: Bar[] }) {
   </svg>;
 }
 
-export function ChartDashboard({ onExit }: { onExit?: () => void }) {
+export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => void; context?: MarketContext; onPlan?: (context:MarketContext)=>void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
   const [symbol, setSymbol] = useState<string>("NVDA");
@@ -316,9 +310,16 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [matches, setMatches] = useState<Instrument[]>([]);
   const [searchStatus, setSearchStatus] = useState("");
+  const [storageError, setStorageError] = useState("");
+  const drawingsWritable = useRef(false);
+  const [note, setNote] = useState("Note");
+  const [selectedDrawing, setSelectedDrawing] = useState<string | null>(null);
+  const [layoutReady, setLayoutReady] = useState(false);
+  const [asOf, setAsOf] = useState<string | undefined>(context?.asOf);
   const sampleSymbol = (symbol in symbols ? symbol : "NVDA") as SymbolKey;
   const sampleBars = useMemo(() => makeBars(symbols[sampleSymbol]), [sampleSymbol]);
-  const allBars = mode === "sample" ? sampleBars : localBars;
+  const sourceBars = mode === "sample" ? sampleBars : localBars;
+  const allBars = useMemo(()=>asOf ? sourceBars.filter(row=>new Date(row.timestamp).toISOString().slice(0,10)<=asOf) : sourceBars,[sourceBars,asOf]);
   const bars = useMemo(() => allBars.slice(-rangeSize(range)), [allBars, range]);
   const latestAverages = useMemo(() => Object.fromEntries([20, 50, 200].map((period) => [period,
     allBars.length >= period ? allBars.slice(-period).reduce((total, bar) => total + bar.close, 0) / period : undefined,
@@ -331,6 +332,31 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   const statusLabel = mode === "sample" ? "Simulated prices" : loadState === "loading" ? "Loading EOD" : loadState === "error" ? "API error" : loadState === "empty" ? "No bars" : payload?.status.freshness === "stale" ? "Stale EOD" : payload?.status.freshness === "unknown" ? "EOD · check freshness" : "Local EOD";
 
   useEffect(() => setHovered(latest), [latest]);
+
+  useEffect(() => {
+    try {
+      const saved=readStored<{symbol?:string;range?:RangeKey;show20?:boolean;show50?:boolean;show200?:boolean;logScale?:boolean;adjustment?:string}>(window.localStorage,"brontide-layout-v1",{});
+      if (saved.symbol && (localBuild || saved.symbol in symbols)) setSymbol(saved.symbol);
+      if (saved.range && ["1M","3M","6M","1Y","Max"].includes(saved.range)) setRange(saved.range);
+      if (typeof saved.show20==="boolean") setShow20(saved.show20);
+      if (typeof saved.show50==="boolean") setShow50(saved.show50);
+      if (typeof saved.show200==="boolean") setShow200(saved.show200);
+      if (typeof saved.logScale==="boolean") setLogScale(saved.logScale);
+      if (["all","raw"].includes(saved.adjustment??"")) setAdjustment(saved.adjustment!);
+      setLayoutReady(true);
+    } catch { setStorageError("Saved layout could not be read. It has not been overwritten."); }
+  },[]);
+  useEffect(()=>{
+    if (!context) return;
+    if (context.mode==="local" && !localBuild) {setStorageError("This instrument context requires the local service.");return;}
+    if (context.mode==="sample" && !(context.symbol in symbols)) {setStorageError("No simulated chart exists for this ticker. Open local mode for real bars.");return;}
+    setSymbol(context.symbol);setMode(context.mode);setAdjustment(context.adjustment);setAsOf(context.asOf);
+  },[context]);
+  useEffect(()=>{
+    if (!layoutReady) return;
+    try {writeStored(window.localStorage,"brontide-layout-v1",{symbol,range,show20,show50,show200,logScale,adjustment});}
+    catch {setStorageError("Layout could not be saved. Browser storage may be full.");}
+  },[symbol,range,show20,show50,show200,logScale,adjustment,layoutReady]);
 
   useEffect(() => {
     if (mode !== "local") return;
@@ -374,13 +400,13 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   };
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("brontide-chart-theme");
-    if (saved === "dark" || saved === "light") setTheme(saved);
+    try { const saved = window.localStorage.getItem("brontide-chart-theme");
+    if (saved === "dark" || saved === "light") setTheme(saved); } catch {setStorageError("Theme storage is unavailable.");}
     setThemeLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (themeLoaded) window.localStorage.setItem("brontide-chart-theme", theme);
+    if (themeLoaded) {try {window.localStorage.setItem("brontide-chart-theme", theme);} catch {setStorageError("Theme could not be saved.");}}
   }, [theme, themeLoaded]);
 
   useEffect(() => {
@@ -398,8 +424,9 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       up: "#38c985", down: "#df4b53", neutral: "#8b95a1", volumeUp: "#197b55aa", volumeDown: "#8f3038aa", separator: "#222a35",
     };
 
-    void import("klinecharts").then(({ dispose, init }) => {
+    void import("klinecharts").then(({ dispose, init, registerOverlay }) => {
       if (cancelled || !containerRef.current) return;
+      extraOverlays.forEach(registerOverlay);
       const chart = init(containerRef.current, {
         timezone: "Etc/UTC",
         layout: { barSpaceLimit: { min: .05, max: 1000 }, yAxis: { position: "right", inside: false, gap: { top: .08, bottom: .04 } } },
@@ -445,6 +472,10 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
         name: "MA",
         paneId: "candle_pane",
         calcParams: visibleAverages.map(([period]) => period),
+        calc: data => {
+          const values = movingAverageByTime(allBars, visibleAverages.map(([period])=>period));
+          return data.map(row=>values.get(row.timestamp) ?? {});
+        },
         styles: { lines: visibleAverages.map(([, color]) => ({ color, size: 1, style: "dashed", dashedValue: [5, 4] })), tooltip: { showRule: "none" } },
       });
       const crosshairHandler = (data?: unknown) => {
@@ -453,6 +484,14 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       };
       chart.subscribeAction("onCrosshairChange", crosshairHandler);
       chartRef.current = chart;
+      setSelectedDrawing(null);
+      drawingsWritable.current = false;
+      try {
+        const saved=readStored<import("klinecharts").OverlayCreate[]>(window.localStorage,chartStorageKey({symbol,mode,adjustment}),[]);
+        if (!Array.isArray(saved) || saved.some(row=>!row || typeof row.name!=="string" || !Array.isArray(row.points))) throw new Error("Invalid drawings");
+        for (const drawing of saved) chart.createOverlay({...drawing,groupId:"brontide-drawings",onSelected:({overlay})=>setSelectedDrawing(overlay.id),onPressedMoveEnd:()=>persistDrawings()});
+        drawingsWritable.current = true;
+      } catch {setStorageError("Saved drawings could not be restored. Existing storage was retained.");}
       setChartReady(true);
       disposeChart = () => {
         resizeObserver.disconnect();
@@ -466,7 +505,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
       chartRef.current = null;
       setChartReady(false);
     };
-  }, [allBars, bars, range, retry, show20, show50, show200, symbol, logScale, theme]);
+  }, [allBars, bars, range, retry, show20, show50, show200, symbol, logScale, theme, mode, adjustment]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -495,38 +534,53 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
   }, [autoTrend, autoTrends, chartReady, theme]);
 
   const clearDrawings = () => {
-    chartRef.current?.removeOverlay();
+    if (!window.confirm("Remove saved drawings for this instrument and price basis?")) return;
+    chartRef.current?.removeOverlay({groupId:"brontide-drawings"});
+    persistDrawings();
     setAutoTrend(false);
+  };
+
+  const persistDrawings = () => {
+    if (!drawingsWritable.current) {setStorageError("Saving disabled: saved drawings could not be read safely.");return;}
+    const chart=chartRef.current;
+    if (!chart) return;
+    try {
+      const drawings=chart.getOverlays({groupId:"brontide-drawings"}).filter(row=>row.currentStep===-1).map(row=>({name:row.name,id:row.id,points:row.points.map(({timestamp,value})=>({timestamp,value})),extendData:row.extendData,lock:row.lock}));
+      writeStored(window.localStorage,chartStorageKey({symbol,mode,adjustment}),drawings);
+    } catch {setStorageError("Drawings could not be saved. Keep this view open and retry.");}
   };
 
   const selectTool = (tool: DrawingTool) => {
     setActiveTool(tool);
     setOpenToolGroup(null);
     const overlay = drawingTools.find((item) => item.id === tool)?.overlay;
-    if (overlay) chartRef.current?.createOverlay({ name: overlay, groupId: "brontide-drawings" });
+    if (overlay) chartRef.current?.createOverlay({ name: overlay, extendData:tool==="textNote"?note:undefined,groupId: "brontide-drawings",onDrawEnd:()=>{persistDrawings();setActiveTool("cursor");},onPressedMoveEnd:()=>persistDrawings(),onSelected:({overlay})=>setSelectedDrawing(overlay.id) });
   };
 
   return (
     <section className={`chart-dashboard theme-${theme}`}>
       <header className="chart-commandbar">
-        <div className="chart-sequence"><button aria-label="Back" onClick={onExit}>‹</button><button className="chart-stage">EP contractions⌄</button><button aria-label="Previous">‹</button><span>1 of 14</span><button aria-label="Next">›</button></div>
+        <div className="chart-sequence">{onExit && <button aria-label="Back" onClick={onExit}>‹</button>}<span>Chart workspace</span></div>
         {mode === "sample" ? <label className="chart-symbol-select"><span>Demo · {name}</span><b>{sampleSymbol}</b><select value={sampleSymbol} onChange={(event) => changeSymbol(event.target.value)} aria-label="Stock"><option value="NVDA">NVIDIA Corporation</option><option value="MRNA">Moderna, Inc.</option><option value="CRCL">Circle Internet Group</option></select></label> :
           <div className="chart-symbol-search"><button className="chart-search-trigger" onClick={() => setSearchOpen((value) => !value)} aria-expanded={searchOpen} aria-label={`Search stock, selected ${symbol}`}><b>{symbol}</b><span>{name}</span></button>
             {searchOpen && <div className="chart-search-popover" onKeyDown={(event) => { if (event.key === "Escape") setSearchOpen(false); }}><label>Find an instrument<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map((item) => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
           </div>}
-        <div className="chart-header-actions"><button className={`auto-trend-toggle ${autoTrend ? "active" : ""}`} disabled={!bars.length} onClick={() => setAutoTrend((value) => !value)} aria-pressed={autoTrend} aria-label="Auto Trend" title="Detect recent support and resistance"><TrendUp size={14}/><span>Auto Trend</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span><button className="chart-accent">Analyze setup</button><button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
+        <div className="chart-header-actions"><button className="auto-trend-toggle" disabled title="Research and validation scheduled for E6"><TrendUp size={14}/><span>Auto Trend · planned</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span>{onPlan && <button className="chart-accent" onClick={()=>onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol===symbol?{signalId:context.signalId,strategyId:context.strategyId}:{})})}>Create trade plan</button>}<button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
       </header>
 
       <div className="chart-sourcebar">
         {localBuild && <label>Data <select aria-label="Data mode" value={mode} onChange={(event) => changeMode(event.target.value as "local" | "sample")}><option value="local">Local EOD</option><option value="sample">Sample demo</option></select></label>}
         {mode === "local" ? <><label>Prices <select aria-label="Price adjustment" value={adjustment} onChange={(event) => { setLocalBars([]); setPayload(null); setLoadState("loading"); setAdjustment(event.target.value); }}><option value="all">All adjusted</option><option value="raw">Raw</option></select></label><span>{payload ? `Alpaca SIP · ${payload.status.last_session ?? "No sessions"}${payload.status.freshness === "stale" ? ` · Missing through ${payload.status.expected_session}` : payload.status.freshness === "unknown" ? " · Calendar coverage needs updating" : ""}` : statusLabel}</span><button onClick={() => setRetry((value) => value + 1)}>Refresh</button></> : <span className="chart-demo-disclosure"><strong>DEMO · SIMULATED PRICES</strong><span>These candles do not represent {sampleSymbol} market history. Real EOD data is available in local mode.</span></span>}
       </div>
+      {asOf && <p className="workspace-notice">Historical view through {asOf}. Later bars are hidden. <button onClick={()=>setAsOf(undefined)}>Review later bars</button></p>}
+      {storageError && <p className="workspace-notice" role="alert">{storageError}</p>}
+      <div className="chart-sourcebar"><label>Drawing note <input value={note} maxLength={120} onChange={event=>setNote(event.target.value)}/></label><button onClick={persistDrawings} disabled={!chartReady}>Save drawings</button><button disabled={!selectedDrawing} onClick={()=>{chartRef.current?.removeOverlay({id:selectedDrawing!});setSelectedDrawing(null);persistDrawings();}}>Delete selected drawing</button></div>
       <div className="chart-subbar">
-        <div className="chart-ranges">{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}<button className="chart-select-button">Daily⌄</button></div>
+        <div className="chart-ranges">{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}<span>Daily</span></div>
         <div className="chart-display-controls"><details><summary>Indicators</summary><div className="indicator-popover"><label><input type="checkbox" checked={show20} onChange={(e) => setShow20(e.target.checked)}/>20 SMA</label><label><input type="checkbox" checked={show50} onChange={(e) => setShow50(e.target.checked)}/>50 SMA</label><label><input type="checkbox" checked={show200} onChange={(e) => setShow200(e.target.checked)}/>200 SMA</label></div></details><span>SCALE</span><button className={!logScale ? "active" : ""} onClick={() => setLogScale(false)}>Lin</button><button className={logScale ? "active" : ""} onClick={() => setLogScale(true)}>Log</button><div className="chart-viewport-controls" role="group" aria-label="Chart viewport"><button onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)} aria-label="Zoom out" title="Zoom out">−</button><button onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)} aria-label="Zoom in" title="Zoom in">+</button><button onClick={() => chartRef.current?.scrollByDistance(-120, 160)} aria-label="Move backward" title="Move backward">‹</button><button onClick={() => chartRef.current?.scrollToRealTime(180)} aria-label="Move to latest" title="Move to latest">Latest</button></div></div>
       </div>
 
-      <div className="chart-stage-area">
+      <div className="chart-analysis-body"><div className="chart-stage-area">
         <aside className="drawing-rail" aria-label="Drawing tools">
           <button className={activeTool === "cursor" ? "active" : ""} title="Cursor" aria-label="Cursor" onClick={() => selectTool("cursor")}><Cursor size={17}/></button>
           {toolGroups.map((group) => {
@@ -551,7 +605,7 @@ export function ChartDashboard({ onExit }: { onExit?: () => void }) {
           {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
         </div>
       </div>
-
+      <Watchlist symbol={symbol} onSelect={changeSymbol} sample={mode==="sample"}/></div>
       <footer className="chart-footer"><span>Daily candles</span><span>Volume</span><strong>KLineChart · Open-source rendering</strong></footer>
     </section>
   );
