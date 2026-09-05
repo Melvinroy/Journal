@@ -405,7 +405,8 @@ class DuckDBStore:
     def live_scan_symbols(self) -> list[str]:
         return self.symbols(statuses=["active"], tradable_only=True, exclude_otc=True)
 
-    def historical_symbols(self) -> list[str]:
+    def historical_symbols(self, *, source_symbols: Iterable[str] | None = None) -> list[str]:
+        source_symbol_set = set(source_symbols) if source_symbols is not None else None
         return [
             symbol for symbol in self.symbols(
                 statuses=["active", "inactive"],
@@ -413,7 +414,7 @@ class DuckDBStore:
                 exclude_otc=True,
                 sip_queryable_only=True,
             )
-            if is_sip_symbol(symbol)
+            if is_sip_symbol(symbol) and (source_symbol_set is None or symbol in source_symbol_set)
         ]
 
     def historical_universe_reconciliation(

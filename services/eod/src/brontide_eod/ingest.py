@@ -154,7 +154,7 @@ def preflight_historical_universe(
     duplicates_removed: int = 0,
     source_symbols: Iterable[str] | None = None,
 ) -> UniversePreflightResult:
-    initial_symbols = store.historical_symbols()
+    initial_symbols = store.historical_symbols(source_symbols=source_symbols)
     rejected: dict[str, str] = {}
     for symbols in batched(initial_symbols, batch_size):
         try:
@@ -177,11 +177,12 @@ def preflight_historical_universe(
         duplicates_removed=duplicates_removed,
         source_symbols=source_symbols,
     )
-    if reconciliation["included"] != len(store.historical_symbols()):
+    accepted_symbols = store.historical_symbols(source_symbols=source_symbols)
+    if reconciliation["included"] != len(accepted_symbols):
         raise ValueError("historical universe reconciliation included count does not match final symbols")
     return UniversePreflightResult(
         initial_symbols=len(initial_symbols),
-        accepted_symbols=len(store.historical_symbols()),
+        accepted_symbols=len(accepted_symbols),
         rejected_symbols=tuple(sorted(rejected)),
         probe_session=probe_session,
         reconciliation=reconciliation,
@@ -278,7 +279,8 @@ def backfill_sessions(
             duplicates_removed=duplicates_removed,
             source_symbols=source_symbols,
         )
-    symbols, config = historical_ingestion_config(store)
+    current_symbols = store.historical_symbols(source_symbols=source_symbols)
+    symbols, config = historical_ingestion_config(store, symbols=current_symbols)
 
     for day in _date_range(start, end):
         if day in session_set:
