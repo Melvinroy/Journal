@@ -1,5 +1,13 @@
 # Phase 1 — Local EOD chart connection
 
+## Follow-up status — 5 September 2026
+
+The user supplied a Windows validation report: local launcher, real AAPL/MSFT/NVDA/SPY database comparisons, 56 backend tests, five chart data tests, build and desktop/mobile chart checks passed. These are user-reported checks, not a second database audit by the cloud agent. The report identified 671 bars per symbol through 2026-09-03 and a 766,259,200-byte database.
+
+Fetched public main now includes `ccec3890e272d83c6f7abad12980f7f4bafd31bd`, the selected-range/right-whitespace correction. The patch was inspected and preserved. Indicator warm-up across visible ranges remains an explicit numeric check for Charts v1; the earlier manual moving-average pass does not establish range invariance.
+
+The original pending gates below describe the initial cloud handoff. The new development sequence is [Execution E1–E6](EXECUTION_PLAN.md), with scope-specific validation rather than repeating the historical backfill.
+
 ## Audit baseline
 
 `main` was pulled fast-forward-only and verified at `bac8d38df4f1efb714208d8d4701b2d43c036050`. No pre-existing working-tree changes were present in this isolated checkout. The user's Windows checkout and production DuckDB file are not mounted in this environment.

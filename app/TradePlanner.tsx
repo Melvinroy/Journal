@@ -180,9 +180,9 @@ export function TradePlanner() {
     <div className="trade-planner">
       <header className="trade-commandbar">
         <div>
-          <p className="eyebrow">Phase 1 · UI preview</p>
-          <h1>New trade</h1>
-          <p>Size the trade, enter, then apply your saved exits after fill.</p>
+          <p className="eyebrow">Local trade planning</p>
+          <h1>Trade plan</h1>
+          <p>Calculate position size and save your intended entry and exit settings.</p>
         </div>
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
@@ -194,18 +194,18 @@ export function TradePlanner() {
 
       <section className="trade-actionbar" aria-label="Quick trade actions">
         <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={stageState === "draft" && (!result.valid || !symbol.trim())} onClick={stageState === "staged" ? cancelStage : stageEntry}>
-          {stageState === "staged" ? "Cancel" : "Enter"}
+          {stageState === "staged" ? "Unsave plan" : "Save plan"}
         </button>
         <button type="button" className={`trade-action-button exits ${afterFillStaged ? "active" : ""}`} disabled={!result.valid} onClick={afterFillStaged ? cancelAfterFill : stageAfterFill}>
-          {afterFillStaged ? "Cancel exits" : "After fill"}
+          {afterFillStaged ? "Unsave exits" : "Save exits"}
         </button>
-        <span className="trade-execution-state">UI preview · IBKR execution in Phase 2</span>
+        <span className="trade-execution-state">Saved in this browser · no orders sent</span>
       </section>
 
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
         <div className="trade-ticket-head">
           <div><p className="eyebrow">Order calculator</p><h2 id="trade-ticket-title">Trade setup</h2></div>
-          <span className={`trade-draft-state ${stageState === "staged" ? "staged" : ""}`}><i/> {stageState === "staged" ? "Staged locally" : "Draft"}</span>
+          <span className={`trade-draft-state ${stageState === "staged" ? "staged" : ""}`}><i/> {stageState === "staged" ? "Saved locally" : "Draft"}</span>
         </div>
 
         <div className="trade-ticket-body">
@@ -217,7 +217,7 @@ export function TradePlanner() {
           </div>
 
           <div className="trade-context-line">
-            <span>{stopSource === "LoD" ? "LoD entered manually in Phase 1" : "Manual technical stop"}</span>
+            <span>{stopSource === "LoD" ? "LoD entered manually" : "Manual technical stop"}</span>
             <span>Risk/share <b>{price(result.riskPerShare)}</b></span>
             <span>Stop distance <b>{entryPrice > 0 ? `${(result.riskPerShare / entryPrice * 100).toFixed(2)}%` : "—"}</b></span>
           </div>
@@ -254,11 +254,11 @@ export function TradePlanner() {
             <div>{targetShares.map((shares, index) => <div className="trade-exit-row" key={`target-${index}`}><b>T{index + 1}</b><strong>{shares} sh</strong><span>{index + 1}R · {price(targetPrices[index])}</span></div>)}{runnerEnabled && <div className="trade-exit-row"><b>Run</b><strong>{runnerShares} sh</strong><span>10 SMA / ORL trail</span></div>}</div>
             <div>{Array.from({ length: stopCount }, (_, index) => <div className="trade-exit-row stop" key={`stop-${index}`}><b>SL{index + 1}</b><strong>{index === 0 ? "Initial" : `After T${index}`}</strong><span>{index === 0 ? `${price(stopPrice)} · full position` : index === 1 ? "Move remaining → breakeven" : "Trail remaining → 10 SMA / ORL"}</span></div>)}</div>
           </div>
-          <p className="trade-exit-help">The quick After fill button uses this saved plan after IBKR confirms the filled quantity.</p>
+          <p className="trade-exit-help">Save exits records these exit settings locally. Fill tracking and broker order management are not connected.</p>
         </div>
       </section>
 
-      <p className="trade-safety-note"><span>i</span> Phase 1 is a local planning preview. Nothing is sent to IBKR.</p>
+      <p className="trade-safety-note"><span>i</span> Plans and exit settings are stored in this browser. Nothing is sent to a broker.</p>
 
       {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
         <section className="modal trade-settings-modal" role="dialog" aria-modal="true" aria-labelledby="risk-settings-title" onMouseDown={(event) => event.stopPropagation()}>

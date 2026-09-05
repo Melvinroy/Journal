@@ -37,8 +37,8 @@ type TradeDetail = {
 };
 
 const rows: BacktestRow[] = [
-  { id: "EP-016", variant: "2× ADV20 EP + quality contraction + 1 ATR stop", status: "Primary", trades: 660, wins: 134, winRate: .2030, totalReturn: 18.7314, expectancy: .4950, drawdown: 64.77, losingStreak: 34, result: "Best opportunity generator. The 2026 holdout returned +613.0% across 106 independent fixed-size trades, with 0.99R expectancy." },
-  { id: "EP-003", variant: "3× ADV20 EP + quality contraction + 1 ATR stop", status: "Promising", trades: 363, wins: 71, winRate: .1956, totalReturn: 7.6485, expectancy: .3847, drawdown: 37.73, losingStreak: 20, result: "Highest-quality benchmark. The 2026 holdout returned +308.7% with lower drawdown than the 2× version." },
+  { id: "EP-016", variant: "2× ADV20 EP + quality contraction + 1 ATR stop", status: "Primary", trades: 660, wins: 134, winRate: .2030, totalReturn: 18.7314, expectancy: .4950, drawdown: 64.77, losingStreak: 34, result: "Earlier 2× EP / setup RVOL < 0.75 experiment. These results require reproduction on the final frozen historical universe." },
+  { id: "EP-003", variant: "3× ADV20 EP + quality contraction + 1 ATR stop", status: "Promising", trades: 363, wins: 71, winRate: .1956, totalReturn: 7.6485, expectancy: .3847, drawdown: 37.73, losingStreak: 20, result: "Earlier strict benchmark. These results require reproduction on the final frozen historical universe." },
   { id: "EP-001", variant: "Loose contraction + setup-day-low stop", status: "Negative", trades: 2174, wins: 220, winRate: .1012, totalReturn: -.0774, expectancy: -.3373, drawdown: 790.95, losingStreak: 68, result: "Large right tails did not offset the very high stop rate." },
   { id: "EP-002", variant: "Quality contraction + setup-day-low stop", status: "Negative", trades: 342, wins: 51, winRate: .1491, totalReturn: .0179, expectancy: -.1280, drawdown: 140.11, losingStreak: 25, result: "Positive fixed-position dollars, but negative expectancy under equal-R sizing." },
   { id: "EP-004", variant: "A+ event shock + quality + 1 ATR", status: "Promising", trades: 147, wins: 32, winRate: .2177, totalReturn: 4.4031, expectancy: .5362, drawdown: 23.23, losingStreak: 13, result: "Strongest event-quality cohort, but with fewer opportunities." },
@@ -66,7 +66,7 @@ const conditions = [
   ["Execution", "Next open; stop = entry − setup-day ATR14; 10R target or 60 sessions"],
 ];
 
-type Filter = "All" | "Leading" | "Research" | "Rejected";
+type Filter = "All" | "Legacy shortlist" | "Research" | "Rejected";
 type ResultFilter = "All" | "Winners" | "Losers";
 
 const detailIds = new Set(["EP-016", "EP-003", "EP-004"]);
@@ -119,7 +119,7 @@ export function BacktestDashboard() {
   const [detailSearch, setDetailSearch] = useState("");
   const [visibleRows, setVisibleRows] = useState(100);
   const visible = useMemo(() => rows.filter((row) => {
-    if (filter === "Leading") return ["Primary", "Promising", "Validate"].includes(row.status);
+    if (filter === "Legacy shortlist") return ["Primary", "Promising", "Validate"].includes(row.status);
     if (filter === "Research") return row.status === "Research";
     if (filter === "Rejected") return ["Rejected", "Negative"].includes(row.status);
     return true;
@@ -161,13 +161,13 @@ export function BacktestDashboard() {
   return (
     <div className="research-dashboard backtest-dashboard">
       <header className="research-commandbar">
-        <div><p className="eyebrow">Strategy evidence</p><h1>Backtest</h1><p>One registry for every tested rule change and its practical trade-off.</p></div>
-        <span className="research-rule-badge">Data through Sep 3, 2026</span>
+        <div><p className="eyebrow">Strategy evidence</p><h1>Backtest</h1><p>Archived experiments. All results remain provisional until reproduced on the final frozen historical universe.</p></div>
+        <span className="research-rule-badge">Legacy results · not revalidated</span>
       </header>
 
       <section className="backtest-hero">
-        <div className="backtest-verdict"><span className="status-pill primary">Current primary</span><h2>2× EP volume expansion</h2><p>The broader trigger nearly preserved per-trade edge while materially increasing opportunity count. The 3× benchmark remains the cleaner, lower-drawdown scan.</p></div>
-        <div className="backtest-hero-stat"><span>2026 trades</span><strong>106</strong><small>61 with 3× benchmark</small></div>
+        <div className="backtest-verdict"><span className="status-pill research">Provisional evidence</span><h2>2× EP volume experiment</h2><p>Earlier results predate the final historical database. They do not validate the broader RVOL &lt; 0.95 scan or establish a preferred strategy.</p></div>
+        <div className="backtest-hero-stat"><span>Legacy 2026 trades</span><strong>106</strong><small>61 with 3× benchmark</small></div>
         <div className="backtest-hero-stat"><span>Expectancy</span><strong>+0.99R</strong><small>+1.04R with 3× benchmark</small></div>
         <div className="backtest-hero-stat"><span>Fixed-position return</span><strong className="positive">+613.0%</strong><small>+308.7% with 3× benchmark</small></div>
         <div className="backtest-hero-stat"><span>Max drawdown</span><strong>19.58R</strong><small>9.57R with 3× benchmark</small></div>
@@ -176,14 +176,14 @@ export function BacktestDashboard() {
       <section className="backtest-layout">
         <article className="research-panel backtest-registry-panel">
           <div className="research-toolbar">
-            <div><h2>Backtest registry</h2><p>Full-sample results; select a row for interpretation.</p></div>
-            <div className="backtest-filters">{(["All", "Leading", "Research", "Rejected"] as Filter[]).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
+            <div><h2>Backtest registry</h2><p>Legacy full-sample results; classifications reflect the earlier study only.</p></div>
+            <div className="backtest-filters">{(["All", "Legacy shortlist", "Research", "Rejected"] as Filter[]).map((item) => <button key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item}</button>)}</div>
           </div>
           <div className="research-table-wrap">
             <table className="research-table backtest-table">
-              <thead><tr><th>Run</th><th>Variant</th><th>Status</th><th>Trades</th><th>Wins</th><th>Win rate</th><th>Expectancy</th><th>Total return</th><th>Max DD</th><th>Evidence</th></tr></thead>
+              <thead><tr><th>Run</th><th>Variant</th><th>Legacy classification</th><th>Trades</th><th>Wins</th><th>Win rate</th><th>Expectancy</th><th>Total return</th><th>Max DD</th><th>Evidence</th></tr></thead>
               <tbody>{visible.map((row) => <tr key={row.id} className={selected.id === row.id ? "selected" : ""} onClick={() => openStrategy(row)}>
-                <td><b>{row.id}</b></td><td>{row.variant}</td><td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status}</span></td><td>{row.trades.toLocaleString()}</td><td>{row.wins}</td><td>{(row.winRate * 100).toFixed(1)}%</td><td className={row.expectancy >= 0 ? "metric-good" : "metric-bad"}>{row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(3)}R</td><td className={row.totalReturn >= 0 ? "metric-good" : "metric-bad"}>{pct(row.totalReturn)}</td><td>{row.drawdown.toFixed(2)}R</td><td><span className={detailIds.has(row.id) ? "detail-available" : "detail-summary"}>{detailIds.has(row.id) ? "View trades →" : "Summary"}</span></td>
+                <td><b>{row.id}</b></td><td>{row.variant}</td><td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status === "Primary" ? "Previously primary" : row.status}</span></td><td>{row.trades.toLocaleString()}</td><td>{row.wins}</td><td>{(row.winRate * 100).toFixed(1)}%</td><td className={row.expectancy >= 0 ? "metric-good" : "metric-bad"}>{row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(3)}R</td><td className={row.totalReturn >= 0 ? "metric-good" : "metric-bad"}>{pct(row.totalReturn)}</td><td>{row.drawdown.toFixed(2)}R</td><td><span className={detailIds.has(row.id) ? "detail-available" : "detail-summary"}>{detailIds.has(row.id) ? "View trades →" : "Summary"}</span></td>
               </tr>)}</tbody>
             </table>
           </div>
@@ -191,15 +191,15 @@ export function BacktestDashboard() {
 
         <aside className="backtest-side">
           <article className="research-panel backtest-detail">
-            <p className="eyebrow">Selected test · {selected.id}</p>
+            <p className="eyebrow">Provisional test · {selected.id}</p>
             <h2>{selected.variant}</h2>
-            <p>{selected.result}</p>
+            <p>Earlier interpretation: {selected.result}</p>
             <dl><div><dt>Losses</dt><dd>{(selected.trades - selected.wins).toLocaleString()}</dd></div><div><dt>Longest losing streak</dt><dd>{selected.losingStreak}</dd></div></dl>
           </article>
           <article className="research-panel conditions-panel">
-            <div><p className="eyebrow">Live scan definition</p><h2>Current conditions</h2></div>
+            <div><p className="eyebrow">Separate candidate definition</p><h2>Broader scan conditions</h2></div>
             <div className="conditions-list">{conditions.map(([label, value]) => <div key={label}><strong>{label}</strong><span>{value}</span></div>)}</div>
-            <p className="condition-caveat">The `RVOL &lt; 0.95` relaxation is active in Scans but still needs its own full historical outcome run. Registry performance for EP-016 uses the previously tested `RVOL &lt; 0.75` setup rule.</p>
+            <p className="condition-caveat">The static Scans snapshot uses RVOL &lt; 0.95. The archived EP-016 results use RVOL &lt; 0.75. Both require separate, versioned reruns on the final frozen historical universe.</p>
           </article>
         </aside>
       </section>
@@ -210,7 +210,7 @@ export function BacktestDashboard() {
         <section className="trade-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="trade-detail-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="trade-detail-close" onClick={() => setDetailStrategy(null)} aria-label="Close trade details">×</button>
           <header className="trade-detail-header">
-            <div><p className="eyebrow">{detailStrategy.id} · complete mature cohort</p><h2 id="trade-detail-title">Winners and losers</h2><p>{detailStrategy.variant}</p></div>
+            <div><p className="eyebrow">{detailStrategy.id} · provisional legacy cohort</p><h2 id="trade-detail-title">Winners and losers</h2><p>{detailStrategy.variant} · not reproduced on the final historical database</p></div>
             <a href={`./data/${detailStrategy.id.toLowerCase()}_trades.csv`} download>Download CSV</a>
           </header>
           <div className="trade-detail-kpis">

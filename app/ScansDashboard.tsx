@@ -95,7 +95,7 @@ export function ScansDashboard() {
         <div>
           <p className="eyebrow">EP contraction scanner</p>
           <h1>Scans</h1>
-          <p>Historical candidates from the current high-opportunity rule.</p>
+          <p>Static research snapshot. Candidates have not been reproduced on the final frozen historical universe.</p>
         </div>
         <span className="research-rule-badge">2× EP · RVOL &lt; 0.95</span>
       </header>
@@ -104,18 +104,18 @@ export function ScansDashboard() {
         <article><span>Candidates</span><strong>{filtered.length}</strong><small>{displayDate(from)} – {displayDate(to)}</small></article>
         <article><span>Signal days</span><strong>{signalDays}</strong><small>{signalDays ? (filtered.length / signalDays).toFixed(1) : "0.0"} average per active day</small></article>
         <article><span>Latest signal</span><strong>{newest?.symbol || "None"}</strong><small>{newest ? displayDate(newest.setup_date) : "No match in range"}</small></article>
-        <article><span>Data checked</span><strong>Sep 3</strong><small>Latest completed US session</small></article>
+        <article><span>Snapshot through</span><strong>Sep 3, 2026</strong><small>Static CSV · not a live scan</small></article>
       </section>
 
       <section className="research-panel scan-table-panel">
         <div className="research-toolbar">
           <div>
             <h2>Candidate history</h2>
-            <p>First qualifying contraction for each EP event.</p>
+            <p>Archived first qualifying setups. Date shortcuts currently use calendar days.</p>
           </div>
           <div className="scan-controls">
-            <div className="scan-quick-range" aria-label="Quick date ranges">
-              {[15, 30, 60, 90].map((days) => <button key={days} className={from === shiftDate(DATA_AS_OF, -(days - 1)) && to === DATA_AS_OF ? "active" : ""} onClick={() => setWindow(days)}>{days}D</button>)}
+            <div className="scan-quick-range" aria-label="Quick calendar-day date ranges">
+              {[15, 30, 60, 90].map((days) => <button key={days} className={from === shiftDate(DATA_AS_OF, -(days - 1)) && to === DATA_AS_OF ? "active" : ""} onClick={() => setWindow(days)} title={`${days} calendar days`}>{days}D</button>)}
             </div>
             <button className="scan-step" onClick={() => moveWindow(-1)} aria-label="Previous date window">←</button>
             <label>From<input type="date" value={from} min="2024-02-06" max={to} onChange={(event) => setFrom(event.target.value)}/></label>

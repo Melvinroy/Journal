@@ -1,5 +1,7 @@
 # Brontide
 
+Development: [six-phase execution plan](docs/EXECUTION_PLAN.md) · [Windows Codex handoff](docs/WINDOWS_CODEX_HANDOFF.md) · [E1 validation](docs/EXECUTION_E1_VALIDATION.md).
+
 <p align="center">
   <img src="public/og.png" alt="Brontide — Review clearly. Trade deliberately." width="100%" />
 </p>
