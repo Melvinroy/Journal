@@ -1,0 +1,612 @@
+{
+  "analytics": {
+    "current": {
+      "basis": "Net R; independent positions. Not portfolio returns.",
+      "closed_observations": 1,
+      "distribution": [
+        {
+          "count": 0,
+          "label": "Below \u22122R"
+        },
+        {
+          "count": 1,
+          "label": "\u22122 to \u22121R"
+        },
+        {
+          "count": 0,
+          "label": "\u22121 to 0R"
+        },
+        {
+          "count": 0,
+          "label": "0 to 1R"
+        },
+        {
+          "count": 0,
+          "label": "1 to 3R"
+        },
+        {
+          "count": 0,
+          "label": "3 to 5R"
+        },
+        {
+          "count": 0,
+          "label": "5R and above"
+        }
+      ],
+      "ordering": "exit date, then stable trade ID; intraday order unknown; breakeven resets streaks",
+      "scope": "whole run",
+      "unavailable": {
+        "alpha": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "average_win_r": "No applicable observations",
+        "beta": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "cagr": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "equity_drawdown": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "exposure": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "information_ratio": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "payoff_ratio": "No applicable observations",
+        "portfolio_var": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "probabilistic_sharpe": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "sharpe": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "sortino": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "tracking_error": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "turnover": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable."
+      },
+      "values": {
+        "alpha": null,
+        "ambiguous_count": 0,
+        "average_hold_sessions": 2,
+        "average_loss_r": -1.0520116865558824,
+        "average_mae_r": -0.9999999999999979,
+        "average_mfe_r": 0.4935852680152903,
+        "average_win_r": null,
+        "best_r": -1.0520116865558824,
+        "beta": null,
+        "breakeven": 0,
+        "cagr": null,
+        "closed": 1,
+        "closed_trade_drawdown_r": 1.0520116865558824,
+        "entered": 1,
+        "equity_drawdown": null,
+        "expectancy_r": -1.0520116865558824,
+        "exposure": null,
+        "information_ratio": null,
+        "invalid_closed": 0,
+        "losers": 1,
+        "losing_streak": 1,
+        "median_r": -1.0520116865558824,
+        "missing_symbols": 1,
+        "not_entered": 0,
+        "open": 0,
+        "payoff_ratio": null,
+        "portfolio_var": null,
+        "probabilistic_sharpe": null,
+        "profit_factor_r": 0.0,
+        "sharpe": null,
+        "signals": 1,
+        "sortino": null,
+        "top_five_winners_r": 0,
+        "total_r": -1.0520116865558824,
+        "tracking_error": null,
+        "turnover": null,
+        "unresolved": 0,
+        "win_rate": 0.0,
+        "winners": 0,
+        "winning_streak": 0,
+        "worst_r": -1.0520116865558824
+      },
+      "version": "research-metrics-1.0"
+    },
+    "lean": {
+      "basis": "Net R; independent positions. Not portfolio returns.",
+      "closed_observations": 1,
+      "distribution": [
+        {
+          "count": 0,
+          "label": "Below \u22122R"
+        },
+        {
+          "count": 1,
+          "label": "\u22122 to \u22121R"
+        },
+        {
+          "count": 0,
+          "label": "\u22121 to 0R"
+        },
+        {
+          "count": 0,
+          "label": "0 to 1R"
+        },
+        {
+          "count": 0,
+          "label": "1 to 3R"
+        },
+        {
+          "count": 0,
+          "label": "3 to 5R"
+        },
+        {
+          "count": 0,
+          "label": "5R and above"
+        }
+      ],
+      "ordering": "exit date, then stable trade ID; intraday order unknown; breakeven resets streaks",
+      "scope": "whole run",
+      "unavailable": {
+        "alpha": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "ambiguous_count": "Ambiguity flags are not recorded for every trade; absence is not evidence of no ambiguity",
+        "average_mae_r": "No applicable observations",
+        "average_mfe_r": "No applicable observations",
+        "average_win_r": "No applicable observations",
+        "beta": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "cagr": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "equity_drawdown": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "exposure": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "information_ratio": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "payoff_ratio": "No applicable observations",
+        "portfolio_var": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "probabilistic_sharpe": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "sharpe": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "sortino": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "tracking_error": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+        "turnover": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable."
+      },
+      "values": {
+        "alpha": null,
+        "ambiguous_count": null,
+        "average_hold_sessions": 2,
+        "average_loss_r": -1.0528016574005674,
+        "average_mae_r": null,
+        "average_mfe_r": null,
+        "average_win_r": null,
+        "best_r": -1.0528016574005674,
+        "beta": null,
+        "breakeven": 0,
+        "cagr": null,
+        "closed": 1,
+        "closed_trade_drawdown_r": 1.0528016574005674,
+        "entered": 1,
+        "equity_drawdown": null,
+        "expectancy_r": -1.0528016574005674,
+        "exposure": null,
+        "information_ratio": null,
+        "invalid_closed": 0,
+        "losers": 1,
+        "losing_streak": 1,
+        "median_r": -1.0528016574005674,
+        "missing_symbols": 1,
+        "not_entered": 0,
+        "open": 0,
+        "payoff_ratio": null,
+        "portfolio_var": null,
+        "probabilistic_sharpe": null,
+        "profit_factor_r": 0.0,
+        "sharpe": null,
+        "signals": 1,
+        "sortino": null,
+        "top_five_winners_r": 0,
+        "total_r": -1.0528016574005674,
+        "tracking_error": null,
+        "turnover": null,
+        "unresolved": 0,
+        "win_rate": 0.0,
+        "winners": 0,
+        "winning_streak": 0,
+        "worst_r": -1.0528016574005674
+      },
+      "version": "research-metrics-1.0"
+    }
+  },
+  "differences": [
+    {
+      "category": "execution",
+      "current": 81.12919193756943,
+      "explanation": "Native cent tick rounding versus unrounded research prices.",
+      "field": "exit",
+      "identity": "EP-2x-rvol95 / GMED / 2025-11-12",
+      "lean": 81.13
+    },
+    {
+      "category": "execution",
+      "current": -1.0520116865558824,
+      "explanation": "Net-R difference reconciles exactly to the recorded entry, exit and fee differences.",
+      "field": "outcome_r",
+      "identity": "EP-2x-rvol95 / GMED / 2025-11-12",
+      "lean": -1.0528016574005674
+    },
+    {
+      "category": "costs",
+      "current": 0.16543919193756942,
+      "explanation": "Current engine charges actual fill price; native fees use contemporaneous security price.",
+      "field": "fees_per_share",
+      "identity": "EP-2x-rvol95 / GMED / 2025-11-12",
+      "lean": 0.16876
+    },
+    {
+      "category": "trade accounting",
+      "current": false,
+      "explanation": "Native adapter does not record this conservative path statistic; unavailable is not zero.",
+      "field": "ambiguous",
+      "identity": "EP-2x-rvol95 / GMED / 2025-11-12",
+      "lean": null
+    },
+    {
+      "category": "trade accounting",
+      "current": 0.4935852680152903,
+      "explanation": "Native adapter does not record this conservative path statistic; unavailable is not zero.",
+      "field": "mfe_r",
+      "identity": "EP-2x-rvol95 / GMED / 2025-11-12",
+      "lean": null
+    },
+    {
+      "category": "trade accounting",
+      "current": -0.9999999999999979,
+      "explanation": "Native adapter does not record this conservative path statistic; unavailable is not zero.",
+      "field": "mae_r",
+      "identity": "EP-2x-rvol95 / GMED / 2025-11-12",
+      "lean": null
+    }
+  ],
+  "execution": {
+    "current": {
+      "capital": "independent positions; no capital or overlap constraints",
+      "cost_bps_per_side": 10,
+      "drawdown": "closed-trade cumulative R, not mark-to-market portfolio drawdown",
+      "excursions": "conservative: complete prior candles plus exit and opening prices",
+      "same_bar_policy": "stop first; ambiguous flag retained",
+      "slippage_bps_per_side": 0,
+      "version": "daily-long-1.0"
+    },
+    "lean": {
+      "capital": "Separate account per signal; one share; net R normalized by setup ATR",
+      "fees": "10 bps of contemporaneous security price per side",
+      "maximum_hold": "Market order after session-60 close; native fill may occur next open",
+      "price_rounding": "Native tick rounding",
+      "same_bar_policy": "Native order processing and OCO cancellation; daily intrabar order unknown",
+      "slippage": "Default native model",
+      "version": "lean-native-independent-1"
+    }
+  },
+  "implementation": {
+    "adapter": "dual-engine-1",
+    "lean_revision": "23b735d99a357807dc0df9f4c51d30f05fe0d277",
+    "source_fingerprint": "865377e7b08ce586d71923d74d199efdda0739f7ef8148240321da23e5e2d5b2"
+  },
+  "kind": "engine_comparison",
+  "lean_run_id": "138d0f3942f22acb1af2e82fbb75af4e494bcdf5fda36e5176cf5f56accf3ade",
+  "limitations": [
+    "30 days and one observed real trade do not establish strategy reliability.",
+    "Custom pre-adjusted OHLC does not validate corporate actions or point-in-time eligibility.",
+    "Native discovery and separate replay include repeated warm-up; their total time is not a like-for-like speed benchmark."
+  ],
+  "matched_trades": [
+    {
+      "current": {
+        "ambiguous": false,
+        "entry": 84.31,
+        "entry_date": "2025-11-13",
+        "ep_date": "2025-11-07",
+        "exit": 81.12919193756943,
+        "exit_date": "2025-11-14",
+        "exit_reason": "Stop",
+        "fees_per_share": 0.16543919193756942,
+        "hold_sessions": 2,
+        "mae_r": -0.9999999999999979,
+        "mfe_r": 0.4935852680152903,
+        "outcome_percent": -3.9689802566340187,
+        "outcome_r": -1.0520116865558824,
+        "setup_atr": 3.1808080624305783,
+        "setup_date": "2025-11-12",
+        "signal_id": "1d1287b91a45942be6042906a4d53b53f52fed72480842b3b11848303595f1c5",
+        "status": "Closed",
+        "stop": 81.12919193756943,
+        "strategy_id": "EP-2x-rvol95",
+        "symbol": "GMED",
+        "target": 116.11808062430579,
+        "trade_id": "48d0626fbbaef36a8994aba4833044c24f219283759787050258d66ca9f52249",
+        "trigger_date": "2025-11-12"
+      },
+      "identity": "EP-2x-rvol95 / GMED / 2025-11-12",
+      "lean": {
+        "ambiguous": null,
+        "entry": 84.31,
+        "entry_date": "2025-11-13",
+        "exit": 81.13,
+        "exit_date": "2025-11-14",
+        "exit_reason": "Stop",
+        "fees_per_share": 0.16876,
+        "hold_sessions": 2,
+        "mae_r": null,
+        "mfe_r": null,
+        "outcome_r": -1.0528016574005674,
+        "recorded_fees_per_share": 0.16876,
+        "setup_atr": 3.180808062430578,
+        "setup_date": "2025-11-12",
+        "signal_id": null,
+        "status": "Closed",
+        "stop": 81.12919193756942,
+        "strategy_id": "EP-2x-rvol95",
+        "symbol": "GMED",
+        "target": 116.11808062430578,
+        "trade_id": "d67453d705bfbfa47c266f27e9525ca68f24172671e2743e242471317f0edba0",
+        "unavailable": {
+          "ambiguous": "Native execution does not establish intrabar order",
+          "mae_r": "Conservative path bounds are not recorded by the native adapter",
+          "mfe_r": "Conservative path bounds are not recorded by the native adapter"
+        }
+      }
+    }
+  ],
+  "metric_differences": [
+    {
+      "category": "statistics definition",
+      "current": 0,
+      "explanation": "Ambiguity flags are not recorded for every trade; absence is not evidence of no ambiguity",
+      "lean": null,
+      "metric": "ambiguous_count"
+    },
+    {
+      "category": "trade accounting",
+      "current": -1.0520116865558824,
+      "explanation": "Shared formula applied to each engine's complete ledger; trade outcomes differ.",
+      "lean": -1.0528016574005674,
+      "metric": "expectancy_r"
+    },
+    {
+      "category": "trade accounting",
+      "current": -1.0520116865558824,
+      "explanation": "Shared formula applied to each engine's complete ledger; trade outcomes differ.",
+      "lean": -1.0528016574005674,
+      "metric": "median_r"
+    },
+    {
+      "category": "trade accounting",
+      "current": -1.0520116865558824,
+      "explanation": "Shared formula applied to each engine's complete ledger; trade outcomes differ.",
+      "lean": -1.0528016574005674,
+      "metric": "average_loss_r"
+    },
+    {
+      "category": "trade accounting",
+      "current": -1.0520116865558824,
+      "explanation": "Shared formula applied to each engine's complete ledger; trade outcomes differ.",
+      "lean": -1.0528016574005674,
+      "metric": "total_r"
+    },
+    {
+      "category": "trade accounting",
+      "current": -1.0520116865558824,
+      "explanation": "Shared formula applied to each engine's complete ledger; trade outcomes differ.",
+      "lean": -1.0528016574005674,
+      "metric": "best_r"
+    },
+    {
+      "category": "trade accounting",
+      "current": -1.0520116865558824,
+      "explanation": "Shared formula applied to each engine's complete ledger; trade outcomes differ.",
+      "lean": -1.0528016574005674,
+      "metric": "worst_r"
+    },
+    {
+      "category": "trade accounting",
+      "current": 1.0520116865558824,
+      "explanation": "Shared formula applied to each engine's complete ledger; trade outcomes differ.",
+      "lean": 1.0528016574005674,
+      "metric": "closed_trade_drawdown_r"
+    },
+    {
+      "category": "statistics definition",
+      "current": 0.4935852680152903,
+      "explanation": "No applicable observations",
+      "lean": null,
+      "metric": "average_mfe_r"
+    },
+    {
+      "category": "statistics definition",
+      "current": -0.9999999999999979,
+      "explanation": "No applicable observations",
+      "lean": null,
+      "metric": "average_mae_r"
+    }
+  ],
+  "native_statistics_notes": [
+    "Shared analytics keep breakeven separate. LEAN TradeStatistics counts zero P/L as a loss.",
+    "Shared profit factor is unavailable without losses. Native LEAN can return a sentinel of 10 when profits exist without losses.",
+    "Native closed-trade drawdown is signed negative; the shared catalog displays a positive magnitude.",
+    "Trade Sharpe/Sortino and one-share replay statistics are not funded-portfolio returns."
+  ],
+  "scope": "Whole pilot; all matching records before pagination",
+  "shared_inputs": {
+    "benchmark_fingerprint": "57cbfa1b7a974ce7d0c2c13b8d6edc7bc3e52b57f4d76bc9fc5715dbe8661258",
+    "data_fingerprint": "81cef15b0e2f3bcec07fefc46f905cbb97f47933b97cfcf1b07f826e8bf754c5",
+    "manifest": {
+      "adjustment": "all",
+      "calendar_fingerprint": "d8bd387dc9bd10fdf0e677a53ab49d1382c91edae0b3efca4b161d91d34ff8eb",
+      "config_fingerprint": "48cae0dcbc0b47fe85cfdf17244a093fa50dbdc2d2afbface664eda5fbeffbe6",
+      "data_fingerprint": "81cef15b0e2f3bcec07fefc46f905cbb97f47933b97cfcf1b07f826e8bf754c5",
+      "eligibility": "Entry-containing engineering sample: same 20 hashed symbols; historical security types unverified.",
+      "empty_symbols": [
+        "FCB"
+      ],
+      "end": "2025-12-11",
+      "execution_fingerprint": "90d490d02a82549a07f4bb38df2ee51e18d9d530594ca294e65ef0bfe135a616",
+      "feature_version": "eod-core-1.0",
+      "lean_revision": "23b735d99a357807dc0df9f4c51d30f05fe0d277",
+      "limitations": [
+        "30 calendar days are an engineering check, not strategy validation.",
+        "Pre-adjusted custom OHLC parity does not validate corporate actions or point-in-time eligibility."
+      ],
+      "missing_symbols": 1,
+      "parent_universe_fingerprint": "a786a1da919b424f31e027defe035e589aded56ee18475882a19b47d79507d1b",
+      "scan_run_id": "f52928dfd191bc34283f1f160e807c9e73b03df8af5d8020ebb4c297b30f8efb",
+      "schema_version": 1,
+      "selection": "20 smallest SHA256(lean-pilot-1,symbol); no outcome selection",
+      "source": "alpaca_sip",
+      "source_scan_join_validation": "Recomputed in-window measurements match the recorded source scan; same signal identities, numeric tolerance 1e-9.",
+      "start": "2025-11-12",
+      "strategy": {
+        "atr": "Wilder14; 14 valid prior-close true ranges seed; resets after missing session",
+        "distribution_atr": 0.75,
+        "distribution_drop_percent": 3,
+        "distribution_rule": "previous_close - close >= distribution_atr * prior_ATR14 AND volume > previous_volume",
+        "entry_policy": "next authoritative session open",
+        "ep_average": "inclusive",
+        "ep_multiple": 2,
+        "event_overlap": "new EP supersedes previous episode",
+        "evidence_status": "unvalidated_hypothesis",
+        "feature_price_basis": "declared by run",
+        "fingerprint": "7f19b031d4870582126afdf483ed5f9f07605570bf56265c884990b90b365e71",
+        "fixed_rules": {
+          "body_atr_lt": 0.25,
+          "ep_return_percent_gte": 4,
+          "ep_volume_gte": 8900000,
+          "ep_volume_previous_ratio_gt": 1,
+          "major_distribution_count_eq": 0,
+          "post_ep_high_distance_atr_lte": 1,
+          "price_gt": 3,
+          "range_atr_lt": 0.75,
+          "setup_ep_volume_percent_lt": 50,
+          "setup_rvol_denominator": "prior 20 authoritative sessions",
+          "setup_stack": "close > SMA10 > SMA20"
+        },
+        "id": "EP-2x-rvol95",
+        "legacy_reproduction": false,
+        "max_age": 15,
+        "max_hold": 60,
+        "min_age": 3,
+        "setup_rvol": 0.95,
+        "supersede_on_new_ep": true,
+        "target_r": 10,
+        "version": "reconstructed-episode-1.0"
+      },
+      "symbols": [
+        "APH",
+        "BRIE",
+        "DXR",
+        "EVGN",
+        "FCB",
+        "GMED",
+        "HYLB",
+        "IWX",
+        "KOF",
+        "NRUC",
+        "NYXH",
+        "PFIG",
+        "SDOT",
+        "SLMT",
+        "SPXS",
+        "URI",
+        "USMV",
+        "VNIE",
+        "XLKI",
+        "YDEC"
+      ],
+      "universe_count": 20,
+      "universe_fingerprint": "62c4177279308efc2ac970ba48be8e16171d14c73e7260dcb72a6ad014291299",
+      "warmup_start": "2024-01-02",
+      "window_anchor": {
+        "entry_date": "2025-11-13",
+        "setup_date": "2025-11-12",
+        "source_backtest_run_id": "689fec34bca325a6a2bbce735d3517f11da39ff95d5e7471a68720d3c4f1aa0c",
+        "symbol": "GMED"
+      },
+      "window_selection": "User-requested entry-containing window; selected using saved entry dates, not outcomes"
+    },
+    "sessions_fingerprint": "b0394161be84ebae137d4d9c70c965b7d34834bff416e114a5ca3d81891553a0",
+    "symbols": [
+      "APH",
+      "BRIE",
+      "DXR",
+      "EVGN",
+      "FCB",
+      "GMED",
+      "HYLB",
+      "IWX",
+      "KOF",
+      "NRUC",
+      "NYXH",
+      "PFIG",
+      "SDOT",
+      "SLMT",
+      "SPXS",
+      "URI",
+      "USMV",
+      "VNIE",
+      "XLKI",
+      "YDEC"
+    ],
+    "warmup_start": "2024-01-02"
+  },
+  "signal_counts": {
+    "current": 1,
+    "lean": 1,
+    "matched": 1
+  },
+  "source_run_id": "7e8bfcfab47ff7cd911f2631811e0a2a9832da79f272499e5711eed63ffe0c8d",
+  "timing": {
+    "current": {
+      "cold_cache": {
+        "cpu_seconds": 1.53125,
+        "process_peak_bytes": 169861120,
+        "wall_seconds": 1.561739899974782
+      },
+      "feature_recomputation": {
+        "cpu_seconds": 0.15625,
+        "process_peak_bytes": 169861120,
+        "wall_seconds": 0.16672869998728856
+      },
+      "scanning": {
+        "cpu_seconds": 0.09375,
+        "process_peak_bytes": 169861120,
+        "wall_seconds": 0.1009726999909617
+      },
+      "simulation": {
+        "cpu_seconds": 0.0,
+        "process_peak_bytes": 169861120,
+        "wall_seconds": 0.007093199994415045
+      },
+      "warm_cache": {
+        "cpu_seconds": 0.671875,
+        "process_peak_bytes": 169861120,
+        "wall_seconds": 0.9317708999733441
+      }
+    },
+    "lean": {
+      "build_wall_seconds": 3.325502299994696,
+      "discovery": {
+        "algorithm_sha256": "909f7bc68486d8f618c1fac7037fc76122af700cff1aa5c0492f2fa973af8488",
+        "case": "discovery",
+        "exit_code": 0,
+        "lean_revision": "23b735d99a357807dc0df9f4c51d30f05fe0d277",
+        "output_exists": true,
+        "wall_seconds": 8.62766160001047
+      },
+      "native_cpu_seconds": 31.3125,
+      "native_peak_bytes": 272113664,
+      "replays": [
+        {
+          "algorithm_sha256": "909f7bc68486d8f618c1fac7037fc76122af700cff1aa5c0492f2fa973af8488",
+          "case": "trade-0",
+          "exit_code": 0,
+          "lean_revision": "23b735d99a357807dc0df9f4c51d30f05fe0d277",
+          "output_exists": true,
+          "wall_seconds": 9.070320700004231
+        }
+      ]
+    },
+    "preparation": {
+      "database_reads": {
+        "cpu_seconds": 1.234375,
+        "process_peak_bytes": 169861120,
+        "wall_seconds": 0.7662152000120841
+      },
+      "lean_publication": {
+        "cpu_seconds": 0.0,
+        "process_peak_bytes": 169861120,
+        "wall_seconds": 0.01130449998890981
+      }
+    }
+  },
+  "unresolved_count": 0,
+  "version": 1,
+  "run_id": "db4c78845f39902d41091584158d222e21438fc3289db017e3f887f38af45420"
+}

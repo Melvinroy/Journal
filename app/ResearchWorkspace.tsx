@@ -6,12 +6,13 @@ import { useBrowserStore } from "../lib/use-browser-store";
 import { WATCH_KEY, updateWatchlist, validWatchlist, type WatchItem, type MarketContext } from "../lib/workspace-state";
 import { ScansDashboard } from "./ScansDashboard";
 import { BacktestDashboard } from "./BacktestDashboard";
+import { ResearchBacktest } from "./ResearchBacktest";
 
 type Row = {symbol:string;setup_date:string;ep_date:string;status:string;signal_id?:string;strategy_id?:string;intended_entry_date?:string;entry_date?:string;exit_date?:string;outcome_r?:number;measurements?:Record<string,unknown>;conditions?:{condition:string;observed:unknown;operator:string;threshold:unknown;status:string;unit:string}[];[key:string]:unknown};
 type Run = {run_id:string;manifest:{strategy?:{id:string;version:string};end:string;start:string;adjustment:string;data_fingerprint:string;[key:string]:unknown};summary:Record<string,unknown>;sessions?:{session_date:string;candidates:number}[];execution?:Record<string,unknown>;freshness?:{freshness:string;expected_session?:string}};
 const display=(v:unknown):string=>v==null?"—":typeof v==="number"?v.toLocaleString(undefined,{maximumFractionDigits:4}):typeof v==="object"?JSON.stringify(v):String(v);
 
-export function ResearchWorkspace({kind,onChart,demo=false}:{demo?:boolean;kind:"scan"|"backtest";onChart:(context:MarketContext)=>void}) {
+export function ResearchWorkspace({kind,onChart,demo=false,originalRequest=0}:{originalRequest?:number;demo?:boolean;kind:"scan"|"backtest";onChart:(context:MarketContext)=>void}) {
   const local=process.env.NEXT_PUBLIC_BRONTIDE_LOCAL==="1";
   const sample=demo||!local;
   const request=sample?getSampleResearchJson:getLocalJson;
@@ -23,6 +24,9 @@ export function ResearchWorkspace({kind,onChart,demo=false}:{demo?:boolean;kind:
   const versionView=useBrowserStore<boolean>(demoStorageKey(`brontide-research-original-${kind}-v1`,sample),true,value=>typeof value==="boolean");
   useEffect(()=>{if(versionView.ready)setLegacy(versionView.value);},[versionView.ready]);
   const chooseVersion=(original:boolean)=>{setLegacy(original);versionView.save(original);};
+  useEffect(()=>{
+    if(originalRequest&&versionView.ready){setLegacy(true);versionView.save(true);}
+  },[originalRequest,versionView.ready]);
   const [allSessions,setAllSessions]=useState(false);
   const compatible=new Set(runs.filter(r=>compare.includes(r.run_id)).map(r=>JSON.stringify([r.manifest.data_fingerprint,r.manifest.universe_fingerprint,r.manifest.calendar_fingerprint,r.manifest.start,r.manifest.end,r.manifest.source,r.manifest.adjustment,r.manifest.execution_fingerprint]))).size<=1;
   const [sort,setSort]=useState("setup_date"),[descending,setDescending]=useState(false),[metric,setMetric]=useState("rvol");
@@ -31,34 +35,36 @@ export function ResearchWorkspace({kind,onChart,demo=false}:{demo?:boolean;kind:
   const watch=useBrowserStore<WatchItem[]>(WATCH_KEY,[],validWatchlist);
   useEffect(()=>{
 
+    if(kind!=="scan"||legacy)return;
     const abort=new AbortController();setLoading(true);setError("");
     request<{runs:Run[]}>(`/v1/research/runs?kind=${kind}`,abort.signal).then(data=>{setRuns(data.runs);setId(old=>data.runs.some(r=>r.run_id===old)?old:data.runs[0]?.run_id??"");}).catch(e=>{if(!abort.signal.aborted)setError(String(e.message));}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
     return()=>abort.abort();
-  },[kind,sample,retry]);
+  },[kind,sample,retry,legacy]);
   useEffect(()=>{
-    if(!id)return;
+    if(kind!=="scan"||legacy||!id)return;
     const abort=new AbortController();setRun(null);setDetail(null);setError("");setLoading(true);
     request<Run>(`/v1/research/runs/${id}`,abort.signal).then(data=>{setRun(data);setDate(kind==="scan"?data.sessions?.at(-1)?.session_date??"":"");setOffset(0);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
     return()=>abort.abort();
-  },[id,kind,retry]);
+  },[id,kind,retry,legacy]);
   useEffect(()=>{
-    if(!run)return;
+    if(kind!=="scan"||legacy||!run)return;
     const abort=new AbortController();setLoading(true);setRows([]);setError("");
-    const params=new URLSearchParams({view:kind==="backtest"?"trades":diagnostic?"evaluations":"signals",session:date,symbol,offset:String(offset),limit:"100",sort,descending:String(descending)});
+    const params=new URLSearchParams({view:diagnostic?"evaluations":"signals",session:date,symbol,offset:String(offset),limit:"100",sort,descending:String(descending)});
     request<{rows:Row[];total:number}>(`/v1/research/runs/${run.run_id}/rows?${params}`,abort.signal).then(data=>{setRows(data.rows);setTotal(data.total);}).catch(e=>{if(!abort.signal.aborted)setError(e.message);}).finally(()=>{if(!abort.signal.aborted)setLoading(false);});
     return()=>abort.abort();
-  },[run,date,symbol,diagnostic,offset,kind,retry,sort,descending]);
+  },[run,date,symbol,diagnostic,offset,kind,retry,sort,descending,legacy]);
   const chart=(row:Row)=>onChart({symbol:row.symbol,mode:sample?"sample":"local",adjustment:run?.manifest.adjustment??"all",asOf:row.setup_date,signalId:row.signal_id,strategyId:row.strategy_id});
   const download=()=>{
     if(!run)return;
     const url=URL.createObjectURL(new Blob([JSON.stringify({manifest:run,view:diagnostic?"evaluations":kind,filters:{date,symbol},offset,total,rows,export_scope:"currently displayed page only"},null,2)],{type:"application/json"}));
     const link=document.createElement("a");link.href=url;link.download=`brontide-${kind}-${run.run_id.slice(0,12)}-page.json`;link.click();URL.revokeObjectURL(url);
   };
+  const researchBacktest=kind==="backtest"?<ResearchBacktest sample={sample} onChart={onChart}/>:null;
   return <section className="research-shell">
     <header><div><p className="eyebrow">{kind==="scan"?"DISCOVER":"STRATEGIES"}</p><h1>{kind==="scan"?"Completed-session scans":"Reproducible research"}</h1></div></header>
     <nav className="workspace-subtabs" aria-label={kind==="scan"?"Scan versions":"Strategy views"}><button className={legacy?"active":""} onClick={()=>chooseVersion(true)}>{kind==="scan"?"Original Scans":"Original Backtest"}</button><button className={!legacy?"active":""} onClick={()=>chooseVersion(false)}>{kind==="scan"?"Research Scans":"Research Runs"}</button></nav>
     <p className="workspace-notice">{!sample?"Local EOD research · no live quotes or orders. Runs are immutable and strategy variants remain unvalidated until reviewed.":"Demo · synthetic research runs for layout review. Original references remain provisional."}</p>
-    {legacy?(kind==="scan"?<ScansDashboard/>:<BacktestDashboard/>):<div className="research-workspace">
+    {legacy?(kind==="scan"?<ScansDashboard/>:<BacktestDashboard/>):researchBacktest??<div className="research-workspace">
       <div className="research-controls"><label>Saved run<select value={id} onChange={e=>setId(e.target.value)}><option value="">Select a run</option>{runs.map(r=><option key={r.run_id} value={r.run_id}>{r.manifest.strategy?.id} · {r.manifest.end} · {r.run_id.slice(0,8)}</option>)}</select></label>
       {kind==="scan"&&<><label>Completed session<select value={date} onChange={e=>{setDate(e.target.value);setOffset(0);setDetail(null);}}>{(allSessions?run?.sessions?.slice():run?.sessions?.slice(-30))?.reverse().map(s=><option key={s.session_date} value={s.session_date}>{s.session_date} · {s.candidates} matches</option>)}</select></label><label><input type="checkbox" checked={allSessions} onChange={e=>setAllSessions(e.target.checked)}/> All sessions in this run</label></>}
       <label>Ticker filter<input value={symbol} maxLength={32} onChange={e=>{setSymbol(e.target.value.toUpperCase());setOffset(0);setDetail(null);}}/></label>

@@ -1,0 +1,1455 @@
+{
+  "version": "research-metrics-1.0",
+  "metrics": [
+    {
+      "id": "signals",
+      "label": "Signals",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "All recorded trade attempts",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "entered",
+      "label": "Entered",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Records with an entry date",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "closed",
+      "label": "Closed trades",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Closed records with finite net R",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "winners",
+      "label": "Winners",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Closed net R > 0",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "losers",
+      "label": "Losers",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Closed net R < 0",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "breakeven",
+      "label": "Breakeven",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Closed net R = 0",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "open",
+      "label": "Open",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Status is Open",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "unresolved",
+      "label": "Unresolved",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Status is Unresolved",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "not_entered",
+      "label": "Not entered",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Status is Not entered",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "ambiguous_count",
+      "label": "Ambiguous bars",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Records flagged with a same-bar stop/target ambiguity",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "invalid_closed",
+      "label": "Invalid closed records",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Closed records without finite net R",
+      "inputs": [
+        "ledger.status",
+        "ledger.outcome_r"
+      ],
+      "limitations": "Complete applicable trade ledger; incomplete and invalid closed outcomes do not contribute to closed-trade performance. Not a portfolio statistic.",
+      "availability": "available"
+    },
+    {
+      "id": "missing_symbols",
+      "label": "Symbols without ready bars",
+      "category": "Sample",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Frozen universe symbols with no ready bars in the run",
+      "inputs": [
+        "manifest.missing_symbols"
+      ],
+      "limitations": "Coverage is whole-run only; this is not a count of missing sessions.",
+      "availability": "available"
+    },
+    {
+      "id": "expectancy_r",
+      "label": "Expectancy",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Mean closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "median_r",
+      "label": "Median outcome",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Median closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "win_rate",
+      "label": "Win rate",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Winning closed trades / all valid closed trades; breakeven included",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "average_win_r",
+      "label": "Average winner",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Mean positive closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "average_loss_r",
+      "label": "Average loser",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Mean negative closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "payoff_ratio",
+      "label": "Payoff ratio",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "ratio",
+      "definition": "Average winner R / absolute average loser R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "profit_factor_r",
+      "label": "Profit factor (R)",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "ratio",
+      "definition": "Sum positive net R / absolute sum negative net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "total_r",
+      "label": "Total R",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Arithmetic sum of closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "best_r",
+      "label": "Best trade",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Maximum closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "worst_r",
+      "label": "Worst trade",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Minimum closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "top_five_winners_r",
+      "label": "Top five winners contribution",
+      "category": "Performance",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Sum of the five largest positive closed net R outcomes",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.status"
+      ],
+      "limitations": "Equal-risk observations; not portfolio profit. Undefined denominators remain unavailable.",
+      "availability": "available"
+    },
+    {
+      "id": "closed_trade_drawdown_r",
+      "label": "Closed-trade drawdown",
+      "category": "Risk & execution",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Largest decline from a peak of cumulative closed net R, starting at zero",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.exit_date",
+        "ledger.trade_id",
+        "ledger.hold_sessions",
+        "ledger.mfe_r",
+        "ledger.mae_r"
+      ],
+      "limitations": "Ordered by exit date then stable trade ID; intraday sequence unknown. Breakeven resets streaks. Excursions use pre-exit bars and known open/exit prices, not the full exit-bar path.",
+      "availability": "available"
+    },
+    {
+      "id": "winning_streak",
+      "label": "Longest winning streak",
+      "category": "Risk & execution",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Longest sequence of positive closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.exit_date",
+        "ledger.trade_id",
+        "ledger.hold_sessions",
+        "ledger.mfe_r",
+        "ledger.mae_r"
+      ],
+      "limitations": "Ordered by exit date then stable trade ID; intraday sequence unknown. Breakeven resets streaks. Excursions use pre-exit bars and known open/exit prices, not the full exit-bar path.",
+      "availability": "available"
+    },
+    {
+      "id": "losing_streak",
+      "label": "Longest losing streak",
+      "category": "Risk & execution",
+      "scope": "run",
+      "unit": "count",
+      "definition": "Longest sequence of negative closed net R",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.exit_date",
+        "ledger.trade_id",
+        "ledger.hold_sessions",
+        "ledger.mfe_r",
+        "ledger.mae_r"
+      ],
+      "limitations": "Ordered by exit date then stable trade ID; intraday sequence unknown. Breakeven resets streaks. Excursions use pre-exit bars and known open/exit prices, not the full exit-bar path.",
+      "availability": "available"
+    },
+    {
+      "id": "average_hold_sessions",
+      "label": "Average holding time",
+      "category": "Risk & execution",
+      "scope": "run",
+      "unit": "sessions",
+      "definition": "Mean recorded holding sessions of closed trades with values",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.exit_date",
+        "ledger.trade_id",
+        "ledger.hold_sessions",
+        "ledger.mfe_r",
+        "ledger.mae_r"
+      ],
+      "limitations": "Ordered by exit date then stable trade ID; intraday sequence unknown. Breakeven resets streaks. Excursions use pre-exit bars and known open/exit prices, not the full exit-bar path.",
+      "availability": "available"
+    },
+    {
+      "id": "average_mfe_r",
+      "label": "Average MFE (conservative)",
+      "category": "Risk & execution",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Mean recorded MFE of closed trades with values",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.exit_date",
+        "ledger.trade_id",
+        "ledger.hold_sessions",
+        "ledger.mfe_r",
+        "ledger.mae_r"
+      ],
+      "limitations": "Ordered by exit date then stable trade ID; intraday sequence unknown. Breakeven resets streaks. Excursions use pre-exit bars and known open/exit prices, not the full exit-bar path.",
+      "availability": "available"
+    },
+    {
+      "id": "average_mae_r",
+      "label": "Average MAE (conservative)",
+      "category": "Risk & execution",
+      "scope": "run",
+      "unit": "R",
+      "definition": "Mean recorded MAE of closed trades with values",
+      "inputs": [
+        "ledger.outcome_r",
+        "ledger.exit_date",
+        "ledger.trade_id",
+        "ledger.hold_sessions",
+        "ledger.mfe_r",
+        "ledger.mae_r"
+      ],
+      "limitations": "Ordered by exit date then stable trade ID; intraday sequence unknown. Breakeven resets streaks. Excursions use pre-exit bars and known open/exit prices, not the full exit-bar path.",
+      "availability": "available"
+    },
+    {
+      "id": "cagr",
+      "label": "Portfolio CAGR",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "sharpe",
+      "label": "Portfolio Sharpe",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "ratio",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "sortino",
+      "label": "Portfolio Sortino",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "ratio",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "equity_drawdown",
+      "label": "Portfolio equity drawdown",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "exposure",
+      "label": "Portfolio exposure",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "turnover",
+      "label": "Portfolio turnover",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "alpha",
+      "label": "Benchmark alpha",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "beta",
+      "label": "Benchmark beta",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "ratio",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "tracking_error",
+      "label": "Tracking error",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "information_ratio",
+      "label": "Information ratio",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "ratio",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "probabilistic_sharpe",
+      "label": "Probabilistic Sharpe",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "fraction",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "portfolio_var",
+      "label": "Portfolio value at risk",
+      "category": "Portfolio (requires model)",
+      "scope": "run",
+      "unit": "USD",
+      "definition": "Account-level statistic; not computed from independent trade R",
+      "inputs": [
+        "daily equity",
+        "position sizes",
+        "cash flows",
+        "benchmark returns",
+        "risk-free model"
+      ],
+      "limitations": "Requires an account equity/holdings model and aligned benchmark/risk-free inputs where applicable.",
+      "availability": "requires_portfolio"
+    },
+    {
+      "id": "symbol",
+      "label": "Ticker",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "text",
+      "definition": "Recorded ticker",
+      "inputs": [
+        "ledger.symbol"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "status",
+      "label": "Status",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "text",
+      "definition": "Recorded status",
+      "inputs": [
+        "ledger.status"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "ep_date",
+      "label": "EP date",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "date",
+      "definition": "Recorded ep date",
+      "inputs": [
+        "ledger.ep_date"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "setup_date",
+      "label": "Setup date",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "date",
+      "definition": "Recorded setup date",
+      "inputs": [
+        "ledger.setup_date"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "entry_date",
+      "label": "Entry date",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "date",
+      "definition": "Recorded entry date",
+      "inputs": [
+        "ledger.entry_date"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "exit_date",
+      "label": "Exit date",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "date",
+      "definition": "Recorded exit date",
+      "inputs": [
+        "ledger.exit_date"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "outcome_r",
+      "label": "Net R",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "R",
+      "definition": "Recorded net r",
+      "inputs": [
+        "ledger.outcome_r"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "outcome_percent",
+      "label": "Net return",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "Recorded net return",
+      "inputs": [
+        "ledger.outcome_percent"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "entry",
+      "label": "Entry price",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded entry price",
+      "inputs": [
+        "ledger.entry"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "stop",
+      "label": "Stop price",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded stop price",
+      "inputs": [
+        "ledger.stop"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "target",
+      "label": "Target price",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded target price",
+      "inputs": [
+        "ledger.target"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "exit",
+      "label": "Exit price",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded exit price",
+      "inputs": [
+        "ledger.exit"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "setup_atr",
+      "label": "Setup ATR",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded setup atr",
+      "inputs": [
+        "ledger.setup_atr"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "hold_sessions",
+      "label": "Holding sessions",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "sessions",
+      "definition": "Recorded holding sessions",
+      "inputs": [
+        "ledger.hold_sessions"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "fees_per_share",
+      "label": "Costs per share",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded costs per share",
+      "inputs": [
+        "ledger.fees_per_share"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "mfe_r",
+      "label": "MFE (conservative)",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "R",
+      "definition": "Recorded mfe (conservative)",
+      "inputs": [
+        "ledger.mfe_r"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "mae_r",
+      "label": "MAE (conservative)",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "R",
+      "definition": "Recorded mae (conservative)",
+      "inputs": [
+        "ledger.mae_r"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "exit_reason",
+      "label": "Exit reason",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "text",
+      "definition": "Recorded exit reason",
+      "inputs": [
+        "ledger.exit_reason"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "ambiguous",
+      "label": "Ambiguous exit bar",
+      "category": "Trade & execution",
+      "scope": "trade",
+      "unit": "boolean",
+      "definition": "Recorded ambiguous exit bar",
+      "inputs": [
+        "ledger.ambiguous"
+      ],
+      "limitations": "Recorded simulation basis. Missing values remain unavailable; MFE/MAE do not establish the intraday path.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.adv20",
+      "label": "Prior ADV20",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "count",
+      "definition": "Mean volume over the 20 authoritative sessions immediately before setup; excludes setup.",
+      "inputs": [
+        "recorded source scan measurements.adv20",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.atr14",
+      "label": "ATR14",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Wilder ATR14: mean of first 14 valid prior-close true ranges; subsequent ATR=(13*prior ATR+TR)/14. TR=max(high-low, abs(high-previous close), abs(low-previous close)). Resets after missing sessions.",
+      "inputs": [
+        "recorded source scan measurements.atr14",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.atr_percent",
+      "label": "ATR %",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * ATR14 / close.",
+      "inputs": [
+        "recorded source scan measurements.atr_percent",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.body_atr",
+      "label": "Body / ATR",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "abs(close-open) / ATR14.",
+      "inputs": [
+        "recorded source scan measurements.body_atr",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.close",
+      "label": "Setup close",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded setup-session close on the immutable run price and volume basis.",
+      "inputs": [
+        "recorded source scan measurements.close",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.close_location",
+      "label": "Close location",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "(close-low)/(high-low); null for a zero-range bar.",
+      "inputs": [
+        "recorded source scan measurements.close_location",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.distance_high252_percent",
+      "label": "Distance from 252-session high",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * (close / highest high in the 252 sessions ending at setup - 1). Requires all 252 bars.",
+      "inputs": [
+        "recorded source scan measurements.distance_high252_percent",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.distance_post_ep_high_atr",
+      "label": "Distance from post-EP high",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "(highest high from EP through setup - setup close) / setup ATR14.",
+      "inputs": [
+        "recorded source scan measurements.distance_post_ep_high_atr",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.distance_sma20_atr",
+      "label": "Distance from SMA20",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "(close-SMA20) / ATR14.",
+      "inputs": [
+        "recorded source scan measurements.distance_sma20_atr",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.distribution_count",
+      "label": "Distribution days",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "count",
+      "definition": "Number of post-EP sessions meeting the saved distribution rule; null if any post-EP bar is missing. Reconstructed episode v1 uses previous close-close >= 0.75*prior ATR14 and volume>previous volume.",
+      "inputs": [
+        "recorded source scan measurements.distribution_count",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.dollar_volume20",
+      "label": "Prior dollar volume20",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Mean(close*volume) over 20 sessions immediately before setup; excludes setup.",
+      "inputs": [
+        "recorded source scan measurements.dollar_volume20",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.ep_age",
+      "label": "EP age",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "sessions",
+      "definition": "Number of authoritative session steps from EP date to setup date.",
+      "inputs": [
+        "recorded source scan measurements.ep_age",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.ep_return",
+      "label": "EP return",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * (EP close / previous authoritative session close - 1).",
+      "inputs": [
+        "recorded source scan measurements.ep_return",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.ep_rvol",
+      "label": "EP volume expansion",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "EP volume divided by the 20-session volume average selected by the saved strategy; reconstructed episode v1 uses the inclusive average.",
+      "inputs": [
+        "recorded source scan measurements.ep_rvol",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.high",
+      "label": "Setup high",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded setup-session high on the immutable run price and volume basis.",
+      "inputs": [
+        "recorded source scan measurements.high",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.inclusive_adv20",
+      "label": "Inclusive ADV20",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "count",
+      "definition": "Mean volume over 20 authoritative sessions ending at setup, including setup.",
+      "inputs": [
+        "recorded source scan measurements.inclusive_adv20",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.low",
+      "label": "Setup low",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded setup-session low on the immutable run price and volume basis.",
+      "inputs": [
+        "recorded source scan measurements.low",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.open",
+      "label": "Setup open",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Recorded setup-session open on the immutable run price and volume basis.",
+      "inputs": [
+        "recorded source scan measurements.open",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.post_ep_high",
+      "label": "Post-EP high",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Maximum high from the recorded EP session through setup, inclusive.",
+      "inputs": [
+        "recorded source scan measurements.post_ep_high",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.previous_close",
+      "label": "Previous close",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Close from the immediately preceding authoritative session; null if absent.",
+      "inputs": [
+        "recorded source scan measurements.previous_close",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.previous_volume",
+      "label": "Previous volume",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "count",
+      "definition": "Volume from the immediately preceding authoritative session; null if absent.",
+      "inputs": [
+        "recorded source scan measurements.previous_volume",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.range_atr",
+      "label": "Range / ATR",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "(high-low) / ATR14.",
+      "inputs": [
+        "recorded source scan measurements.range_atr",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.relative_spy20",
+      "label": "20-session return vs SPY",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "Stock 20-session return minus SPY 20-session return, in percentage points; both on the run price basis.",
+      "inputs": [
+        "recorded source scan measurements.relative_spy20",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.return1",
+      "label": "1-session return",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * (close / close 1 authoritative sessions earlier - 1); requires an uninterrupted window.",
+      "inputs": [
+        "recorded source scan measurements.return1",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.return20",
+      "label": "20-session return",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * (close / close 20 authoritative sessions earlier - 1); requires an uninterrupted window.",
+      "inputs": [
+        "recorded source scan measurements.return20",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.return5",
+      "label": "5-session return",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * (close / close 5 authoritative sessions earlier - 1); requires an uninterrupted window.",
+      "inputs": [
+        "recorded source scan measurements.return5",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.return60",
+      "label": "60-session return",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * (close / close 60 authoritative sessions earlier - 1); requires an uninterrupted window.",
+      "inputs": [
+        "recorded source scan measurements.return60",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.rvol",
+      "label": "Setup RVOL",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "Setup volume / mean volume over the prior 20 authoritative sessions, excluding setup.",
+      "inputs": [
+        "recorded source scan measurements.rvol",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.setup_ep_volume_percent",
+      "label": "Setup / EP volume",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * setup volume / recorded EP volume.",
+      "inputs": [
+        "recorded source scan measurements.setup_ep_volume_percent",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.sma10",
+      "label": "SMA10",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Mean close over 10 authoritative sessions ending at setup; requires every bar.",
+      "inputs": [
+        "recorded source scan measurements.sma10",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.sma20",
+      "label": "SMA20",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Mean close over 20 authoritative sessions ending at setup; requires every bar.",
+      "inputs": [
+        "recorded source scan measurements.sma20",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.sma200",
+      "label": "SMA200",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Mean close over 200 authoritative sessions ending at setup; requires every bar.",
+      "inputs": [
+        "recorded source scan measurements.sma200",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.sma20_slope5",
+      "label": "SMA20 five-session slope",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "percent",
+      "definition": "100 * (current SMA20 / SMA20 five authoritative sessions earlier - 1).",
+      "inputs": [
+        "recorded source scan measurements.sma20_slope5",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.sma50",
+      "label": "SMA50",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "USD",
+      "definition": "Mean close over 50 authoritative sessions ending at setup; requires every bar.",
+      "inputs": [
+        "recorded source scan measurements.sma50",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.tightness3_atr",
+      "label": "Three-session tightness",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "(maximum high - minimum low) across three sessions ending at setup, divided by setup ATR14.",
+      "inputs": [
+        "recorded source scan measurements.tightness3_atr",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.volume",
+      "label": "Setup volume",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "count",
+      "definition": "Recorded setup-session volume on the immutable run price and volume basis.",
+      "inputs": [
+        "recorded source scan measurements.volume",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.volume_contraction3",
+      "label": "Three-session volume contraction",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "Mean volume over three sessions ending at setup / prior 20-session average volume.",
+      "inputs": [
+        "recorded source scan measurements.volume_contraction3",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    },
+    {
+      "id": "setup.volume_previous_ratio",
+      "label": "Volume / previous session",
+      "category": "Setup quality",
+      "scope": "trade",
+      "unit": "ratio",
+      "definition": "Setup volume / previous authoritative session volume; null on missing or zero denominator.",
+      "inputs": [
+        "recorded source scan measurements.volume_previous_ratio",
+        "recorded strategy definition",
+        "authoritative session calendar"
+      ],
+      "limitations": "Recorded source scan only; never recalculated using later data. Missing inputs remain unavailable. Price adjustment and historical universe biases are inherited from the frozen run.",
+      "availability": "available"
+    }
+  ]
+}

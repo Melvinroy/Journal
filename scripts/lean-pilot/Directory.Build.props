@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)../../output/lean-pilot/obj/</BaseIntermediateOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj/**</DefaultItemExcludes>
+  </PropertyGroup>
+</Project>

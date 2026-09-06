@@ -10,7 +10,6 @@ import { ScansDashboard } from "./ScansDashboard";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { TradingWorkspace } from "./TradingWorkspace";
-import { LegacyReview } from "./LegacyReview";
 import { useBrowserStore } from "../lib/use-browser-store";
 import { ChartDashboard } from "./ChartDashboard";
 import { withAuthTimeout } from "../lib/auth-ready";
@@ -456,12 +455,20 @@ export default function Home() {
   const [prototype, setPrototype] = useState("Overview");
   const navigation = useBrowserStore<{active:View;originalPlanner:boolean;prototype:string}>("brontide-navigation-review-v1", {active:"Charts",originalPlanner:true,prototype:"Overview"},
     value => {const v=value as {active?:string;originalPlanner?:boolean;prototype?:string};return !!v && ["Journal","Catalyst","Trade","Charts","Scans","Backtest","Review"].includes(v.active??"") && typeof v.originalPlanner==="boolean" && ["Overview","Trades","Daily journal","Playbook","Insights"].includes(v.prototype??"");});
-  useEffect(()=>{if(navigation.ready){setActive(navigation.value.active);setOriginalPlanner(navigation.value.originalPlanner);setPrototype(navigation.value.prototype);}},[navigation.ready]);
+  useEffect(()=>{if(navigation.ready){setActive(navigation.value.active==="Review"?"Journal":navigation.value.active);setOriginalPlanner(navigation.value.originalPlanner);setPrototype(navigation.value.prototype);}},[navigation.ready]);
   const selectView=(next:View,original=originalPlanner,oldTab=prototype)=>{
     setActive(next);setOriginalPlanner(original);setPrototype(oldTab);
     navigation.save({active:next,originalPlanner:original,prototype:oldTab});
   };
-  const reviewLinks = ["Overview","Trades","Daily journal","Playbook","Insights"];
+  const reviewLinks = ["Trade","Charts","Catalyst","Scans","Backtest","Journal"] as const;
+  const [originalRequests,setOriginalRequests]=useState({scan:0,backtest:0});
+  const openRecovered=(view:typeof reviewLinks[number])=>{
+    if(view==="Scans"||view==="Backtest"){
+      const kind=view==="Scans"?"scan":"backtest";
+      setOriginalRequests(previous=>({...previous,[kind]:previous[kind]+1}));
+    }
+    selectView(view,true);
+  };
   const [chartContext, setChartContext] = useState<MarketContext>();
   const [planContext, setPlanContext] = useState<MarketContext>();
   const primary = active === "Scans" || active === "Catalyst" ? "Discover" : active === "Backtest" ? "Strategies" : active === "Charts" ? "Charts" : "Trading";
@@ -652,10 +659,7 @@ export default function Home() {
           {nav.map(([label, icon]) => <button key={label} className={`nav-item ${primary === label ? "active" : ""}`} aria-current={primary === label ? "page" : undefined} onClick={() => navigate(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
         <details className="review-navigation" open><summary>Review old tabs</summary><nav aria-label="Recovered views">
-          {reviewLinks.map(label=><button key={label} className={`nav-item ${active==="Review"&&prototype===label?"active":""}`} onClick={()=>selectView("Review",originalPlanner,label)}>{label}</button>)}
-          <button className="nav-item" onClick={()=>selectView("Trade",true)}>Original Trade</button>
-          <button className="nav-item" onClick={()=>selectView("Backtest")}>Backtest</button>
-          <button className="nav-item" onClick={()=>selectView("Journal")}>Journal</button>
+          {reviewLinks.map(label=><button key={label} className={`nav-item ${active===label?"active":""}`} onClick={()=>openRecovered(label)}>{label}</button>)}
         </nav></details>
         <div className="sidebar-spacer"/>
         {!demoMode && <div className="utility-nav"><button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="settings"/><span>Cloud settings</span></button></div>}
@@ -666,7 +670,7 @@ export default function Home() {
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {nav.map(([label]) => <button key={label} className={primary === label ? "active" : ""} onClick={() => navigate(label)}>{label}</button>)}
         </nav>
-        <details className="mobile-review-navigation"><summary>Review old tabs</summary><nav aria-label="Recovered mobile views">{reviewLinks.map(label=><button key={label} onClick={()=>selectView("Review",originalPlanner,label)}>{label}</button>)}<button onClick={()=>selectView("Trade",true)}>Original Trade</button><button onClick={()=>selectView("Backtest")}>Backtest</button><button onClick={()=>selectView("Journal")}>Journal</button></nav></details>
+        <details className="mobile-review-navigation"><summary>Review old tabs</summary><nav aria-label="Recovered mobile views">{reviewLinks.map(label=><button key={label} onClick={()=>openRecovered(label)}>{label}</button>)}</nav></details>
         {primary === "Discover" && <nav className="workspace-subtabs" aria-label="Discover views"><button className={active==="Scans"?"active":""} onClick={()=>selectView("Scans")}>Scans</button><button className={active==="Catalyst"?"active":""} onClick={()=>selectView("Catalyst")}>Catalysts</button></nav>}
         {primary === "Trading" && <nav className="workspace-subtabs" aria-label="Trading views"><button className={active==="Trade"?"active":""} onClick={()=>selectView("Trade")}>Plans &amp; Positions</button><button className={active==="Journal"?"active":""} onClick={()=>selectView("Journal")}>Journal</button></nav>}
         <div hidden={active!=="Catalyst"}><CatalystDashboard demo={demoMode} onChart={openChart}/></div>
@@ -677,9 +681,8 @@ export default function Home() {
           <div hidden={originalPlanner}><TradingWorkspace demo={demoMode} context={planContext} onChart={openChart}/></div>
         </div>
         {active === "Charts" && <ChartDashboard context={chartContext} onExit={()=>selectView("Scans")} onPlan={context=>{setPlanContext({...context});selectView("Trade",false);}}/>}
-        <div hidden={active!=="Scans"}><ResearchWorkspace demo={demoMode} kind="scan" onChart={openChart}/></div>
-        <div hidden={active!=="Backtest"}><ResearchWorkspace demo={demoMode} kind="backtest" onChart={openChart}/></div>
-        {active==="Review"&&<LegacyReview active={prototype} onNavigate={label=>selectView("Review",originalPlanner,label)}/>}
+        <div hidden={active!=="Scans"}><ResearchWorkspace originalRequest={originalRequests.scan} demo={demoMode} kind="scan" onChart={openChart}/></div>
+        <div hidden={active!=="Backtest"}><ResearchWorkspace originalRequest={originalRequests.backtest} demo={demoMode} kind="backtest" onChart={openChart}/></div>
         <div className="journal-content" hidden={active!=="Journal"}>
         {localWorkspace && !session && !demoMode && <p className="workspace-notice">Cloud Journal is not connected in local mode. Local plans and fills remain in Trading; existing cloud records are unchanged.</p>}
         <header className="topbar">

@@ -1,5 +1,30 @@
 # UI Recovery Review
 
+## Correction after user review
+
+The first recovery selected the wrong historical navigation generation.
+`bc92026` contained Overview, Trades, Daily journal, Playbook and Insights,
+but these were heading-only variants of one early prototype. They were not
+the functional tabs immediately before integration.
+
+The actual `177b033` navigation was Trade, Charts, Catalyst, Scans, Backtest
+and Journal. "Review old tabs" now links to those six actual views on both
+desktop and mobile. Trade opens Original Planner; Scans and Backtest explicitly
+select their original components even when a current research view was saved.
+An old saved prototype selection falls back to Journal. The prototype source
+is retained for audit but is no longer exposed as recovered functionality.
+
+The initial browser checks below described the first recovery, not proof that
+those five prototype labels were the intended tabs.
+
+Correction validation: 31 JavaScript tests and the local production build pass.
+Actual Chromium clicks at 1440x1000 and 390x844 opened all six corrected links.
+Scans and Backtest were also switched to the current version and reopened from
+the recovered links; both selected the original version, including after reload.
+Screenshots: `output/playwright/corrected-old-tabs-desktop.png` and
+`output/playwright/corrected-old-tabs-mobile.png` (ignored local evidence).
+No backend, database or hosting configuration was changed.
+
 Observed on September 6, 2026, on `codex/ui-recovery-review`, based on
 `ee2af0befb6e7b41cbbf70bce2a22b78aa112c18`. This is a comparison workspace,
 not a redesign or a strategy-validation release. Hosting configuration is retained;
@@ -16,8 +41,7 @@ this review does not publish the build or push commits.
 | Strategies | Original Backtest; Research Runs | Original provisional registry and current immutable-run interface. Neither is presented as validated performance. |
 | Trading / Plans & Positions | Original Planner; Current Planner | Original calculator defaults first; current plans, revisions, fills, positions and local review remain available. |
 | Trading / Journal | Pre-integration dashboard proportions from `177b033` | Restored wrapper, spacing, analytics and trade table; existing authentication and cloud-record code retained. |
-| Review old tabs | Overview, Trades, Daily journal, Playbook, Insights | Faithful shared-dashboard prototype recovered from `bc92026`. These were heading variants, not five independent tools. Explicit synthetic/prototype notice; unimplemented filter disabled. |
-| Review old tabs / shortcuts | Original Trade, Backtest, Journal | Links to recovered functional views above. |
+| Review old tabs | Trade, Charts, Catalyst, Scans, Backtest, Journal | Actual pre-integration navigation from `177b033`; links to functional views above, with original planner/scans/backtest explicitly selected. |
 
 Primary navigation, original/current choices and current planner subview persist.
 Prototype trades and demo planner/research settings use separate storage namespaces.

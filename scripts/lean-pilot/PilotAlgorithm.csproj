@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>disable</Nullable><OutputPath>../../output/lean-pilot/algorithm/</OutputPath><AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Python.Runtime"><HintPath>../../output/lean-pilot/Lean/Launcher/bin/Release/Python.Runtime.dll</HintPath></Reference>
+    <Reference Include="QuantConnect"><HintPath>../../output/lean-pilot/Lean/Launcher/bin/Release/QuantConnect.Common.dll</HintPath></Reference>
+    <Reference Include="QuantConnect.Algorithm"><HintPath>../../output/lean-pilot/Lean/Launcher/bin/Release/QuantConnect.Algorithm.dll</HintPath></Reference>
+    <Reference Include="QuantConnect.Configuration"><HintPath>../../output/lean-pilot/Lean/Launcher/bin/Release/QuantConnect.Configuration.dll</HintPath></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>../../output/lean-pilot/Lean/Launcher/bin/Release/Newtonsoft.Json.dll</HintPath></Reference>
+    <Reference Include="NodaTime"><HintPath>../../output/lean-pilot/Lean/Launcher/bin/Release/NodaTime.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

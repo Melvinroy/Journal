@@ -1,0 +1,506 @@
+{
+  "preparation": {
+    "phases_seconds": {
+      "database_read": 0.21240259986370802,
+      "feature_recompute": 0.23045280016958714,
+      "cold_cache_compute_hash_compress_write": 1.9570952000212856,
+      "warm_cache_hash_read_validate": 1.0335161999682896,
+      "scan": 0.06742719991598278,
+      "simulation": 0.004834199964534491,
+      "publication": 0.002952700015157461
+    },
+    "phase_cpu_seconds": {
+      "database_read": 0.96875,
+      "feature_recompute": 0.203125,
+      "cold_cache_compute_hash_compress_write": 1.78125,
+      "warm_cache_hash_read_validate": 0.609375,
+      "scan": 0.0625,
+      "simulation": 0.0,
+      "publication": 0.0
+    },
+    "phase_process_high_water_bytes": {
+      "database_read": 221417472,
+      "feature_recompute": 221442048,
+      "cold_cache_compute_hash_compress_write": 221442048,
+      "warm_cache_hash_read_validate": 221442048,
+      "scan": 221442048,
+      "simulation": 221442048,
+      "publication": 221442048
+    },
+    "wall_seconds": 3.8578935000114143,
+    "cpu_seconds": 3.96875,
+    "peak_working_set_bytes": 221442048,
+    "cache_hits": 19,
+    "cache_misses": 19,
+    "symbol_count": 20,
+    "warmup_inclusive_bars": 11119,
+    "scored_signals": 0,
+    "source_db_unchanged_size_mtime": true,
+    "run_id": "33a4a29910a26d0c5dd610b61ea94b07fe05402523bfa7ed6f5a616d3c2ae034",
+    "manifest": {
+      "start": "2026-08-05",
+      "end": "2026-09-03",
+      "strategy": {
+        "id": "EP-2x-rvol95",
+        "ep_multiple": 2,
+        "setup_rvol": 0.95,
+        "distribution_drop_percent": 3,
+        "ep_average": "inclusive",
+        "min_age": 3,
+        "max_age": 15,
+        "target_r": 10,
+        "max_hold": 60,
+        "version": "reconstructed-episode-1.0",
+        "distribution_atr": 0.75,
+        "supersede_on_new_ep": true,
+        "fingerprint": "7f19b031d4870582126afdf483ed5f9f07605570bf56265c884990b90b365e71",
+        "evidence_status": "unvalidated_hypothesis",
+        "legacy_reproduction": false,
+        "distribution_rule": "previous_close - close >= distribution_atr * prior_ATR14 AND volume > previous_volume",
+        "event_overlap": "new EP supersedes previous episode",
+        "entry_policy": "next authoritative session open",
+        "atr": "Wilder14; 14 valid prior-close true ranges seed; resets after missing session",
+        "feature_price_basis": "declared by run",
+        "fixed_rules": {
+          "ep_return_percent_gte": 4,
+          "ep_volume_gte": 8900000,
+          "ep_volume_previous_ratio_gt": 1,
+          "price_gt": 3,
+          "setup_stack": "close > SMA10 > SMA20",
+          "body_atr_lt": 0.25,
+          "range_atr_lt": 0.75,
+          "setup_ep_volume_percent_lt": 50,
+          "post_ep_high_distance_atr_lte": 1,
+          "major_distribution_count_eq": 0,
+          "setup_rvol_denominator": "prior 20 authoritative sessions"
+        }
+      },
+      "config_fingerprint": "48cae0dcbc0b47fe85cfdf17244a093fa50dbdc2d2afbface664eda5fbeffbe6",
+      "universe_fingerprint": "a786a1da919b424f31e027defe035e589aded56ee18475882a19b47d79507d1b",
+      "data_fingerprint": "993be7e7aa28f1b4abf89c641db747f46a6da2e5e630dd56b7497bfd86a25938",
+      "selection": "20 smallest SHA256(lean-pilot-1,symbol); no outcome selection",
+      "symbols": [
+        "APH",
+        "BRIE",
+        "DXR",
+        "EVGN",
+        "FCB",
+        "GMED",
+        "HYLB",
+        "IWX",
+        "KOF",
+        "NRUC",
+        "NYXH",
+        "PFIG",
+        "SDOT",
+        "SLMT",
+        "SPXS",
+        "URI",
+        "USMV",
+        "VNIE",
+        "XLKI",
+        "YDEC"
+      ],
+      "empty_symbols": [
+        "FCB"
+      ],
+      "warmup_start": "2024-01-02",
+      "lean_revision": "23b735d99a357807dc0df9f4c51d30f05fe0d277",
+      "limitations": [
+        "30 calendar days are an engineering check, not strategy validation.",
+        "Pre-adjusted custom OHLC parity does not validate corporate actions or point-in-time eligibility."
+      ]
+    }
+  },
+  "comparison": {
+    "passed": true,
+    "cases": [
+      {
+        "case": "real",
+        "signals": 0,
+        "classification": "No real qualifying setups; signal parity is empty and gives no execution validation.",
+        "trades": [],
+        "native_cpu_seconds": 17.71875,
+        "native_peak_working_set_bytes": 273461248,
+        "wall_seconds": 8.55966799997259,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "stop",
+        "signals": 1,
+        "classification": "Native cent tick rounding and security-price-based fee versus unrounded stop and fill-price fee.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-16",
+              "entry": 112.25500000000001,
+              "exit": 110.37676788317368,
+              "outcome_r": -1.1185326168627996,
+              "fees_per_share": 0.22263176788317368,
+              "hold_sessions": 1,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-16",
+              "entry": 112.25500000000001,
+              "exit": 110.38,
+              "net_r": -1.1178171117356908,
+              "fees": 0.22452
+            }
+          }
+        ],
+        "native_cpu_seconds": 13.265625,
+        "native_peak_working_set_bytes": 268632064,
+        "wall_seconds": 6.169100200000685,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "gap",
+        "signals": 1,
+        "classification": "Same gap price and net R within floating-point tolerance. Reason text differs: generic native stop versus explicit gap-through-stop.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-17",
+              "entry": 112.25500000000001,
+              "exit": 106.245,
+              "outcome_r": -3.3161503012334843,
+              "fees_per_share": 0.2185,
+              "hold_sessions": 2,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-17",
+              "entry": 112.25500000000001,
+              "exit": 106.245,
+              "net_r": -3.3161503012334856,
+              "fees": 0.2185
+            }
+          }
+        ],
+        "native_cpu_seconds": 13.703125,
+        "native_peak_working_set_bytes": 239325184,
+        "wall_seconds": 6.335134900000412,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "target",
+        "signals": 1,
+        "classification": "Native cent tick rounding and security-price-based fee versus unrounded target and fill-price fee.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-17",
+              "entry": 112.25500000000001,
+              "exit": 131.0373211682632,
+              "outcome_r": 9.870467383137196,
+              "fees_per_share": 0.2432923211682632,
+              "hold_sessions": 2,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-17",
+              "entry": 112.25500000000001,
+              "exit": 131.04,
+              "net_r": 9.881888310674794,
+              "fees": 0.22452
+            }
+          }
+        ],
+        "native_cpu_seconds": 10.046875,
+        "native_peak_working_set_bytes": 266702848,
+        "wall_seconds": 5.986447700008284,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "ambiguous",
+        "signals": 1,
+        "classification": "Both choose stop in this run; Brontide explicitly guarantees conservative stop-first and records ambiguity. Native ticket processing plus OCO cancellation is not evidence of intrabar order.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-16",
+              "entry": 112.25500000000001,
+              "exit": 110.37676788317368,
+              "outcome_r": -1.1185326168627996,
+              "fees_per_share": 0.22263176788317368,
+              "hold_sessions": 1,
+              "ambiguous": true
+            },
+            "lean": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-04-16",
+              "entry": 112.25500000000001,
+              "exit": 110.38,
+              "net_r": -1.1178171117356908,
+              "fees": 0.22452
+            }
+          }
+        ],
+        "native_cpu_seconds": 12.46875,
+        "native_peak_working_set_bytes": 254193664,
+        "wall_seconds": 6.61717140005203,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "missingentry",
+        "signals": 1,
+        "classification": "Both decline delayed entry. Missing prices are null in Brontide and zero-valued unused fields in the pilot adapter.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Not entered",
+              "entry_date": null,
+              "exit_date": null,
+              "entry": null,
+              "exit": null,
+              "outcome_r": null,
+              "fees_per_share": null,
+              "hold_sessions": null,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Not entered",
+              "entry_date": null,
+              "exit_date": null,
+              "entry": 0.0,
+              "exit": 0.0,
+              "net_r": null,
+              "fees": 0.0
+            }
+          }
+        ],
+        "native_cpu_seconds": 9.859375,
+        "native_peak_working_set_bytes": 248987648,
+        "wall_seconds": 4.657916399999522,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "missingholding",
+        "signals": 1,
+        "classification": "Both label unresolved. Brontide leaves final cost/outcome unavailable; native ledger retains its entry fee and funded holding. No liquidation is synthesized.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Unresolved",
+              "entry_date": "2025-04-16",
+              "exit_date": null,
+              "entry": 112.25500000000001,
+              "exit": null,
+              "outcome_r": null,
+              "fees_per_share": null,
+              "hold_sessions": null,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Unresolved",
+              "entry_date": "2025-04-16",
+              "exit_date": null,
+              "entry": 112.25500000000001,
+              "exit": 0.0,
+              "net_r": null,
+              "fees": 0.11225500000000001
+            }
+          }
+        ],
+        "native_cpu_seconds": 9.453125,
+        "native_peak_working_set_bytes": 247607296,
+        "wall_seconds": 4.5723410999635234,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "incomplete",
+        "signals": 1,
+        "classification": "Both keep trade open and exclude it from closed statistics. Brontide final cost is unavailable; native ledger records the entry fee. No forced exit.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Open",
+              "entry_date": "2025-04-16",
+              "exit_date": null,
+              "entry": 112.25500000000001,
+              "exit": null,
+              "outcome_r": null,
+              "fees_per_share": null,
+              "hold_sessions": null,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Open",
+              "entry_date": "2025-04-16",
+              "exit_date": null,
+              "entry": 112.25500000000001,
+              "exit": 0.0,
+              "net_r": null,
+              "fees": 0.11225500000000001
+            }
+          }
+        ],
+        "native_cpu_seconds": 10.5625,
+        "native_peak_working_set_bytes": 239087616,
+        "wall_seconds": 5.253918699978385,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "maxhold",
+        "signals": 1,
+        "classification": "Brontide defines exit at session 60 close. A native market order submitted after observing that close executes next session open; fee and holding date change. This is an execution-time convention, not a signal disagreement.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-07-08",
+              "entry": 112.25500000000001,
+              "exit": 112.265,
+              "outcome_r": -0.11421378544121967,
+              "fees_per_share": 0.22452000000000003,
+              "hold_sessions": 60,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-07-09",
+              "entry": 112.25500000000001,
+              "exit": 112.25500000000001,
+              "net_r": -0.11953261686279662,
+              "fees": 0.22451000000000002
+            }
+          }
+        ],
+        "native_cpu_seconds": 11.875,
+        "native_peak_working_set_bytes": 250150912,
+        "wall_seconds": 7.564928799984045,
+        "exit_code": 0,
+        "output_exists": true
+      },
+      {
+        "case": "futureperturbed",
+        "signals": 1,
+        "classification": "Future-only OHLC perturbation preserves the preceding checkpoint and setup. Subsequent native maximum-hold exit executes next open, with security-price fee and close/open price differences, as in maxhold.",
+        "trades": [
+          {
+            "ours": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-07-08",
+              "entry": 336.76500000000004,
+              "exit": 336.795,
+              "outcome_r": -0.342641356323659,
+              "fees_per_share": 0.67356,
+              "hold_sessions": 60,
+              "ambiguous": false
+            },
+            "lean": {
+              "status": "Closed",
+              "entry_date": "2025-04-16",
+              "exit_date": "2025-07-09",
+              "entry": 336.76500000000004,
+              "exit": 336.76500000000004,
+              "net_r": -0.3585978505883899,
+              "fees": 0.6735300000000001
+            }
+          }
+        ],
+        "native_cpu_seconds": 14.546875,
+        "native_peak_working_set_bytes": 267829248,
+        "wall_seconds": 9.201162600016687,
+        "exit_code": 0,
+        "output_exists": true
+      }
+    ],
+    "causality": "Future-only OHLC perturbation leaves the score-start feature checkpoint and preceding signal unchanged.",
+    "formula_fixture": {
+      "outcomes": [
+        2,
+        -1,
+        0,
+        4,
+        -2,
+        -1
+      ],
+      "ours": {
+        "closed": 6,
+        "winners": 2,
+        "losers": 3,
+        "breakeven": 1,
+        "total_r": 2,
+        "expectancy_r": 0.3333333333333333,
+        "median_r": -0.5,
+        "average_win_r": 3,
+        "average_loss_r": -1.3333333333333333,
+        "payoff_ratio": 2.25,
+        "profit_factor_r": 1.5,
+        "drawdown_r": 3
+      },
+      "lean": {
+        "StartDateTime": "2026-08-05T00:00:00",
+        "EndDateTime": "2026-08-06T00:00:00",
+        "TotalNumberOfTrades": 6,
+        "NumberOfWinningTrades": 2,
+        "NumberOfLosingTrades": 4,
+        "TotalProfitLoss": "2",
+        "TotalProfit": "6",
+        "TotalLoss": "-4",
+        "LargestProfit": "4",
+        "LargestLoss": "-2",
+        "AverageProfitLoss": "0.3333",
+        "AverageProfit": "3",
+        "AverageLoss": "-1.0",
+        "AverageTradeDuration": "1.00:00:00",
+        "AverageWinningTradeDuration": "1.00:00:00",
+        "AverageLosingTradeDuration": "1.00:00:00",
+        "MedianTradeDuration": "1.00:00:00",
+        "MedianWinningTradeDuration": "1.00:00:00",
+        "MedianLosingTradeDuration": "1.00:00:00",
+        "MaxConsecutiveWinningTrades": 1,
+        "MaxConsecutiveLosingTrades": 2,
+        "ProfitLossRatio": "3",
+        "WinLossRatio": "0.5",
+        "WinRate": "0.3333",
+        "LossRate": "0.6667",
+        "AverageMAE": "0",
+        "AverageMFE": "0",
+        "LargestMAE": "0",
+        "LargestMFE": "0",
+        "MaximumClosedTradeDrawdown": "-3",
+        "MaximumIntraTradeDrawdown": "-2",
+        "ProfitLossStandardDeviation": "2.2509",
+        "ProfitLossDownsideDeviation": "0.8165",
+        "ProfitFactor": "1.5",
+        "SharpeRatio": "0.1481",
+        "SortinoRatio": "0.4082",
+        "ProfitToMaxDrawdownRatio": "0.6667",
+        "MaximumEndTradeDrawdown": "0",
+        "AverageEndTradeDrawdown": "0.3333",
+        "MaximumDrawdownDuration": "00:00:00",
+        "TotalFees": "0"
+      },
+      "classification": "LEAN groups zero-P/L as loss, changing losing count, average loss, payoff and win/loss ratio. LEAN drawdown has opposite sign and decimal output rounds to four places. Its trade Sharpe/Sortino are not account ratios."
+    }
+  }
+}
