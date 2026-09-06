@@ -17,7 +17,10 @@ import { chartStorageKey, movingAverageByTime, readStored, writeStored, type Mar
 import { findAutoTrends, projectTrendPoints, restoreTrendPoints, EMPTY_TRENDS, validTrendSettings, AUTO_TREND_VERSION } from "../lib/auto-trendlines";
 import { useBrowserStore } from "../lib/use-browser-store";
 import { findRecentTrends } from "../lib/recent-trendlines";
-import { extraOverlays } from "../lib/chart-overlays";
+import { extraOverlays, workflowOverlays } from "../lib/chart-overlays";
+import { useDrawingController } from "../lib/use-drawing-controller";
+import { DrawingEditor } from "./DrawingEditor";
+import { ArrowCounterClockwise, ArrowClockwise, Magnet, Stack, Star } from "@phosphor-icons/react";
 
 const localBuild = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
 
@@ -32,7 +35,7 @@ type DrawingTool =
   | "parallelChannel" | "priceChannel" | "regressionChannel" | "pitchfork"
   | "fibRetracement" | "fibExtension" | "fibChannel" | "fibTime"
   | "brush" | "priceLabel" | "textNote" | "callout" | "flag"
-  | "longPosition" | "shortPosition" | "rangeMeasure" | "dateMarker" | "crosshairMeasure";
+  | "longPosition" | "shortPosition" | "rangeMeasure" | "dateMarker" | "crosshairMeasure" | "dateMeasure" | "contraction" | "anchoredVWAP";
 type ToolDefinition = { id: DrawingTool; label: string; icon: Icon; overlay?: string };
 type ToolGroup = { id: string; label: string; icon: Icon; tools: ToolDefinition[] };
 const symbols: Record<SymbolKey, { name: string; seed: number; start: number; drift: number }> = {
@@ -63,6 +66,7 @@ const toolGroups: ToolGroup[] = [
     { id: "priceChannel", label: "Price channel", icon: Rectangle, overlay: "priceChannelLine" },
     { id: "box", label: "Rectangle", icon: Rectangle, overlay: "brontide-box" },
     { id: "ellipse", label: "Ellipse", icon: WaveSine, overlay: "brontide-ellipse" },
+    { id: "regressionChannel", label: "Regression channel", icon: ChartLine, overlay: "brontide-regression" },
   ] },
   { id: "fibonacci", label: "Fibonacci tools", icon: FunctionIcon, tools: [
     { id: "fibRetracement", label: "Fib retracement", icon: FunctionIcon, overlay: "fibonacciLine" },
@@ -71,12 +75,24 @@ const toolGroups: ToolGroup[] = [
     { id: "brush", label: "Brush", icon: PencilSimple, overlay: "brush" },
     { id: "priceLabel", label: "Price label", icon: Tag, overlay: "simpleTag" },
     { id: "textNote", label: "Text note", icon: TextT, overlay: "simpleAnnotation" },
+    { id: "anchoredVWAP", label: "Anchored VWAP", icon: ChartLineUp, overlay: "brontide-vwap" },
   ] },
   { id: "measure", label: "Position and measure", icon: Ruler, tools: [
     { id: "rangeMeasure", label: "Price / percentage range", icon: Ruler, overlay: "brontide-measure" },
+    { id: "longPosition", label: "Long position risk/reward", icon: Strategy, overlay: "brontide-position" },
+    { id: "dateMeasure", label: "Date / session range", icon: CalendarDots, overlay: "brontide-date" },
+    { id: "contraction", label: "Manual contractions", icon: ChartLineDown, overlay: "brontide-contraction" },
   ] },
 ];
 const drawingTools = [cursorTool, ...toolGroups.flatMap((group) => group.tools)];
+const defaultFavorites: DrawingTool[] = ["segment", "horizontalRay", "parallelChannel", "box", "rangeMeasure"];
+const toolHints: Partial<Record<DrawingTool, string>> = {
+  longPosition: "Click entry, stop, then target. Keep stop below entry and target above entry.",
+  dateMeasure: "Click the first and last loaded sessions, from left to right.",
+  contraction: "Click high 1, low 1, high 2, low 2, high 3, low 3 in date order.",
+  anchoredVWAP: "Click a session to anchor VWAP through the latest loaded bar.",
+  regressionChannel: "Click two sessions at least three bars apart to fit closing prices.",
+};
 
 function seeded(seed: number) {
   let value = seed >>> 0;
@@ -212,7 +228,6 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   const [matches, setMatches] = useState<Instrument[]>([]);
   const [searchStatus, setSearchStatus] = useState("");
   const [storageError, setStorageError] = useState("");
-  const drawingsWritable = useRef(false);
   const [note, setNote] = useState("Note");
   const [selectedDrawing, setSelectedDrawing] = useState<string | null>(null);
   const [layoutReady, setLayoutReady] = useState(false);
@@ -222,6 +237,13 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   const sourceBars = mode === "sample" ? sampleBars : localBars;
   const allBars = useMemo(()=>asOf ? sourceBars.filter(row=>new Date(row.timestamp).toISOString().slice(0,10)<=asOf) : sourceBars,[sourceBars,asOf]);
   const bars = useMemo(() => allBars.slice(-rangeSize(range)), [allBars, range]);
+  const favorites = useBrowserStore<DrawingTool[]>("brontide-drawing-favorites-v1", defaultFavorites, value => Array.isArray(value) && value.length <= 5 && new Set(value).size === value.length && value.every(id => drawingTools.some(t => t.id === id && t.overlay)));
+  const snapping = useBrowserStore("brontide-drawing-snap-v1", false, value => typeof value === "boolean");
+  const drawings = useDrawingController({ chartRef, generation: chartGeneration,
+    storageKey: chartStorageKey({ symbol, mode, adjustment }), bars: allBars, visibleCount: bars.length,
+    snap: snapping.ready && snapping.value, onSelect: setSelectedDrawing, onFinish: () => setActiveTool("cursor") });
+  const selectedManual = drawings.drawings.find(row => row.id === selectedDrawing);
+  const drawingLabel = (name: string) => drawingTools.find(tool => tool.overlay === name)?.label ?? name;
   const latestAverages = useMemo(() => Object.fromEntries([20, 50, 200].map((period) => [period,
     allBars.length >= period ? allBars.slice(-period).reduce((total, bar) => total + bar.close, 0) / period : undefined,
   ])), [allBars]);
@@ -250,10 +272,14 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   const [renderError, setRenderError] = useState(false);
   const name = mode === "sample" ? symbols[sampleSymbol].name : payload?.instrument.name ?? symbol;
   const statusLabel = mode === "sample" ? "Simulated prices" : loadState === "loading" ? "Loading EOD" : loadState === "error" ? "API error" : loadState === "empty" ? "No bars" : payload?.status.freshness === "stale" ? "Stale EOD" : payload?.status.freshness === "unknown" ? "EOD · check freshness" : "Local EOD";
-  const issues = [storageError, trendStore.error, trendResult.error, recentStore.error, recentResult.error].filter(Boolean);
+  const issues = [storageError, drawings.error, favorites.error, snapping.error, trendStore.error, trendResult.error, recentStore.error, recentResult.error].filter(Boolean);
   const previousClose = allBars.at(-2)?.close;
   const dailyChange = latest && previousClose ? (latest.close / previousClose - 1) * 100 : undefined;
   const menuProps = (id: string) => ({ open: openMenu === id, onToggle: () => { setSearchOpen(false); setOpenToolGroup(null); setOpenMenu(value => value === id ? null : id); }, onClose: () => setOpenMenu(value => value === id ? null : value) });
+
+  useEffect(() => {
+    if (!selectedDrawing) setOpenMenu(value => value === "drawing" ? null : value);
+  }, [selectedDrawing]);
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -366,7 +392,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
 
     void import("klinecharts").then(({ dispose, init, registerOverlay }) => {
       if (cancelled || !containerRef.current) return;
-      extraOverlays.forEach(registerOverlay);
+      [...extraOverlays, ...workflowOverlays].forEach(registerOverlay);
       const chart = init(containerRef.current, {
         timezone: "Etc/UTC",
         layout: { barSpaceLimit: { min: .05, max: 1000 }, yAxis: { position: "right", inside: false, gap: { top: .08, bottom: .04 } } },
@@ -435,13 +461,6 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
       chart.subscribeAction("onCrosshairChange", crosshairHandler);
       chartRef.current = chart;
       setSelectedDrawing(null);
-      drawingsWritable.current = false;
-      try {
-        const saved=readStored<import("klinecharts").OverlayCreate[]>(window.localStorage,chartStorageKey({symbol,mode,adjustment}),[]);
-        if (!Array.isArray(saved) || saved.some(row=>!row || typeof row.name!=="string" || !Array.isArray(row.points))) throw new Error("Invalid drawings");
-        for (const drawing of saved) chart.createOverlay({...drawing,groupId:"brontide-drawings",onSelected:({overlay})=>setSelectedDrawing(overlay.id),onPressedMoveEnd:()=>persistDrawings()});
-        drawingsWritable.current = true;
-      } catch {setStorageError("Saved drawings could not be restored. Existing storage was retained.");}
       setChartReady(true);
       setChartGeneration(value=>value+1);
       disposeChart = () => {
@@ -512,35 +531,32 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
     if (selectedDrawing.startsWith(AUTO_TREND_VERSION+":")) {
       if (!trendStore.save({...trendStore.value,edits:{...trendStore.value.edits,[selectedDrawing]:null}})) return;
     } else {
-      chartRef.current?.removeOverlay({id:selectedDrawing});
-      persistDrawings();
+      drawings.remove(selectedDrawing);
     }
     setSelectedDrawing(null);
   };
 
-  const clearDrawings = () => {
-    if (!window.confirm("Remove saved drawings for this instrument and price basis?")) return;
-    chartRef.current?.removeOverlay({groupId:"brontide-drawings"});
-    persistDrawings();
-    trendStore.save({...trendStore.value,enabled:false});
-  };
-
-  const persistDrawings = () => {
-    if (!drawingsWritable.current) {setStorageError("Saving disabled: saved drawings could not be read safely.");return;}
-    const chart=chartRef.current;
-    if (!chart) return;
-    try {
-      const drawings=chart.getOverlays({groupId:"brontide-drawings"}).filter(row=>row.currentStep===-1).map(row=>({name:row.name,id:row.id,points:row.points.map(({timestamp,value})=>({timestamp,value})),extendData:row.extendData,lock:row.lock}));
-      writeStored(window.localStorage,chartStorageKey({symbol,mode,adjustment}),drawings);
-    } catch {setStorageError("Drawings could not be saved. Keep this view open and retry.");}
-  };
-
   const selectTool = (tool: DrawingTool) => {
-    setActiveTool(tool);
+    drawings.cancel(); setSelectedDrawing(null); setOpenMenu(null);
     setOpenToolGroup(null);
     const overlay = drawingTools.find((item) => item.id === tool)?.overlay;
-    if (overlay) chartRef.current?.createOverlay({ name: overlay, extendData:tool==="textNote"?note:undefined,groupId: "brontide-drawings",onDrawEnd:()=>{persistDrawings();setActiveTool("cursor");},onPressedMoveEnd:()=>persistDrawings(),onSelected:({overlay})=>setSelectedDrawing(overlay.id) });
+    if (overlay && drawings.start(overlay, note)) setActiveTool(tool);
   };
+
+  const drawingActions = useRef({ drawings, deleteSelectedDrawing });
+  drawingActions.current = { drawings, deleteSelectedDrawing };
+  useEffect(() => {
+    const keys = (event: KeyboardEvent) => {
+      if ((event.target as Element).closest("input, select, textarea, [contenteditable=true]")) return;
+      const { drawings: controls, deleteSelectedDrawing: remove } = drawingActions.current;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault(); if (event.shiftKey) controls.redo(); else controls.undo();
+      } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") { event.preventDefault(); controls.redo(); }
+      else if (event.key === "Delete") { event.preventDefault(); remove(); }
+      else if (event.key === "Escape") { controls.cancel(); setSelectedDrawing(null); }
+    };
+    document.addEventListener("keydown", keys); return () => document.removeEventListener("keydown", keys);
+  }, []);
 
   return (
     <section className={`chart-dashboard chart-layout-v1 theme-${theme}`}>
@@ -554,7 +570,10 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
           {mode === "sample" ? <label className="chart-sample-symbol"><span className="sr-only">Stock</span><select value={sampleSymbol} onChange={event => changeSymbol(event.target.value)} aria-label="Stock"><option value="NVDA">NVDA</option><option value="MRNA">MRNA</option><option value="CRCL">CRCL</option></select></label> : <button className="chart-search-trigger" onClick={() => { setOpenMenu(null); setOpenToolGroup(null); setSearchOpen(value => !value); }} aria-expanded={searchOpen} aria-label={`Search stock, selected ${symbol}`}><MagnifyingGlass size={16}/><b>{symbol}</b></button>}
           {searchOpen && <div className="chart-search-popover"><label>Find an instrument<input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map(item => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
         </div>
-        <div className="chart-quote" title={name}><span className="chart-company">{name}</span><b>{latest?.close.toFixed(2) ?? "—"}</b>{dailyChange !== undefined && <span className={dailyChange >= 0 ? "up" : "down"}>{dailyChange >= 0 ? "+" : ""}{dailyChange.toFixed(2)}%</span>}</div>
+        {selectedManual ? <div className="chart-selection"><ChartMenu label={<><PencilSimple size={16}/><span>Edit drawing</span><CaretDown size={12}/></>} title="Edit selected drawing" className="chart-drawing-editor" {...menuProps("drawing")}>
+          <strong>{drawingLabel(selectedManual.name)}</strong>
+          <DrawingEditor key={`${selectedManual.id}:${JSON.stringify(selectedManual.points)}:${String(selectedManual.extendData)}`} drawing={selectedManual} bars={allBars} unavailable={drawings.unavailable.includes(selectedManual.id)} update={drawings.update} remove={drawings.remove}/>
+        </ChartMenu><span>{drawingLabel(selectedManual.name)}{selectedManual.lock ? " · Locked" : ""}</span></div> : <div className="chart-quote" title={name}><span className="chart-company">{name}</span><b>{latest?.close.toFixed(2) ?? "—"}</b>{dailyChange !== undefined && <span className={dailyChange >= 0 ? "up" : "down"}>{dailyChange >= 0 ? "+" : ""}{dailyChange.toFixed(2)}%</span>}</div>}
         <ChartMenu label={<>D · {range}<CaretDown size={12}/></>} title="Time interval and range" {...menuProps("time")}>
           <label>Interval<select aria-label="Candle interval" value="daily" onChange={() => {}}><option value="daily">Daily</option></select></label>
           <label>Visible range<select aria-label="Visible range" value={range} onChange={event => setRange(event.target.value as RangeKey)}>{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map(item => <option key={item} value={item}>{item === "Max" ? "All available history" : item}</option>)}</select></label>
@@ -597,8 +616,9 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
             <label><input type="checkbox" checked={show200} onChange={e => setShow200(e.target.checked)}/>200 SMA</label>
           </div>
           <label>Drawing note<input aria-label="Drawing note" value={note} maxLength={120} onChange={event => setNote(event.target.value)}/></label>
-          <button onClick={persistDrawings} disabled={!chartReady}>Save drawings</button>
-          <button disabled={!selectedDrawing} onClick={deleteSelectedDrawing}>Delete selected drawing</button>
+          {selectedManual && <button onClick={() => setOpenMenu("drawing")}>Edit selected drawing</button>}
+          <button disabled={!selectedDrawing || selectedManual?.lock} onClick={deleteSelectedDrawing}>Delete selected drawing</button>
+          <p>Drawings save automatically. Ctrl/⌘ Z to undo; Shift Z to redo. Escape cancels a drawing. Locked drawings are protected from deletion.</p>
           {onPlan && <button className="chart-plan-overflow" onClick={() => onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol === symbol ? {signalId:context.signalId,strategyId:context.strategyId} : {})})}>Create plan</button>}
           <p>KLineChart · Open-source rendering</p>
         </ChartMenu>
@@ -608,16 +628,36 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
       <div className="chart-analysis-body"><div className="chart-stage-area">
         <aside className="drawing-rail" aria-label="Drawing tools">
           <button className={activeTool === "cursor" ? "active" : ""} title="Cursor" aria-label="Cursor" onClick={() => selectTool("cursor")}><Cursor size={17}/></button>
+          <div className="drawing-favorites" aria-label="Favorite drawing tools">
+            {favorites.value.map(id => { const tool = drawingTools.find(t => t.id === id); if (!tool) return null; const FavoriteIcon = tool.icon; return <button key={id} disabled={!chartReady || !drawings.ready} className={activeTool === id ? "active" : ""} aria-label={`Favorite: ${tool.label}`} title={tool.label} onClick={() => selectTool(id)}><FavoriteIcon size={17}/></button>; })}
+          </div>
           {toolGroups.map((group) => {
             const GroupIcon = group.icon;
             const groupActive = group.tools.some((tool) => tool.id === activeTool);
             const isOpen = openToolGroup === group.id;
             return <div className="drawing-tool-group" key={group.id}>
               <button className={groupActive ? "active" : ""} title={group.label} aria-label={group.label} aria-expanded={isOpen} onClick={() => { setOpenMenu(null); setSearchOpen(false); setOpenToolGroup(isOpen ? null : group.id); }}><GroupIcon size={17}/><CaretRight className="drawing-group-caret" size={8}/></button>
-              {isOpen && <div className="drawing-tool-menu" role="menu" aria-label={group.label}><div className="drawing-tool-menu-title"><span>{group.label}</span><small>{group.tools.length} tools</small></div>{group.tools.map((tool) => { const ToolIcon = tool.icon; return <button role="menuitem" key={tool.id} className={activeTool === tool.id ? "active" : ""} onClick={() => selectTool(tool.id)}><ToolIcon size={15}/><span>{tool.label}</span></button>; })}</div>}
+              {isOpen && <div className="drawing-tool-menu" role="region" aria-label={group.label}><div className="drawing-tool-menu-title"><span>{group.label}</span><small>{favorites.value.length}/5 favorites</small></div>{group.tools.map((tool) => { const ToolIcon = tool.icon; const pinned = favorites.value.includes(tool.id); return <div className="drawing-tool-choice" key={tool.id}><button disabled={!chartReady || !drawings.ready} className={activeTool === tool.id ? "active" : ""} onClick={() => selectTool(tool.id)}><ToolIcon size={15}/><span>{tool.label}</span></button><button disabled={!favorites.ready || (!pinned && favorites.value.length >= 5)} aria-label={`${pinned ? "Unpin" : "Pin"} ${tool.label}`} aria-pressed={pinned} title={pinned ? "Remove favorite" : favorites.value.length >= 5 ? "Unpin a favorite first" : "Add favorite"} onClick={() => favorites.save(pinned ? favorites.value.filter(id => id !== tool.id) : [...favorites.value, tool.id])}><Star size={15} weight={pinned ? "fill" : "regular"}/></button></div>; })}</div>}
             </div>;
           })}
-          <button className="drawing-clear" aria-label="Clear drawings" title="Clear drawings" onClick={clearDrawings}><Trash size={16}/></button>
+          <div className="drawing-actions">
+            <button aria-label="Snap to candle prices" title="Snap to nearest candle OHLC" aria-pressed={snapping.value} className={snapping.value ? "active" : ""} disabled={!snapping.ready} onClick={() => snapping.save(!snapping.value)}><Magnet size={17}/></button>
+            <button aria-label="Undo drawing change" title="Undo · Ctrl/⌘ Z" disabled={!drawings.canUndo} onClick={drawings.undo}><ArrowCounterClockwise size={17}/></button>
+            <button aria-label="Redo drawing change" title="Redo · Ctrl/⌘ Shift Z" disabled={!drawings.canRedo} onClick={drawings.redo}><ArrowClockwise size={17}/></button>
+            <ChartMenu label={<Stack size={17}/>} title="Drawing objects" className="drawing-objects-menu" {...menuProps("objects")}>
+              <strong>Drawings · {symbol} · {adjustment === "raw" ? "raw" : "adjusted"}</strong>
+              <p>{drawings.drawings.length} objects · saved automatically. Undo history lasts for this workspace session; saved drawings survive refresh.</p>
+              {drawings.drawings.map((drawing, index) => <div className="drawing-object" key={drawing.id}>
+                <button aria-label={`Edit ${drawingLabel(drawing.name)} ${index + 1}`} onClick={() => { setSelectedDrawing(drawing.id); setOpenMenu("drawing"); }}>{drawingLabel(drawing.name)} {index + 1}<small>{drawing.lock ? "Locked · " : ""}{drawing.visible ? "Visible" : "Hidden"}{drawings.unavailable.includes(drawing.id) ? " · Outside view history" : ""}</small></button>
+                <label><input type="checkbox" aria-label={`Show drawing ${index + 1}`} checked={drawing.visible} onChange={e => drawings.update(drawing.id, { visible: e.target.checked })}/>Show</label>
+                <label><input type="checkbox" aria-label={`Lock drawing ${index + 1}`} checked={drawing.lock} onChange={e => drawings.update(drawing.id, { lock: e.target.checked })}/>Lock</label>
+                <button aria-label={`Delete drawing ${index + 1}`} disabled={drawing.lock} onClick={() => drawings.remove(drawing.id)}><Trash size={14}/></button>
+              </div>)}
+              {!drawings.drawings.length && <p>Select a tool, then place its anchors on the chart.</p>}
+              <button disabled={!drawings.drawings.some(d => !d.lock)} onClick={drawings.clear}>Clear unlocked drawings</button>
+              <p>Clear and delete can be undone. Automatic trendlines remain in Auto.</p>
+            </ChartMenu>
+          </div>
         </aside>
 
         <div className="chart-canvas-shell">
@@ -627,7 +667,8 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
           {!chartReady && bars.length > 0 && <SampleChartFallback rows={bars}/>}
           {!bars.length && <div className="chart-message" role={loadState === "error" ? "alert" : "status"}><strong>{loadState === "loading" ? "Loading daily bars…" : loadState === "empty" ? "No stored bars for this price series" : "Local data unavailable"}</strong><p>{loadState === "error" ? error : loadState === "empty" ? "Choose another instrument or price adjustment." : "Reading your local EOD data."}</p>{loadState === "error" && <button onClick={() => setRetry((value) => value + 1)}>Retry</button>}</div>}
           {renderError && <div className="drawing-hint" role="alert">Interactive chart unavailable · Static preview <button onClick={() => setRetry((value) => value + 1)}>Retry</button></div>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
-          {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
+          {drawings.error && <p className="drawing-hint" role="alert">{drawings.error}</p>}
+          {activeTool !== "cursor" && <p className="drawing-hint" role="status">{toolHints[activeTool] ?? `Place ${drawingTools.find(t => t.id === activeTool)?.label.toLowerCase()} anchors on the chart.`} Escape to cancel.</p>}
           <div className="chart-corner-controls">
             <ChartMenu label={<SlidersHorizontal size={16}/>} title="Chart viewport" className="chart-view-menu" {...menuProps("view")}>
               <button disabled={!chartReady} onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)}>Zoom in</button>
