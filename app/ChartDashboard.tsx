@@ -14,6 +14,7 @@ import { Watchlist } from "./Watchlist";
 import { chartStorageKey, movingAverageByTime, readStored, writeStored, type MarketContext } from "../lib/workspace-state";
 import { findAutoTrends, projectTrendPoints, restoreTrendPoints, EMPTY_TRENDS, validTrendSettings, AUTO_TREND_VERSION } from "../lib/auto-trendlines";
 import { useBrowserStore } from "../lib/use-browser-store";
+import { findRecentTrends } from "../lib/recent-trendlines";
 import { extraOverlays } from "../lib/chart-overlays";
 
 const localBuild = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
@@ -221,6 +222,8 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
     allBars.length >= period ? allBars.slice(-period).reduce((total, bar) => total + bar.close, 0) / period : undefined,
   ])), [allBars]);
   const trendStore = useBrowserStore(`brontide-auto:${AUTO_TREND_VERSION}:${mode}:${symbol}:${adjustment}:${logScale?"log":"linear"}:${asOf??"latest"}`, EMPTY_TRENDS, validTrendSettings);
+  const recentStore=useBrowserStore(`brontide-recent-v1:${mode}:${symbol}:${adjustment}:${logScale?"log":"linear"}:${asOf??"latest"}`,false,value=>typeof value==="boolean");
+  const recentResult=useMemo(()=>{try{return {lines:findRecentTrends(allBars,logScale),error:""};}catch{return {lines:[],error:"Recent Trend cannot analyze these bars."};}},[allBars,logScale]);
   const autoTrend = trendStore.ready && trendStore.value.enabled;
   const trendResult = useMemo(() => {
     try { return {lines:findAutoTrends(allBars,{logarithmic:logScale}),error:""}; }
@@ -456,6 +459,17 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
     }
   }, [autoTrend, displayedTrends, chartReady, chartGeneration, theme, allBars, bars, logScale]);
 
+  useEffect(()=>{
+    const chart=chartRef.current;
+    if(!chart||!chartReady)return;
+    chart.removeOverlay({groupId:"brontide-recent-trends"});
+    if(!recentStore.ready||!recentStore.value)return;
+    for(const line of recentResult.lines)chart.createOverlay({
+      id:`recent-v1:${line.kind}`,name:"rayLine",groupId:"brontide-recent-trends",lock:true,zLevel:5,
+      points:projectTrendPoints(line.points,allBars,bars.length),
+      styles:{line:{color:line.kind==="support"?"#168aaf":"#b16e22",size:2,style:"dashed",dashedValue:[6,4]}},
+    });
+  },[recentStore.ready,recentStore.value,recentResult,chartReady,chartGeneration,allBars,bars,logScale]);
   const deleteSelectedDrawing = () => {
     if (!selectedDrawing) return;
     if (selectedDrawing.startsWith(AUTO_TREND_VERSION+":")) {
@@ -499,7 +513,7 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
           <div className="chart-symbol-search"><button className="chart-search-trigger" onClick={() => setSearchOpen((value) => !value)} aria-expanded={searchOpen} aria-label={`Search stock, selected ${symbol}`}><b>{symbol}</b><span>{name}</span></button>
             {searchOpen && <div className="chart-search-popover" onKeyDown={(event) => { if (event.key === "Escape") setSearchOpen(false); }}><label>Find an instrument<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map((item) => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
           </div>}
-        <div className="chart-header-actions"><button className={`auto-trend-toggle${autoTrend?" active":""}`} aria-label="Auto Trendline" disabled={!chartReady || !trendStore.ready || !!trendResult.error} aria-pressed={autoTrend} title="Confirmed pivots · latest 120 sessions · minimum 3 touches" onClick={()=>trendStore.save({...trendStore.value,enabled:!autoTrend})}><TrendUp size={14}/><span>Auto Trendline</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span>{onPlan && <button className="chart-accent" onClick={()=>onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol===symbol?{signalId:context.signalId,strategyId:context.strategyId}:{})})}>Create trade plan</button>}<button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
+        <div className="chart-header-actions"><button className={`auto-trend-toggle${recentStore.value?" active":""}`} aria-label="Recent Trend (Original)" title="Original recent-pivot prototype, 90 sessions" aria-pressed={recentStore.ready&&recentStore.value} disabled={!chartReady||!recentStore.ready||!!recentResult.error} onClick={()=>recentStore.save(!recentStore.value)}><TrendUp size={14}/><span>Recent Trend (Original)</span></button><button className={`auto-trend-toggle${autoTrend?" active":""}`} aria-label="Auto Trendline" disabled={!chartReady || !trendStore.ready || !!trendResult.error} aria-pressed={autoTrend} title="Confirmed pivots · latest 120 sessions · minimum 3 touches" onClick={()=>trendStore.save({...trendStore.value,enabled:!autoTrend})}><TrendUp size={14}/><span>Auto Trendline</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span>{onPlan && <button className="chart-accent" onClick={()=>onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol===symbol?{signalId:context.signalId,strategyId:context.strategyId}:{})})}>Create trade plan</button>}<button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
       </header>
 
       <div className="chart-sourcebar">
@@ -507,6 +521,8 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
         {mode === "local" ? <><label>Prices <select aria-label="Price adjustment" value={adjustment} onChange={(event) => { setLocalBars([]); setPayload(null); setLoadState("loading"); setAdjustment(event.target.value); }}><option value="all">All adjusted</option><option value="raw">Raw</option></select></label><span>{payload ? `Alpaca SIP · ${payload.status.last_session ?? "No sessions"}${payload.status.freshness === "stale" ? ` · Missing through ${payload.status.expected_session}` : payload.status.freshness === "unknown" ? " · Calendar coverage needs updating" : ""}` : statusLabel}</span><button onClick={() => setRetry((value) => value + 1)}>Refresh</button></> : <span className="chart-demo-disclosure"><strong>DEMO · SIMULATED PRICES</strong><span>These candles do not represent {sampleSymbol} market history. Real EOD data is available in local mode.</span></span>}
       </div>
       {asOf && <p className="workspace-notice">Historical view through {asOf}. Later bars are hidden. <button onClick={()=>setAsOf(undefined)}>Review later bars</button></p>}
+      {recentStore.ready&&recentStore.value&&<div className="chart-sourcebar" aria-label="Original trendline evidence"><span>Original prototype · 90 sessions · {logScale?"log-price":"linear price"}</span>{recentResult.lines.length?recentResult.lines.map(line=><span key={line.kind}>{line.kind} · {line.touches} touches</span>):<span role="status">No qualifying recent lines.</span>}</div>}
+      {(recentStore.error||recentResult.error)&&<p role="alert">{recentStore.error||recentResult.error}</p>}
       {trendStore.error && <p className="workspace-notice" role="alert">{trendStore.error}</p>}
       {trendResult.error && <p className="workspace-notice" role="alert">{trendResult.error}</p>}
       {storageError && <p className="workspace-notice" role="alert">{storageError}</p>}

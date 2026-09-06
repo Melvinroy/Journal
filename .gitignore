@@ -13,3 +13,5 @@ data/
 __pycache__/
 .pytest_cache/
 .venv/
+output/playwright/
+.playwright-cli/

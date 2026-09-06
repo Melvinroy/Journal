@@ -10,6 +10,8 @@ import { ScansDashboard } from "./ScansDashboard";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import { TradingWorkspace } from "./TradingWorkspace";
+import { LegacyReview } from "./LegacyReview";
+import { useBrowserStore } from "../lib/use-browser-store";
 import { ChartDashboard } from "./ChartDashboard";
 import { withAuthTimeout } from "../lib/auth-ready";
 import type { MarketContext } from "../lib/workspace-state";
@@ -448,12 +450,23 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  const [active, setActive] = useState<"Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest">("Charts");
+  type View = "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest" | "Review";
+  const [active, setActive] = useState<View>("Charts");
+  const [originalPlanner, setOriginalPlanner] = useState(true);
+  const [prototype, setPrototype] = useState("Overview");
+  const navigation = useBrowserStore<{active:View;originalPlanner:boolean;prototype:string}>("brontide-navigation-review-v1", {active:"Charts",originalPlanner:true,prototype:"Overview"},
+    value => {const v=value as {active?:string;originalPlanner?:boolean;prototype?:string};return !!v && ["Journal","Catalyst","Trade","Charts","Scans","Backtest","Review"].includes(v.active??"") && typeof v.originalPlanner==="boolean" && ["Overview","Trades","Daily journal","Playbook","Insights"].includes(v.prototype??"");});
+  useEffect(()=>{if(navigation.ready){setActive(navigation.value.active);setOriginalPlanner(navigation.value.originalPlanner);setPrototype(navigation.value.prototype);}},[navigation.ready]);
+  const selectView=(next:View,original=originalPlanner,oldTab=prototype)=>{
+    setActive(next);setOriginalPlanner(original);setPrototype(oldTab);
+    navigation.save({active:next,originalPlanner:original,prototype:oldTab});
+  };
+  const reviewLinks = ["Overview","Trades","Daily journal","Playbook","Insights"];
   const [chartContext, setChartContext] = useState<MarketContext>();
   const [planContext, setPlanContext] = useState<MarketContext>();
   const primary = active === "Scans" || active === "Catalyst" ? "Discover" : active === "Backtest" ? "Strategies" : active === "Charts" ? "Charts" : "Trading";
-  const navigate = (tab: typeof nav[number][0]) => setActive(tab === "Discover" ? "Scans" : tab === "Strategies" ? "Backtest" : tab === "Trading" ? "Trade" : "Charts");
-  const openChart = (context: MarketContext) => {setChartContext(context);setActive("Charts");};
+  const navigate = (tab: typeof nav[number][0]) => selectView(tab === "Discover" ? "Scans" : tab === "Strategies" ? "Backtest" : tab === "Trading" ? "Trade" : "Charts");
+  const openChart = (context: MarketContext) => {setChartContext(context);selectView("Charts");};
   const localWorkspace = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
   const [trades, setTrades] = useState<Trade[]>([]);
   const [modal, setModal] = useState(false);
@@ -638,28 +651,41 @@ export default function Home() {
           <p className="nav-label">Workspace</p>
           {nav.map(([label, icon]) => <button key={label} className={`nav-item ${primary === label ? "active" : ""}`} aria-current={primary === label ? "page" : undefined} onClick={() => navigate(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
+        <details className="review-navigation" open><summary>Review old tabs</summary><nav aria-label="Recovered views">
+          {reviewLinks.map(label=><button key={label} className={`nav-item ${active==="Review"&&prototype===label?"active":""}`} onClick={()=>selectView("Review",originalPlanner,label)}>{label}</button>)}
+          <button className="nav-item" onClick={()=>selectView("Trade",true)}>Original Trade</button>
+          <button className="nav-item" onClick={()=>selectView("Backtest")}>Backtest</button>
+          <button className="nav-item" onClick={()=>selectView("Journal")}>Journal</button>
+        </nav></details>
         <div className="sidebar-spacer"/>
         {!demoMode && <div className="utility-nav"><button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="settings"/><span>Cloud settings</span></button></div>}
         <div className="profile"><span className="avatar">{accountLabel.slice(0, 1)}</span><span><b>{accountLabel}</b><small>{accountEmail}</small></span><Icon name={demoMode ? "spark" : "check"} size={16}/></div>
       </aside>
 
-      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : active === "Charts" ? "chart-workspace" : active === "Scans" || active === "Backtest" ? "research-workspace" : ""}`}>
+      <section className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : active === "Trade" ? "trade-workspace" : active === "Charts" ? "chart-workspace" : active === "Scans" || active === "Backtest" ? "research-container" : active === "Journal" ? "journal-workspace" : ""}`}>
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {nav.map(([label]) => <button key={label} className={primary === label ? "active" : ""} onClick={() => navigate(label)}>{label}</button>)}
         </nav>
-        {primary === "Discover" && <nav className="workspace-subtabs" aria-label="Discover views"><button className={active==="Scans"?"active":""} onClick={()=>setActive("Scans")}>Scans</button><button className={active==="Catalyst"?"active":""} onClick={()=>setActive("Catalyst")}>Catalysts</button></nav>}
-        {primary === "Trading" && <nav className="workspace-subtabs" aria-label="Trading views"><button className={active==="Trade"?"active":""} onClick={()=>setActive("Trade")}>Plans &amp; Positions</button><button className={active==="Journal"?"active":""} onClick={()=>setActive("Journal")}>Journal</button></nav>}
-        <div hidden={active!=="Catalyst"}><CatalystDashboard onChart={openChart}/></div>
-        <div hidden={active!=="Trade"}><TradingWorkspace context={planContext} onChart={openChart}/></div>
-        {active === "Charts" && <ChartDashboard context={chartContext} onExit={()=>setActive("Scans")} onPlan={context=>{setPlanContext({...context});setActive("Trade");}}/>}
-        <div hidden={active!=="Scans"}><ResearchWorkspace kind="scan" onChart={openChart}/></div>
-        <div hidden={active!=="Backtest"}><ResearchWorkspace kind="backtest" onChart={openChart}/></div>
-        <div hidden={active!=="Journal"}>
-        {localWorkspace && !session && <p className="workspace-notice">Cloud Journal is not connected in local mode. Local plans and fills remain in Trading; existing cloud records are unchanged.</p>}
+        <details className="mobile-review-navigation"><summary>Review old tabs</summary><nav aria-label="Recovered mobile views">{reviewLinks.map(label=><button key={label} onClick={()=>selectView("Review",originalPlanner,label)}>{label}</button>)}<button onClick={()=>selectView("Trade",true)}>Original Trade</button><button onClick={()=>selectView("Backtest")}>Backtest</button><button onClick={()=>selectView("Journal")}>Journal</button></nav></details>
+        {primary === "Discover" && <nav className="workspace-subtabs" aria-label="Discover views"><button className={active==="Scans"?"active":""} onClick={()=>selectView("Scans")}>Scans</button><button className={active==="Catalyst"?"active":""} onClick={()=>selectView("Catalyst")}>Catalysts</button></nav>}
+        {primary === "Trading" && <nav className="workspace-subtabs" aria-label="Trading views"><button className={active==="Trade"?"active":""} onClick={()=>selectView("Trade")}>Plans &amp; Positions</button><button className={active==="Journal"?"active":""} onClick={()=>selectView("Journal")}>Journal</button></nav>}
+        <div hidden={active!=="Catalyst"}><CatalystDashboard demo={demoMode} onChart={openChart}/></div>
+        <div hidden={active!=="Trade"}>
+          <nav className="workspace-subtabs" aria-label="Planner versions"><button className={originalPlanner?"active":""} onClick={()=>selectView("Trade",true)}>Original Planner</button><button className={!originalPlanner?"active":""} onClick={()=>selectView("Trade",false)}>Current Planner</button></nav>
+          {demoMode&&<p className="workspace-notice">Sample plans and fills · isolated from your saved trading records.</p>}
+          <div hidden={!originalPlanner}><TradePlanner demo={demoMode} context={planContext} onChart={openChart}/></div>
+          <div hidden={originalPlanner}><TradingWorkspace demo={demoMode} context={planContext} onChart={openChart}/></div>
+        </div>
+        {active === "Charts" && <ChartDashboard context={chartContext} onExit={()=>selectView("Scans")} onPlan={context=>{setPlanContext({...context});selectView("Trade",false);}}/>}
+        <div hidden={active!=="Scans"}><ResearchWorkspace demo={demoMode} kind="scan" onChart={openChart}/></div>
+        <div hidden={active!=="Backtest"}><ResearchWorkspace demo={demoMode} kind="backtest" onChart={openChart}/></div>
+        {active==="Review"&&<LegacyReview active={prototype} onNavigate={label=>selectView("Review",originalPlanner,label)}/>}
+        <div className="journal-content" hidden={active!=="Journal"}>
+        {localWorkspace && !session && !demoMode && <p className="workspace-notice">Cloud Journal is not connected in local mode. Local plans and fills remain in Trading; existing cloud records are unchanged.</p>}
         <header className="topbar">
           <div><p className="eyebrow">{todayLabel}</p><h1>{greeting}</h1></div>
           <div className="header-actions">
-            <span className={`sync-state ${cloudError ? "has-error" : ""}`}><i/>{demoMode ? "Live demo" : cloudBusy ? "Syncing…" : cloudError ? "Sync issue" : "Cloud synced"}</span>
+            <span className={`sync-state ${cloudError ? "has-error" : ""}`}><i/>{demoMode ? "Sample trades" : cloudBusy ? "Syncing…" : cloudError ? "Sync issue" : "Cloud synced"}</span>
             <label className="range-control"><Icon name="calendar" size={16}/><span className="sr-only">Date range</span><select value={range} onChange={(event) => setRange(event.target.value as RangeKey)}><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="ytd">This year</option><option value="all">All time</option></select></label>
             <button className="secondary-button auth-button" onClick={signOut}>{demoMode ? "Exit demo" : "Sign out"}</button>
             <button className="primary-button" disabled={localWorkspace && !session && !demoMode} onClick={() => setModal(true)}><Icon name="plus" size={17}/> Log trade</button>

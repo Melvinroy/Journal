@@ -1,5 +1,7 @@
 # Brontide
 
+UI review: [recovered views, validation evidence and limitations](docs/UI_RECOVERY_REVIEW.md).
+
 Development: [six-phase execution plan](docs/EXECUTION_PLAN.md) · [Windows Codex handoff](docs/WINDOWS_CODEX_HANDOFF.md) · [E1 validation](docs/EXECUTION_E1_VALIDATION.md) · [E2–E5 implementation and remaining validation](docs/RESEARCH_AND_TRADING.md).
 
 <p align="center">

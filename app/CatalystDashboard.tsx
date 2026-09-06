@@ -161,7 +161,7 @@ function SignalCard({ row, rank }: { row: CatalystRow; rank: number }) {
   );
 }
 
-export function CatalystDashboard({onChart}:{onChart?:(context:MarketContext)=>void}) {
+export function CatalystDashboard({onChart,demo=false}:{demo?:boolean;onChart?:(context:MarketContext)=>void}) {
   const [days, setDays] = useState<WindowDays>(1);
   const [direction, setDirection] = useState<DirectionFilter>("all");
   const [search, setSearch] = useState("");
@@ -169,11 +169,25 @@ export function CatalystDashboard({onChart}:{onChart?:(context:MarketContext)=>v
   const [selected, setSelected] = useState<CatalystRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [retry,setRetry] = useState(0);
 
   useEffect(() => {
     let current = true;
     async function loadCatalysts() {
-      if (!supabase) return;
+      if(demo) {
+        const rows: CatalystRow[] = ["NVDA","MRNA","CRCL"].map((ticker,index)=>({
+          report_id:"sample-report", report_type:"Synthetic example", generated_at_sgt:"2026-09-03T20:00:00+08:00",
+          row_order:index, ticker, catalyst_event_date:"2026-09-03", catalyst_quality_direction:index===1?"A Bearish":"A Bullish",
+          primary_catalyst_category:"Sample event", catalyst_tags:"Synthetic", catalyst_summary:"Fictional catalyst for dashboard review; not a report of actual company news.",
+          sector:index===1?"Healthcare":"Technology",theme:"Sample theme",direct_sympathy_sector_move:"Direct",sympathy_related_tickers:"",
+          catalyst_release_session:"Pre-market",reaction_date:"2026-09-03",move_already_done:"Sample",volume_liquidity_confirmation:"Not assessed",
+          freshness_catalyst_age:"Sample",source_confidence:"Low",primary_source_evidence:"Synthetic example; no external source",
+          trade_read:"Review example only",risk_invalidator:"Not assessed",action_priority:"Watch",trading_date_checked:"2026-09-03",
+          appearances:1,direction:index===1?"bearish":"bullish",importance_score:80-index*10,
+        }));
+        setData({asOfDate:"2026-09-03",rows,reports:[]});setError("");setLoading(false);return;
+      }
+      if (!supabase) {setData(null);setError("Catalyst feed is not connected.");setLoading(false);return;}
       setLoading(true);
       setError("");
       setData(null);
@@ -243,9 +257,11 @@ export function CatalystDashboard({onChart}:{onChart?:(context:MarketContext)=>v
       if (reportsResult.error) setError("Signal rows loaded, but the report summary is temporarily unavailable.");
       setLoading(false);
     }
-    void loadCatalysts();
+    void loadCatalysts().catch(()=>{
+      if(current){setData(null);setError("Catalyst feed could not be loaded. Retry the connection.");setLoading(false);}
+    });
     return () => { current = false; };
-  }, [days]);
+  }, [days,demo,retry]);
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const ranked = useMemo(() => [...rows].sort((a, b) => b.importance_score - a.importance_score || b.appearances - a.appearances), [rows]);
@@ -273,7 +289,7 @@ export function CatalystDashboard({onChart}:{onChart?:(context:MarketContext)=>v
   return (
     <div className="catalyst-dashboard">
       <header className="catalyst-commandbar">
-        <div><p className="eyebrow">Catalyst intelligence</p><h1>Executive signal board</h1><p>Ranked, de-duplicated signals from the canonical Catalyst_Table_v2 workflow.</p></div>
+        <div><p className="eyebrow">Catalyst intelligence</p><h1>Executive signal board</h1><p>{demo?"Synthetic events for review.":"Ranked, de-duplicated signals from the canonical Catalyst_Table_v2 workflow."}</p></div>
         <div className="catalyst-command-actions">
           <div className="catalyst-window-switch" aria-label="Catalyst date range">
             {WINDOWS.map((window) => <button key={window.value} type="button" className={days === window.value ? "active" : ""} onClick={() => setDays(window.value)}>{window.label}</button>)}
@@ -282,7 +298,8 @@ export function CatalystDashboard({onChart}:{onChart?:(context:MarketContext)=>v
         </div>
       </header>
 
-      {error && <div className="catalyst-banner" role="status">{error} Journal remains fully operational.</div>}
+      {demo&&<p className="workspace-notice">Sample catalysts · fictional events, not market news.</p>}
+      {error && <div className="catalyst-banner" role="status">{error} <button onClick={()=>setRetry(value=>value+1)}>Retry</button></div>}
 
       <section className="catalyst-kpi-grid" aria-label="Catalyst statistics">
         <article className="catalyst-kpi"><span>Active names</span><strong>{rows.length}</strong><small>{days === 1 ? "Latest trading day" : `Latest ${days} calendar days`}</small></article>
@@ -337,7 +354,7 @@ export function CatalystDashboard({onChart}:{onChart?:(context:MarketContext)=>v
         <div className="catalyst-detail-top"><span className={`catalyst-grade grade-${selected.direction}`}>{selected.catalyst_quality_direction}</span><span>{selected.importance_score}/100</span></div>
         <h2>{selected.ticker}</h2><h3>{selected.primary_catalyst_category} · {selected.theme}</h3>
         <p>Report generated {selected.generated_at_sgt} SGT · event date {selected.catalyst_event_date??"not supplied"}. Report generation is not the source publication time.</p>
-        {onChart&&<button onClick={()=>onChart({symbol:selected.ticker,mode:process.env.NEXT_PUBLIC_BRONTIDE_LOCAL==="1"?"local":"sample",adjustment:"all",asOf:selected.trading_date_checked})}>Open chart at report session</button>}
+        {onChart&&<button onClick={()=>onChart({symbol:selected.ticker,mode:!demo&&process.env.NEXT_PUBLIC_BRONTIDE_LOCAL==="1"?"local":"sample",adjustment:"all",asOf:selected.trading_date_checked})}>Open chart at report session</button>}
         {(selected.primary_source_evidence.match(/https?:\/\/[^\s<>"\)]+/g)??[]).map((url,i)=><p key={`${url}-${i}`}><a href={url} target="_blank" rel="noopener noreferrer">Source evidence {i+1}</a></p>)}
         <div className="catalyst-detail-section"><span>Catalyst</span><p>{selected.catalyst_summary}</p></div>
         <div className="catalyst-detail-section"><span>Trade read</span><p>{selected.trade_read}</p></div>

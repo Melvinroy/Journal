@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { TradePlanner } from "./TradePlanner";
+import { SAMPLE_PLANS, demoStorageKey } from "../lib/review-demo";
 import { useBrowserStore } from "../lib/use-browser-store";
 import type { MarketContext } from "../lib/workspace-state";
 import { PLANS_KEY,appendFill,position,validatePlans,type Plan,type Tranche,type PlanRevision } from "../lib/trading-ledger";
@@ -8,17 +8,21 @@ import { PLANS_KEY,appendFill,position,validatePlans,type Plan,type Tranche,type
 const money=(v:number)=>v.toLocaleString(undefined,{style:"currency",currency:"USD"});
 function fresh(context?:MarketContext):Plan{return {id:crypto.randomUUID(),name:"New trade plan",symbol:context?.symbol??"",side:"Long",entry:0,equity:30000,riskPercent:.5,allocationPercent:10,tranches:[{id:"A",percent:50,stop:0,target:null},{id:"B",percent:50,stop:0,target:null}],fills:[],notes:"",revision:0,context,updatedAt:new Date().toISOString()};}
 
-export function TradingWorkspace({context,onChart}:{context?:MarketContext;onChart:(c:MarketContext)=>void}){
-  const store=useBrowserStore<Plan[]>(PLANS_KEY,[],validatePlans);
-  const revisions=useBrowserStore<PlanRevision[]>("brontide-plan-revisions-v1",[],value=>Array.isArray(value)&&value.every(r=>r&&Number.isInteger(r.revision)&&typeof r.savedAt==="string"&&validatePlans([r.plan])));
+export function TradingWorkspace({context,onChart,demo=false}:{demo?:boolean;context?:MarketContext;onChart:(c:MarketContext)=>void}){
+  const store=useBrowserStore<Plan[]>(demoStorageKey(PLANS_KEY,demo),demo?SAMPLE_PLANS:[],validatePlans);
+  const revisions=useBrowserStore<PlanRevision[]>(demoStorageKey("brontide-plan-revisions-v1",demo),[],value=>Array.isArray(value)&&value.every(r=>r&&Number.isInteger(r.revision)&&typeof r.savedAt==="string"&&validatePlans([r.plan])));
   const [draft,setDraft]=useState<Plan|null>(null),[dirty,setDirty]=useState(false),[message,setMessage]=useState("");
-  const recovery=useBrowserStore<{draft:Plan|null;dirty:boolean}>("brontide-plan-editor-v1",{draft:null,dirty:false},value=>{
+  const recovery=useBrowserStore<{draft:Plan|null;dirty:boolean}>(demoStorageKey("brontide-plan-editor-v1",demo),{draft:null,dirty:false},value=>{
     const v=value as {draft?:Plan|null;dirty?:boolean};return !!v&&typeof v.dirty==="boolean"&&(v.draft===null|| (!!v.draft&&typeof v.draft.id==="string"&&typeof v.draft.symbol==="string"&&Array.isArray(v.draft.tranches)&&Array.isArray(v.draft.fills)));
   });
   const restored=useRef(false);
   useEffect(()=>{if(recovery.ready&&!restored.current){setDraft(recovery.value.draft);setDirty(recovery.value.dirty);restored.current=true;}},[recovery.ready]);
   useEffect(()=>{if(restored.current&&recovery.ready)recovery.save({draft,dirty});},[draft,dirty]);
-  const [view,setView]=useState<"plans"|"positions"|"review"|"calculator">("plans");
+  type TradingView="plans"|"positions"|"review";
+  const [view,updateView]=useState<TradingView>("plans");
+  const viewStore=useBrowserStore<TradingView>(demoStorageKey("brontide-trading-view-v1",demo),"plans",value=>["plans","positions","review"].includes(String(value)));
+  useEffect(()=>{if(viewStore.ready)updateView(viewStore.value);},[viewStore.ready]);
+  const setView=(next:TradingView)=>{updateView(next);viewStore.save(next);};
   const [fill,setFill]=useState({trancheId:"A",action:"entry" as "entry"|"exit",quantity:0,price:0,fee:0,at:"",reason:"Manual"});
   let metrics:ReturnType<typeof position>|null=null,validation="";
   if(draft)try{metrics=position(draft);}catch(e){validation=(e as Error).message;}
@@ -32,9 +36,9 @@ export function TradingWorkspace({context,onChart}:{context?:MarketContext;onCha
   const filled=!!draft?.fills.length;
   return <section className="research-workspace trading-workspace"><header><div><p className="eyebrow">TRADING</p><h1>Plans, positions & review</h1></div><button disabled={!store.ready} onClick={()=>open(fresh(context))}>New plan{context?` · ${context.symbol}`:""}</button></header>
     <p className="workspace-notice">Manual local planning and fill records only. No broker connection or automatic execution. Cloud Journal and the original calculator records are unchanged.</p>
-    <nav className="research-controls" aria-label="Trading views">{(["plans","positions","review","calculator"] as const).map(v=><button aria-pressed={view===v} key={v} onClick={()=>setView(v)}>{v==="review"?"Local journal / review":v==="calculator"?"Original risk calculator":v}</button>)}<button disabled={!store.ready} onClick={exportPlans}>Export local records</button></nav>
+    <nav className="research-controls" aria-label="Trading views">{(["plans","positions","review"] as const).map(v=><button aria-pressed={view===v} key={v} onClick={()=>setView(v)}>{v==="review"?"Local journal / review":v}</button>)}<button disabled={!store.ready} onClick={exportPlans}>Export local records</button></nav>
     {(store.error||recovery.error||revisions.error||message)&&<p role="status">{store.error||recovery.error||revisions.error||message}</p>}
-    {view==="calculator"?<TradePlanner context={context} onChart={onChart}/>:<>
+    <>
     <div className="research-table"><table><thead><tr><th>Plan</th><th>Ticker</th><th>Revision</th><th>Status</th><th>Open shares</th><th>Realized net P&L</th><th>Action</th></tr></thead><tbody>{store.value.filter(p=>view==="plans"||p.fills.length>0).map(p=>{const s=position(p);return <tr key={p.id}><td>{p.name}</td><td>{p.symbol}</td><td>{p.revision}</td><td>{s.status}</td><td>{s.remaining}</td><td>{p.fills.length?money(s.realized):"—"}</td><td><button onClick={()=>open(p)}>Open</button> <button onClick={()=>open({...structuredClone(p),id:crypto.randomUUID(),name:`${p.name} copy`,fills:[],revision:0,updatedAt:new Date().toISOString()})}>Use as template</button></td></tr>;})}</tbody></table></div>
     {!store.value.length&&<p>No saved advanced plans. Create one, or open the original calculator to access your existing settings and draft.</p>}
     {draft&&<article className="plan-editor"><h2>{draft.name} {dirty?"· Unsaved":""}</h2>
@@ -58,6 +62,6 @@ export function TradingWorkspace({context,onChart}:{context?:MarketContext;onCha
     <button disabled={dirty||!store.ready||draft.revision===0} onClick={record}>Record manual fill · no order sent</button><details><summary>Actual fill ledger and originating chart context</summary><pre>{JSON.stringify({context:draft.context,fills:draft.fills},null,2)}</pre></details></>}
     <details><summary>Saved revision history</summary><pre>{JSON.stringify(revisions.value.filter(r=>r.plan.id===draft.id),null,2)}</pre></details>
     </article>}
-    </>}
+    </>
   </section>;
 }

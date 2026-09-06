@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { calculateTradePlan, type TradeSide } from "../lib/trade-planner";
+import { demoStorageKey } from "../lib/review-demo";
 import type { MarketContext } from "../lib/workspace-state";
 
 const RISK_OPTIONS = [.25, .5, .75, 1] as const;
@@ -44,7 +45,7 @@ function distributeShares(total: number, count: number) {
   return Array.from({ length: count }, (_, index) => index === count - 1 ? total - base * (count - 1) : base);
 }
 
-export function TradePlanner({ context, onChart }: {context?:MarketContext;onChart?:(context:MarketContext)=>void}) {
+export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void}) {
   const [symbol, setSymbol] = useState("NVDA");
   const [side, setSide] = useState<TradeSide>("Long");
   const [entryPrice, setEntryPrice] = useState(120);
@@ -62,7 +63,7 @@ export function TradePlanner({ context, onChart }: {context?:MarketContext;onCha
 
   useEffect(() => {
     try {
-      const savedSettings = window.localStorage.getItem(SETTINGS_KEY);
+      const savedSettings = window.localStorage.getItem(demoStorageKey(SETTINGS_KEY,demo));
       if (savedSettings) {
         const parsed = JSON.parse(savedSettings) as Partial<SavedSettings>;
         if (Number(parsed.accountEquity) > 0) setAccountEquity(Number(parsed.accountEquity));
@@ -70,16 +71,16 @@ export function TradePlanner({ context, onChart }: {context?:MarketContext;onCha
         if (ALLOCATION_OPTIONS.includes(Number(parsed.maxAllocationPercent) as (typeof ALLOCATION_OPTIONS)[number])) setMaxAllocationPercent(Number(parsed.maxAllocationPercent));
       }
 
-      const savedExits = window.localStorage.getItem(EXIT_KEY);
+      const savedExits = window.localStorage.getItem(demoStorageKey(EXIT_KEY,demo));
       if (savedExits) {
         const exits = JSON.parse(savedExits) as { targetCount?: number; stopCount?: number; runnerEnabled?: boolean };
         if (EXIT_COUNT_OPTIONS.includes(exits.targetCount as ExitCount)) setTargetCount(exits.targetCount as ExitCount);
         if (EXIT_COUNT_OPTIONS.includes(exits.stopCount as ExitCount)) setStopCount(exits.stopCount as ExitCount);
         if (typeof exits.runnerEnabled === "boolean") setRunnerEnabled(exits.runnerEnabled);
       }
-      if (window.localStorage.getItem(AFTER_FILL_KEY)) setAfterFillStaged(true);
+      if (window.localStorage.getItem(demoStorageKey(AFTER_FILL_KEY,demo))) setAfterFillStaged(true);
 
-      const savedDraft = window.localStorage.getItem(DRAFT_KEY);
+      const savedDraft = window.localStorage.getItem(demoStorageKey(DRAFT_KEY,demo));
       if (savedDraft) {
         const draft = JSON.parse(savedDraft) as Partial<SavedSettings> & { symbol?: string; side?: TradeSide; entryPrice?: number; stopPrice?: number; stopSource?: StopSource; exitPlan?: { targetCount?: number; stopCount?: number; runnerEnabled?: boolean } };
         if (draft.symbol) setSymbol(draft.symbol);
@@ -116,15 +117,15 @@ export function TradePlanner({ context, onChart }: {context?:MarketContext;onCha
 
   function saveSettings() {
     const settings: SavedSettings = { accountEquity, riskPercent, maxAllocationPercent };
-    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    window.localStorage.removeItem(DRAFT_KEY);
+    window.localStorage.setItem(demoStorageKey(SETTINGS_KEY,demo), JSON.stringify(settings));
+    window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
     setStageState("draft");
     setSettingsOpen(false);
   }
 
   function stageEntry() {
     if (!result.valid) return;
-    window.localStorage.setItem(DRAFT_KEY, JSON.stringify({
+    window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify({
       symbol: symbol.trim().toUpperCase(), side, entryPrice, stopPrice, stopSource,
       accountEquity, riskPercent, maxAllocationPercent, result,
       exitPlan: { targetCount, stopCount, runnerEnabled, targetShares, runnerShares },
@@ -134,19 +135,19 @@ export function TradePlanner({ context, onChart }: {context?:MarketContext;onCha
   }
 
   function cancelStage() {
-    window.localStorage.removeItem(DRAFT_KEY);
+    window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
     setStageState("draft");
   }
 
   function editPlan() {
     if (stageState !== "staged") return;
-    window.localStorage.removeItem(DRAFT_KEY);
+    window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
     setStageState("draft");
   }
 
   function saveExitDefaults(next: { targetCount: ExitCount; stopCount: ExitCount; runnerEnabled: boolean }) {
-    window.localStorage.setItem(EXIT_KEY, JSON.stringify(next));
-    window.localStorage.removeItem(AFTER_FILL_KEY);
+    window.localStorage.setItem(demoStorageKey(EXIT_KEY,demo), JSON.stringify(next));
+    window.localStorage.removeItem(demoStorageKey(AFTER_FILL_KEY,demo));
     setAfterFillStaged(false);
   }
 
@@ -168,12 +169,12 @@ export function TradePlanner({ context, onChart }: {context?:MarketContext;onCha
 
   function stageAfterFill() {
     if (!result.valid) return;
-    window.localStorage.setItem(AFTER_FILL_KEY, JSON.stringify({ targetCount, stopCount, runnerEnabled, savedAt: new Date().toISOString() }));
+    window.localStorage.setItem(demoStorageKey(AFTER_FILL_KEY,demo), JSON.stringify({ targetCount, stopCount, runnerEnabled, savedAt: new Date().toISOString() }));
     setAfterFillStaged(true);
   }
 
   function cancelAfterFill() {
-    window.localStorage.removeItem(AFTER_FILL_KEY);
+    window.localStorage.removeItem(demoStorageKey(AFTER_FILL_KEY,demo));
     setAfterFillStaged(false);
   }
 
