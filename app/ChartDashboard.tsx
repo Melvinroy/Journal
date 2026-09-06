@@ -10,7 +10,9 @@ import {
 } from "@phosphor-icons/react";
 
 import { getLocalJson, toChartBars, type ChartResponse, type Instrument } from "../lib/chart-data";
-import { Watchlist } from "./Watchlist";
+import { ChartMenu } from "./ChartMenu";
+import { ArrowLeft, CaretDown, DotsThree, List, MagnifyingGlass, SlidersHorizontal } from "@phosphor-icons/react";
+import "./chart-workspace.css";
 import { chartStorageKey, movingAverageByTime, readStored, writeStored, type MarketContext } from "../lib/workspace-state";
 import { findAutoTrends, projectTrendPoints, restoreTrendPoints, EMPTY_TRENDS, validTrendSettings, AUTO_TREND_VERSION } from "../lib/auto-trendlines";
 import { useBrowserStore } from "../lib/use-browser-store";
@@ -181,9 +183,11 @@ function SampleChartFallback({ rows }: { rows: Bar[] }) {
   </svg>;
 }
 
-export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => void; context?: MarketContext; onPlan?: (context:MarketContext)=>void }) {
+export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit?: () => void; context?: MarketContext; onPlan?: (context:MarketContext)=>void; navigation?: {label: string; onSelect: () => void}[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
+  const fitViewportRef = useRef<(() => void) | null>(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string>("NVDA");
   const [range, setRange] = useState<RangeKey>("6M");
   const [activeTool, setActiveTool] = useState<DrawingTool>("cursor");
@@ -246,6 +250,26 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
   const [renderError, setRenderError] = useState(false);
   const name = mode === "sample" ? symbols[sampleSymbol].name : payload?.instrument.name ?? symbol;
   const statusLabel = mode === "sample" ? "Simulated prices" : loadState === "loading" ? "Loading EOD" : loadState === "error" ? "API error" : loadState === "empty" ? "No bars" : payload?.status.freshness === "stale" ? "Stale EOD" : payload?.status.freshness === "unknown" ? "EOD · check freshness" : "Local EOD";
+  const issues = [storageError, trendStore.error, trendResult.error, recentStore.error, recentResult.error].filter(Boolean);
+  const previousClose = allBars.at(-2)?.close;
+  const dailyChange = latest && previousClose ? (latest.close / previousClose - 1) * 100 : undefined;
+  const menuProps = (id: string) => ({ open: openMenu === id, onToggle: () => { setSearchOpen(false); setOpenToolGroup(null); setOpenMenu(value => value === id ? null : id); }, onClose: () => setOpenMenu(value => value === id ? null : value) });
+
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (searchOpen) { setSearchOpen(false); document.querySelector<HTMLButtonElement>(".chart-search-trigger")?.focus(); }
+      if (openToolGroup) { document.querySelector<HTMLButtonElement>(`.drawing-tool-group button[aria-expanded="true"]`)?.focus(); setOpenToolGroup(null); }
+    };
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Element;
+      if (!target.closest(".chart-symbol-search")) setSearchOpen(false);
+      if (!target.closest(".drawing-tool-group")) setOpenToolGroup(null);
+    };
+    document.addEventListener("keydown", close);
+    document.addEventListener("pointerdown", outside);
+    return () => { document.removeEventListener("keydown", close); document.removeEventListener("pointerdown", outside); };
+  }, [searchOpen, openToolGroup]);
 
   useEffect(() => setHovered(latest), [latest]);
 
@@ -366,9 +390,10 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
       chart.setSymbol({ ticker: symbol, pricePrecision: 2, volumePrecision: 0 });
       chart.setPeriod({ span: 1, type: "day" });
       chart.setDataLoader({ getBars: ({ type, callback }) => callback(type === "init" ? bars : [], false) });
+      let followingSelectedRange = true;
       const applyDefaultViewport = () => {
         const chartWidth = containerRef.current?.clientWidth ?? 1200;
-        const rightSpace = Math.round(Math.max(1, chartWidth - 58) * .2);
+        const rightSpace = Math.min(30, Math.max(8, (chartWidth - 64) / Math.max(bars.length, 1) * 3));
         const usableWidth = Math.max(1, chartWidth - rightSpace - 58);
         const fittedBarSpace = Math.max(.05, usableWidth / Math.max(bars.length, 1));
         const rightVisibleBars = Math.ceil(rightSpace / Math.max(fittedBarSpace, .05));
@@ -376,9 +401,18 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
         chart.setMaxOffsetRightDistance(rightSpace);
         chart.setBarSpace(Number(fittedBarSpace.toFixed(2)));
         chart.setOffsetRightDistance(rightSpace);
+        followingSelectedRange = true;
       };
       applyDefaultViewport();
-      const resizeObserver = new ResizeObserver(applyDefaultViewport);
+      fitViewportRef.current = applyDefaultViewport;
+      const markCustomViewport = () => { followingSelectedRange = false; };
+      chart.subscribeAction("onZoom", markCustomViewport);
+      chart.subscribeAction("onScroll", markCustomViewport);
+      // Keep a fitted range fitted, but preserve intentional pan/zoom on resize.
+      const resizeObserver = new ResizeObserver(() => {
+        chart.resize();
+        if (followingSelectedRange) applyDefaultViewport();
+      });
       resizeObserver.observe(containerRef.current);
       chart.createIndicator({ name: "VOL", paneId: "volume_pane", styles: { bars: [{ upColor: palette.volumeUp, downColor: palette.volumeDown, noChangeColor: palette.neutral }] } });
       chart.setPaneOptions({ id: "volume_pane", height: 92, minHeight: 58, dragEnabled: true, order: 20 });
@@ -412,6 +446,8 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
       setChartGeneration(value=>value+1);
       disposeChart = () => {
         resizeObserver.disconnect();
+        chart.unsubscribeAction("onZoom", markCustomViewport);
+        chart.unsubscribeAction("onScroll", markCustomViewport);
         chart.unsubscribeAction("onCrosshairChange", crosshairHandler);
         dispose(chartContainer);
       };
@@ -420,6 +456,7 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
       cancelled = true;
       disposeChart?.();
       chartRef.current = null;
+      fitViewportRef.current = null;
       setChartReady(false);
     };
   }, [allBars, bars, range, retry, show20, show50, show200, symbol, logScale, theme, mode, adjustment]);
@@ -506,40 +543,67 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
   };
 
   return (
-    <section className={`chart-dashboard theme-${theme}`}>
-      <header className="chart-commandbar">
-        <div className="chart-sequence">{onExit && <button aria-label="Back" onClick={onExit}>‹</button>}<span>Chart workspace</span></div>
-        {mode === "sample" ? <label className="chart-symbol-select"><span>Demo · {name}</span><b>{sampleSymbol}</b><select value={sampleSymbol} onChange={(event) => changeSymbol(event.target.value)} aria-label="Stock"><option value="NVDA">NVIDIA Corporation</option><option value="MRNA">Moderna, Inc.</option><option value="CRCL">Circle Internet Group</option></select></label> :
-          <div className="chart-symbol-search"><button className="chart-search-trigger" onClick={() => setSearchOpen((value) => !value)} aria-expanded={searchOpen} aria-label={`Search stock, selected ${symbol}`}><b>{symbol}</b><span>{name}</span></button>
-            {searchOpen && <div className="chart-search-popover" onKeyDown={(event) => { if (event.key === "Escape") setSearchOpen(false); }}><label>Find an instrument<input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map((item) => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
+    <section className={`chart-dashboard chart-layout-v1 theme-${theme}`}>
+      <header className="chart-commandbar" aria-label="Chart commands">
+        <ChartMenu label={<List size={20}/>} title="Workspace navigation" className="chart-navigation-menu" {...menuProps("navigation")}>
+          <strong>Brontide</strong>
+          {onExit && <button onClick={onExit}><ArrowLeft size={16}/> Back to workspace</button>}
+          {navigation?.map(item => <button key={item.label} onClick={item.onSelect}>{item.label}</button>)}
+        </ChartMenu>
+        <div className="chart-symbol-search">
+          {mode === "sample" ? <label className="chart-sample-symbol"><span className="sr-only">Stock</span><select value={sampleSymbol} onChange={event => changeSymbol(event.target.value)} aria-label="Stock"><option value="NVDA">NVDA</option><option value="MRNA">MRNA</option><option value="CRCL">CRCL</option></select></label> : <button className="chart-search-trigger" onClick={() => { setOpenMenu(null); setOpenToolGroup(null); setSearchOpen(value => !value); }} aria-expanded={searchOpen} aria-label={`Search stock, selected ${symbol}`}><MagnifyingGlass size={16}/><b>{symbol}</b></button>}
+          {searchOpen && <div className="chart-search-popover"><label>Find an instrument<input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map(item => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
+        </div>
+        <div className="chart-quote" title={name}><span className="chart-company">{name}</span><b>{latest?.close.toFixed(2) ?? "—"}</b>{dailyChange !== undefined && <span className={dailyChange >= 0 ? "up" : "down"}>{dailyChange >= 0 ? "+" : ""}{dailyChange.toFixed(2)}%</span>}</div>
+        <ChartMenu label={<>D · {range}<CaretDown size={12}/></>} title="Time interval and range" {...menuProps("time")}>
+          <label>Interval<select aria-label="Candle interval" value="daily" onChange={() => {}}><option value="daily">Daily</option></select></label>
+          <label>Visible range<select aria-label="Visible range" value={range} onChange={event => setRange(event.target.value as RangeKey)}>{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map(item => <option key={item} value={item}>{item === "Max" ? "All available history" : item}</option>)}</select></label>
+        </ChartMenu>
+        <ChartMenu label={<>Studies<CaretDown size={12}/></>} title="Studies" className="chart-studies-menu" {...menuProps("studies")}>
+          <strong>Moving averages</strong>
+          <label><input type="checkbox" checked={show20} onChange={e => setShow20(e.target.checked)}/>20 SMA</label>
+          <label><input type="checkbox" checked={show50} onChange={e => setShow50(e.target.checked)}/>50 SMA</label>
+          <label><input type="checkbox" checked={show200} onChange={e => setShow200(e.target.checked)}/>200 SMA</label>
+          <p>Volume is shown below price. Drag its divider to resize.</p>
+        </ChartMenu>
+        <ChartMenu label={<>Auto<span className="chart-count">{Number(autoTrend) + Number(recentStore.ready && recentStore.value)}</span><CaretDown size={12}/></>} title="Automatic trendlines" {...menuProps("auto")}>
+          <button aria-label="Auto Trendline" aria-pressed={autoTrend} disabled={!chartReady || !trendStore.ready || !!trendResult.error} onClick={() => trendStore.save({...trendStore.value, enabled: !autoTrend})}><TrendUp size={16}/>Auto Trendline<span>{autoTrend ? "On" : "Off"}</span></button>
+          <p>Confirmed pivots · 120 sessions · minimum 3 touches.</p>
+          {autoTrend && <div className="chart-evidence" aria-label="Auto trendline evidence">
+            <strong>{logScale ? "Log-price" : "Linear price"} analysis</strong>
+            {!displayedTrends.length && <p>No qualifying lines (3 confirmed touches required).</p>}
+            {displayedTrends.map(line => <p key={line.id}>{line.kind === "support" ? "Support" : "Resistance"}: {line.edited ? "User edited — original qualification no longer applies" : `${line.touches} touches · ${line.violations} violations · fit ${line.fitATR.toFixed(2)} ATR · evaluated ${formatDate(line.evaluatedAt)}`}</p>)}
+            <p>Drag to edit. Select a line, then use More to delete it. Edits save automatically.</p>
+            <button onClick={() => { if (window.confirm("Reset automatic line edits and deletions for this chart context?")) { trendStore.save({enabled:true, edits:{}}); setSelectedDrawing(null); } }}>Reset auto lines</button>
           </div>}
-        <div className="chart-header-actions"><button className={`auto-trend-toggle${recentStore.value?" active":""}`} aria-label="Recent Trend (Original)" title="Original recent-pivot prototype, 90 sessions" aria-pressed={recentStore.ready&&recentStore.value} disabled={!chartReady||!recentStore.ready||!!recentResult.error} onClick={()=>recentStore.save(!recentStore.value)}><TrendUp size={14}/><span>Recent Trend (Original)</span></button><button className={`auto-trend-toggle${autoTrend?" active":""}`} aria-label="Auto Trendline" disabled={!chartReady || !trendStore.ready || !!trendResult.error} aria-pressed={autoTrend} title="Confirmed pivots · latest 120 sessions · minimum 3 touches" onClick={()=>trendStore.save({...trendStore.value,enabled:!autoTrend})}><TrendUp size={14}/><span>Auto Trendline</span></button><span className="chart-data-state" role="status"><i/>{statusLabel}</span>{onPlan && <button className="chart-accent" onClick={()=>onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol===symbol?{signalId:context.signalId,strategyId:context.strategyId}:{})})}>Create trade plan</button>}<button className="theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} aria-pressed={theme === "dark"} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}><span aria-hidden="true">{theme === "light" ? "Dark" : "Light"}</span></button></div>
+          <button aria-label="Recent Trend (Original)" aria-pressed={recentStore.ready && recentStore.value} disabled={!chartReady || !recentStore.ready || !!recentResult.error} onClick={() => recentStore.save(!recentStore.value)}><TrendUp size={16}/>Recent Trend (Original)<span>{recentStore.ready && recentStore.value ? "On" : "Off"}</span></button>
+          {recentStore.ready && recentStore.value && <div className="chart-evidence" aria-label="Original trendline evidence"><p>Original prototype · 90 sessions · {logScale ? "log-price" : "linear price"}</p>{recentResult.lines.length ? recentResult.lines.map(line => <p key={line.kind}>{line.kind} · {line.touches} touches</p>) : <p>No qualifying recent lines.</p>}</div>}
+        </ChartMenu>
+        <ChartMenu label={<><span className={`chart-status-dot${issues.length || loadState === "error" || payload?.status.freshness !== "fresh" ? " attention" : ""}`}/><span>{issues.length ? "Check" : asOf ? "As of" : mode === "sample" ? "Demo" : "EOD"}</span></>} title="Data and chart status" className="chart-data-menu" {...menuProps("data")}>
+          <strong role="status">{statusLabel}</strong>
+          {localBuild && <label>Data mode<select aria-label="Data mode" value={mode} onChange={event => changeMode(event.target.value as "local" | "sample")}><option value="local">Local EOD</option><option value="sample">Sample demo</option></select></label>}
+          {mode === "local" ? <><label>Price adjustment<select aria-label="Price adjustment" value={adjustment} onChange={event => { setLocalBars([]); setPayload(null); setLoadState("loading"); setAdjustment(event.target.value); }}><option value="all">All adjusted</option><option value="raw">Raw</option></select></label><p>{payload ? `${payload.series.source} · ${payload.status.last_session ?? "No sessions"}${payload.status.freshness === "stale" ? ` · Missing through ${payload.status.expected_session}` : payload.status.freshness === "unknown" ? " · Calendar coverage needs updating" : ""}` : statusLabel}</p><button onClick={() => setRetry(value => value + 1)}>Refresh data</button></> : <p><strong>DEMO · SIMULATED PRICES</strong><br/>These candles do not represent {sampleSymbol} market history. Real EOD data is available in local mode.</p>}
+          {asOf && <div className="chart-evidence"><p>Historical view through {asOf}. Later bars are hidden.</p><button onClick={() => setAsOf(undefined)}>Review later bars</button></div>}
+          {issues.map((issue, index) => <p role="alert" key={index}>{issue}</p>)}
+          {error && mode === "local" && <p role="alert">{error}</p>}
+        </ChartMenu>
+        {onPlan && <button className="chart-command chart-plan" onClick={() => onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol === symbol ? {signalId:context.signalId,strategyId:context.strategyId} : {})})}>Create plan</button>}
+        <ChartMenu label={<DotsThree size={22}/>} title="More chart options" className="chart-more-menu" {...menuProps("more")}>
+          <button onClick={() => setTheme(value => value === "light" ? "dark" : "light")} aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "Dark" : "Light"} theme</button>
+          <div className="chart-studies-overflow">
+            <strong>Studies</strong>
+            <label><input type="checkbox" checked={show20} onChange={e => setShow20(e.target.checked)}/>20 SMA</label>
+            <label><input type="checkbox" checked={show50} onChange={e => setShow50(e.target.checked)}/>50 SMA</label>
+            <label><input type="checkbox" checked={show200} onChange={e => setShow200(e.target.checked)}/>200 SMA</label>
+          </div>
+          <label>Drawing note<input aria-label="Drawing note" value={note} maxLength={120} onChange={event => setNote(event.target.value)}/></label>
+          <button onClick={persistDrawings} disabled={!chartReady}>Save drawings</button>
+          <button disabled={!selectedDrawing} onClick={deleteSelectedDrawing}>Delete selected drawing</button>
+          {onPlan && <button className="chart-plan-overflow" onClick={() => onPlan({symbol,mode,adjustment,asOf,...(context?.signalId && context.symbol === symbol ? {signalId:context.signalId,strategyId:context.strategyId} : {})})}>Create plan</button>}
+          <p>KLineChart · Open-source rendering</p>
+        </ChartMenu>
+        <span className="sr-only" role="status">{issues.length ? issues.join(". ") : asOf ? `Historical view through ${asOf}` : statusLabel}</span>
       </header>
-
-      <div className="chart-sourcebar">
-        {localBuild && <label>Data <select aria-label="Data mode" value={mode} onChange={(event) => changeMode(event.target.value as "local" | "sample")}><option value="local">Local EOD</option><option value="sample">Sample demo</option></select></label>}
-        {mode === "local" ? <><label>Prices <select aria-label="Price adjustment" value={adjustment} onChange={(event) => { setLocalBars([]); setPayload(null); setLoadState("loading"); setAdjustment(event.target.value); }}><option value="all">All adjusted</option><option value="raw">Raw</option></select></label><span>{payload ? `Alpaca SIP · ${payload.status.last_session ?? "No sessions"}${payload.status.freshness === "stale" ? ` · Missing through ${payload.status.expected_session}` : payload.status.freshness === "unknown" ? " · Calendar coverage needs updating" : ""}` : statusLabel}</span><button onClick={() => setRetry((value) => value + 1)}>Refresh</button></> : <span className="chart-demo-disclosure"><strong>DEMO · SIMULATED PRICES</strong><span>These candles do not represent {sampleSymbol} market history. Real EOD data is available in local mode.</span></span>}
-      </div>
-      {asOf && <p className="workspace-notice">Historical view through {asOf}. Later bars are hidden. <button onClick={()=>setAsOf(undefined)}>Review later bars</button></p>}
-      {recentStore.ready&&recentStore.value&&<div className="chart-sourcebar" aria-label="Original trendline evidence"><span>Original prototype · 90 sessions · {logScale?"log-price":"linear price"}</span>{recentResult.lines.length?recentResult.lines.map(line=><span key={line.kind}>{line.kind} · {line.touches} touches</span>):<span role="status">No qualifying recent lines.</span>}</div>}
-      {(recentStore.error||recentResult.error)&&<p role="alert">{recentStore.error||recentResult.error}</p>}
-      {trendStore.error && <p className="workspace-notice" role="alert">{trendStore.error}</p>}
-      {trendResult.error && <p className="workspace-notice" role="alert">{trendResult.error}</p>}
-      {storageError && <p className="workspace-notice" role="alert">{storageError}</p>}
-      <div className="chart-sourcebar"><label>Drawing note <input value={note} maxLength={120} onChange={event=>setNote(event.target.value)}/></label><button onClick={persistDrawings} disabled={!chartReady}>Save drawings</button><button disabled={!selectedDrawing} onClick={deleteSelectedDrawing}>Delete selected drawing</button></div>
-      {autoTrend && <div className="chart-sourcebar" aria-label="Auto trendline evidence">
-        <span>Recent trend · {logScale?"log-price":"linear price"} · 120 sessions</span>
-        {displayedTrends.length===0 && <span role="status">No qualifying lines (3 confirmed touches required).</span>}
-        {displayedTrends.map(line=><span key={line.id} title={line.edited?"User-edited geometry; original qualification no longer applies.":`Evaluated ${formatDate(line.evaluatedAt)} · mean fit ${line.fitATR.toFixed(2)} ATR`}>
-          {line.kind==="support"?"Support":"Resistance"}: {line.edited?"edited":`${line.touches} touches · ${line.violations} violations`}
-        </span>)}
-        <span>Drag to edit · select a line to delete · edits save automatically</span>
-        <button onClick={()=>{if(window.confirm("Reset automatic line edits and deletions for this chart context?")){trendStore.save({enabled:true,edits:{}});setSelectedDrawing(null);}}}>Reset auto lines</button>
-      </div>}
-      <div className="chart-subbar">
-        <div className="chart-ranges">{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}<span>Daily</span></div>
-        <div className="chart-display-controls"><details><summary>Indicators</summary><div className="indicator-popover"><label><input type="checkbox" checked={show20} onChange={(e) => setShow20(e.target.checked)}/>20 SMA</label><label><input type="checkbox" checked={show50} onChange={(e) => setShow50(e.target.checked)}/>50 SMA</label><label><input type="checkbox" checked={show200} onChange={(e) => setShow200(e.target.checked)}/>200 SMA</label></div></details><span>SCALE</span><button className={!logScale ? "active" : ""} onClick={() => setLogScale(false)}>Lin</button><button className={logScale ? "active" : ""} onClick={() => setLogScale(true)}>Log</button><div className="chart-viewport-controls" role="group" aria-label="Chart viewport"><button onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)} aria-label="Zoom out" title="Zoom out">−</button><button onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)} aria-label="Zoom in" title="Zoom in">+</button><button onClick={() => chartRef.current?.scrollByDistance(-120, 160)} aria-label="Move backward" title="Move backward">‹</button><button onClick={() => chartRef.current?.scrollToRealTime(180)} aria-label="Move to latest" title="Move to latest">Latest</button></div></div>
-      </div>
 
       <div className="chart-analysis-body"><div className="chart-stage-area">
         <aside className="drawing-rail" aria-label="Drawing tools">
@@ -549,7 +613,7 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
             const groupActive = group.tools.some((tool) => tool.id === activeTool);
             const isOpen = openToolGroup === group.id;
             return <div className="drawing-tool-group" key={group.id}>
-              <button className={groupActive ? "active" : ""} title={group.label} aria-label={group.label} aria-expanded={isOpen} onClick={() => setOpenToolGroup(isOpen ? null : group.id)}><GroupIcon size={17}/><CaretRight className="drawing-group-caret" size={8}/></button>
+              <button className={groupActive ? "active" : ""} title={group.label} aria-label={group.label} aria-expanded={isOpen} onClick={() => { setOpenMenu(null); setSearchOpen(false); setOpenToolGroup(isOpen ? null : group.id); }}><GroupIcon size={17}/><CaretRight className="drawing-group-caret" size={8}/></button>
               {isOpen && <div className="drawing-tool-menu" role="menu" aria-label={group.label}><div className="drawing-tool-menu-title"><span>{group.label}</span><small>{group.tools.length} tools</small></div>{group.tools.map((tool) => { const ToolIcon = tool.icon; return <button role="menuitem" key={tool.id} className={activeTool === tool.id ? "active" : ""} onClick={() => selectTool(tool.id)}><ToolIcon size={15}/><span>{tool.label}</span></button>; })}</div>}
             </div>;
           })}
@@ -564,10 +628,19 @@ export function ChartDashboard({ onExit, context, onPlan }: { onExit?: () => voi
           {!bars.length && <div className="chart-message" role={loadState === "error" ? "alert" : "status"}><strong>{loadState === "loading" ? "Loading daily bars…" : loadState === "empty" ? "No stored bars for this price series" : "Local data unavailable"}</strong><p>{loadState === "error" ? error : loadState === "empty" ? "Choose another instrument or price adjustment." : "Reading your local EOD data."}</p>{loadState === "error" && <button onClick={() => setRetry((value) => value + 1)}>Retry</button>}</div>}
           {renderError && <div className="drawing-hint" role="alert">Interactive chart unavailable · Static preview <button onClick={() => setRetry((value) => value + 1)}>Retry</button></div>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
           {activeTool === "horizontal" && <p className="drawing-hint">Click the chart to place a price level</p>}
+          <div className="chart-corner-controls">
+            <ChartMenu label={<SlidersHorizontal size={16}/>} title="Chart viewport" className="chart-view-menu" {...menuProps("view")}>
+              <button disabled={!chartReady} onClick={() => chartRef.current?.zoomAtCoordinate(1.25, undefined, 120)}>Zoom in</button>
+              <button disabled={!chartReady} onClick={() => chartRef.current?.zoomAtCoordinate(.8, undefined, 120)}>Zoom out</button>
+              <button disabled={!chartReady} onClick={() => chartRef.current?.scrollByDistance(-120, 160)}>Move backward</button>
+              <button disabled={!chartReady} onClick={() => chartRef.current?.scrollToRealTime(180)}>Move to latest</button>
+              <button disabled={!chartReady} onClick={() => fitViewportRef.current?.()}>Fit selected range</button>
+            </ChartMenu>
+            <button className="chart-scale-toggle" aria-label={`Price scale: ${logScale ? "Logarithmic" : "Linear"}. Switch to ${logScale ? "linear" : "logarithmic"}`} aria-pressed={logScale} onClick={() => setLogScale(value => !value)}>{logScale ? "Log" : "Lin"}</button>
+          </div>
         </div>
       </div>
-      <Watchlist symbol={symbol} onSelect={changeSymbol} sample={mode==="sample"}/></div>
-      <footer className="chart-footer"><span>Daily candles</span><span>Volume</span><strong>KLineChart · Open-source rendering</strong></footer>
+      </div>
     </section>
   );
 }

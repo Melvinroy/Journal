@@ -1,0 +1,81 @@
+/* Chart focus mode. Scoped specificity supersedes the legacy workspace layout. */
+html:has(.chart-layout-v1), body:has(.chart-layout-v1) { height: 100%; overflow: hidden; }
+.app-shell:has(.chart-layout-v1) { grid-template-columns: minmax(0, 1fr); height: 100dvh; min-height: 0; overflow: hidden; }
+.app-shell:has(.chart-layout-v1) > .sidebar { display: none; }
+.workspace.chart-workspace:has(.chart-layout-v1) { width: 100%; height: 100dvh; min-height: 0; padding: 0; overflow: hidden; }
+.workspace.chart-workspace:has(.chart-layout-v1) > .mobile-workspace-tabs,
+.workspace.chart-workspace:has(.chart-layout-v1) > .mobile-review-navigation { display: none; }
+.chart-dashboard.chart-layout-v1 { display: grid; grid-template-rows: 48px minmax(0, 1fr); width: 100%; height: 100dvh; min-height: 0; overflow: hidden; }
+.chart-layout-v1 .chart-commandbar { display: flex; flex-flow: row nowrap; height: 48px; min-height: 48px; min-width: 0; gap: 8px; padding: 0 8px 0 0; z-index: 80; position: relative; }
+.chart-layout-v1 .chart-command, .chart-layout-v1 .chart-search-trigger, .chart-layout-v1 .chart-sample-symbol select { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 10px; border: 1px solid var(--chart-line); border-radius: 5px; background: var(--chart-panel); color: var(--chart-text); font-size: 13px; white-space: nowrap; cursor: pointer; }
+.chart-layout-v1 .chart-command:hover, .chart-layout-v1 .chart-command[aria-expanded="true"] { background: var(--chart-control-hover); }
+.chart-layout-v1 .chart-navigation-menu { width: 48px; height: 48px; display: grid; place-items: center; border-right: 1px solid var(--chart-line); }
+.chart-layout-v1 .chart-navigation-menu > .chart-command { padding: 0; width: 36px; border: 0; }
+.chart-layout-v1 .chart-popover-host { position: relative; flex: 0 0 auto; }
+.chart-layout-v1 .chart-popover { position: absolute; top: calc(100% + 7px); right: 0; z-index: 100; display: flex; flex-direction: column; gap: 10px; width: 300px; max-width: calc(100vw - 64px); max-height: calc(100dvh - 68px); overflow-y: auto; overscroll-behavior: contain; padding: 14px; color: var(--chart-text); background: var(--chart-panel); border: 1px solid var(--chart-line-strong); border-radius: 8px; box-shadow: var(--chart-popover-shadow); font-size: 14px; text-align: left; }
+.chart-layout-v1 .chart-navigation-menu .chart-popover { top: 48px; left: 6px; right: auto; }
+.chart-layout-v1 .chart-popover button { flex-shrink: 0; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--chart-line); border-radius: 5px; color: var(--chart-text); background: var(--chart-control); text-align: left; font-size: 14px; cursor: pointer; }
+.chart-layout-v1 .chart-popover button:hover { background: var(--chart-control-hover); }
+.chart-layout-v1 .chart-popover button[aria-pressed="true"] { border-color: var(--chart-accent); background: var(--chart-control-hover); }
+.chart-layout-v1 .chart-popover button > span:last-child { margin-left: auto; }
+.chart-layout-v1 .chart-popover label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.chart-layout-v1 .chart-popover input:not([type="checkbox"]), .chart-layout-v1 .chart-popover select { min-width: 0; width: 100%; min-height: 34px; padding: 5px 8px; border: 1px solid var(--chart-line-strong); border-radius: 4px; color: var(--chart-text); background: var(--chart-control); font: inherit; }
+.chart-layout-v1 .chart-popover input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--chart-accent); }
+.chart-layout-v1 .chart-popover p { margin: 0; line-height: 1.5; font-size: 13px; overflow-wrap: anywhere; }
+.chart-layout-v1 .chart-evidence { display: grid; gap: 8px; padding-block: 10px; border-block: 1px solid var(--chart-line); }
+.chart-layout-v1 .chart-count { padding: 1px 5px; border-radius: 4px; background: var(--chart-control-hover); font-size: 12px; }
+.chart-layout-v1 .chart-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--chart-accent); }
+.chart-layout-v1 .chart-status-dot.attention { background: #ba8518; }
+.chart-layout-v1 .chart-symbol-search { flex: 0 0 auto; min-width: 0; }
+.chart-layout-v1 .chart-search-trigger { width: auto; }
+.chart-layout-v1 .chart-quote { display: flex; align-items: center; gap: 8px; flex: 1 1 160px; overflow: hidden; min-width: 0; font-size: 13px; white-space: nowrap; }
+.chart-layout-v1 .chart-company { overflow: hidden; text-overflow: ellipsis; color: var(--chart-text-soft); }
+.chart-layout-v1 .chart-quote b, .chart-layout-v1 .chart-quote .up, .chart-layout-v1 .chart-quote .down { flex-shrink: 0; }
+.chart-layout-v1 .up { color: #11804b; }
+.chart-layout-v1 .down { color: #c33c49; }
+.chart-layout-v1.theme-dark .up { color: #38c985; }
+.chart-layout-v1.theme-dark .down { color: #ef6a72; }
+.chart-layout-v1 .chart-plan { background: var(--chart-accent); color: white; border-color: var(--chart-accent); }
+.chart-layout-v1 .chart-more-menu .chart-plan-overflow { display: none; }
+.chart-layout-v1 .chart-studies-overflow { display: none; }
+.chart-layout-v1 .chart-analysis-body { display: block; min-width: 0; min-height: 0; height: 100%; }
+.chart-layout-v1 .chart-stage-area { display: grid; grid-template-columns: 48px minmax(0, 1fr); height: 100%; min-height: 0; }
+.chart-layout-v1 .drawing-rail { min-height: 0; padding: 6px; gap: 4px; }
+.chart-layout-v1 .drawing-rail > button, .chart-layout-v1 .drawing-tool-group > button { width: 35px; height: 35px; flex-shrink: 0; }
+.chart-layout-v1 .drawing-tool-menu { left: 42px; width: 272px; max-width: calc(100vw - 62px); grid-template-columns: 1fr; max-height: min(420px, calc(100dvh - 180px)); }
+.chart-layout-v1 .drawing-tool-menu-title span, .chart-layout-v1 .drawing-rail .drawing-tool-menu button { font-size: 14px; }
+.chart-layout-v1 .drawing-rail .drawing-tool-menu button { height: 34px; }
+.chart-layout-v1 .drawing-tool-menu-title small { font-size: 12px; }
+.chart-layout-v1 .chart-canvas-shell { min-height: 0; height: 100%; }
+.chart-layout-v1 .chart-ohlc { top: 9px; right: 75px; font-size: 12px; gap: 9px; white-space: nowrap; flex-wrap: nowrap; overflow: hidden; }
+.chart-layout-v1 .chart-ohlc strong { font-size: 12px; }
+.chart-layout-v1 .chart-legend { top: 30px; font-size: 11px; }
+.chart-layout-v1 .drawing-hint { bottom: 36px; font-size: 12px; max-width: calc(100% - 100px); }
+.chart-layout-v1 .chart-corner-controls { position: absolute; z-index: 12; right: 0; bottom: 0; width: 58px; display: flex; flex-direction: row; align-items: center; gap: 0; background: var(--chart-panel); }
+.chart-layout-v1 .chart-corner-controls .chart-command { width: 28px; height: 23px; padding: 0; border-radius: 0; }
+.chart-layout-v1 .chart-scale-toggle { width: 30px; height: 23px; padding: 0; border: 0; border-top: 1px solid var(--chart-line); background: var(--chart-panel); color: var(--chart-text); font-size: 12px; cursor: pointer; }
+.chart-layout-v1 .chart-view-menu .chart-popover { top: auto; bottom: calc(100% + 6px); right: 0; width: 205px; }
+.chart-layout-v1 .chart-search-popover { left: 0; top: 42px; width: 360px; max-width: calc(100vw - 66px); max-height: calc(100dvh - 65px); overflow-y: auto; font-size: 14px; }
+.chart-layout-v1 .chart-search-popover input, .chart-layout-v1 .chart-search-popover button { font-size: 14px; min-height: 36px; }
+.chart-layout-v1 .chart-search-popover small { font-size: 12px; }
+.chart-layout-v1 .chart-demo-watermark { pointer-events: none; }
+.chart-layout-v1 button:disabled { opacity: .45; cursor: default; }
+.chart-layout-v1 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 1100px) {
+  .chart-layout-v1 .chart-company { display: none; }
+}
+@media (max-width: 760px) {
+  .chart-layout-v1 .chart-commandbar { gap: 5px; padding-right: 5px; }
+  .chart-layout-v1 .chart-quote, .chart-layout-v1 .chart-plan { display: none; }
+  .chart-layout-v1 .chart-more-menu { margin-left: auto; }
+  .chart-layout-v1 .chart-more-menu .chart-plan-overflow { display: flex; }
+  .chart-layout-v1 .chart-popover:not(.chart-view-menu .chart-popover) { position: fixed; top: 52px; left: 54px; right: 6px; width: auto; max-width: none; }
+  .chart-layout-v1 .chart-ohlc { font-size: 11px; }
+}
+@media (max-width: 480px) {
+  .chart-layout-v1 .chart-studies-menu { display: none; }
+  .chart-layout-v1 .chart-studies-overflow { display: grid; gap: 10px; padding-block: 8px; border-block: 1px solid var(--chart-line); }
+  .chart-layout-v1 .chart-command, .chart-layout-v1 .chart-search-trigger, .chart-layout-v1 .chart-sample-symbol select { padding-inline: 5px; font-size: 12px; }
+  .chart-layout-v1 .chart-command svg:last-child:not(:only-child) { display: none; }
+  .chart-layout-v1 .chart-ohlc > span:not(:first-child), .chart-layout-v1 .chart-ohlc > strong { display: none; }
+}
