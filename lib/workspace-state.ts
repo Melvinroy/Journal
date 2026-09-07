@@ -1,4 +1,4 @@
-export type MarketContext = { symbol: string; mode: "sample" | "local"; adjustment: string; asOf?: string; signalId?: string; strategyId?: string };
+export type MarketContext = { symbol: string; mode: "sample" | "local"; adjustment: string; asOf?: string; signalId?: string; strategyId?: string; tradeDraft?: { side:"Long"; entry:number; stop:number; targets:number[] } };
 export type WatchItem = { symbol: string; note: string };
 export const WATCH_KEY = "brontide-watchlist-v1";
 export function validWatchlist(value:unknown):value is WatchItem[] {

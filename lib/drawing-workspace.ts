@@ -70,6 +70,16 @@ export function riskReward(points: DrawingPoint[]) {
     throw new Error("Long position needs stop < entry < target, all above zero.");
   return { risk: entry! - stop!, reward: target! - entry!, ratio: (target! - entry!) / (entry! - stop!) };
 }
+export function riskRewardDetails(points: DrawingPoint[], options: { targets?: number[]; accountSize?: number; riskPercent?: number } = {}) {
+  const base = riskReward(points), entry = points[0].value!, stop = points[1].value!, firstTarget = points[2].value!;
+  const targets = [firstTarget, ...(options.targets ?? [])].filter((value, index, rows) => finite(value) && value > entry && rows.indexOf(value) === index).slice(0, 3);
+  const allowedRisk = finite(options.accountSize) && options.accountSize! > 0 && finite(options.riskPercent) && options.riskPercent! > 0
+    ? options.accountSize! * options.riskPercent! / 100 : undefined;
+  return { direction: "long" as const, entry, stop, targets, risk: base.risk,
+    stopPercent: 100 * base.risk / entry,
+    rewards: targets.map(target => ({ target, reward: target - entry, rewardPercent: 100 * (target - entry) / entry, ratio: (target - entry) / base.risk })),
+    allowedRisk, shares: allowedRisk === undefined ? undefined : Math.floor(allowedRisk / base.risk) };
+}
 function sessionRange(points: DrawingPoint[], bars: StudyBar[]) {
   const indices = points.map(p => bars.findIndex(b => b.timestamp === p.timestamp));
   if (indices.length < 2 || indices.some(i => i < 0) || indices[0] >= indices[1])
@@ -80,6 +90,12 @@ export function dateMeasurement(points: DrawingPoint[], bars: StudyBar[]) {
   const [start, end] = sessionRange(points, bars);
   return { sessions: end - start + 1, intervals: end - start,
     days: (bars[end].timestamp - bars[start].timestamp) / 86400000 };
+}
+export function priceDateMeasurement(points: DrawingPoint[], bars: StudyBar[]) {
+  const [a, b] = points.map(point => point.value);
+  if (!finite(a) || !finite(b) || a <= 0 || b <= 0) throw new Error("Price measurement needs two positive prices.");
+  const date = dateMeasurement(points, bars);
+  return { ...date, start: a, end: b, change: b - a, percent: 100 * (b / a - 1) };
 }
 export function contractions(points: DrawingPoint[], bars: StudyBar[]) {
   if (points.length !== 6) throw new Error("Mark three high-to-low contractions (six anchors).");
@@ -93,16 +109,36 @@ export function contractions(points: DrawingPoint[], bars: StudyBar[]) {
   });
   return { depths, tightening: depths[0] > depths[1] && depths[1] > depths[2] };
 }
+export function contractionMetrics(points: DrawingPoint[], bars: StudyBar[]) {
+  if (points.length < 4 || points.length > 10 || points.length % 2) throw new Error("Mark two to five high-to-low contraction pairs.");
+  const pairs = Array.from({ length: points.length / 2 }, (_, index) => {
+    const highPoint = points[index * 2], lowPoint = points[index * 2 + 1];
+    const range = dateMeasurement([highPoint, lowPoint], bars);
+    if (!finite(highPoint.value) || !finite(lowPoint.value) || lowPoint.value! <= 0 || highPoint.value! <= lowPoint.value!) throw new Error("Each contraction needs a high followed by a lower, positive price.");
+    const depth = 100 * (highPoint.value! - lowPoint.value!) / highPoint.value!;
+    return { label: `C${index + 1}`, high: highPoint.value!, low: lowPoint.value!, depth, sessions: range.sessions, intervals: range.intervals };
+  });
+  return { pairs: pairs.map((pair, index) => ({ ...pair, relativeToPrevious: index ? pair.depth / pairs[index - 1].depth : undefined })),
+    tightening: pairs.every((pair, index) => index === 0 || pair.depth < pairs[index - 1].depth) };
+}
 export function anchoredVWAP(timestamp: number | undefined, bars: StudyBar[]) {
+  return anchoredVWAPBands(timestamp, bars).map(({ timestamp: time, value }) => ({ timestamp: time, value }));
+}
+export function anchoredVWAPBands(timestamp: number | undefined, bars: StudyBar[]) {
   const start = bars.findIndex(b => b.timestamp === timestamp);
   if (start < 0) throw new Error("Anchor session is outside loaded history.");
-  let volume = 0, weighted = 0;
+  let volume = 0, weighted = 0, weightedSquare = 0;
   return bars.slice(start).map(bar => {
     if (!finite(bar.volume) || bar.volume < 0 || ![bar.high, bar.low, bar.close].every(v => finite(v) && v > 0))
       throw new Error("VWAP unavailable: complete price and volume data is required.");
     volume += bar.volume;
-    weighted += (bar.high + bar.low + bar.close) / 3 * bar.volume;
-    return { timestamp: bar.timestamp, value: volume ? weighted / volume : undefined };
+    const typical = (bar.high + bar.low + bar.close) / 3;
+    weighted += typical * bar.volume; weightedSquare += typical * typical * bar.volume;
+    const value = volume ? weighted / volume : undefined;
+    const deviation = value === undefined ? undefined : Math.sqrt(Math.max(0, weightedSquare / volume - value * value));
+    return { timestamp: bar.timestamp, value, deviation,
+      upper1: value === undefined ? undefined : value + deviation!, lower1: value === undefined ? undefined : value - deviation!,
+      upper2: value === undefined ? undefined : value + 2 * deviation!, lower2: value === undefined ? undefined : value - 2 * deviation! };
   });
 }
 // OLS on closes in session order. Population residual deviation, fixed +/-2 sigma.
@@ -116,19 +152,23 @@ export function regressionChannel(points: DrawingPoint[], bars: StudyBar[]) {
   const slope = rows.reduce((s, b, i) => s + (i - meanX) * (b.close - meanY), 0) / denominator;
   const intercept = meanY - slope * meanX;
   const sigma = Math.sqrt(rows.reduce((s, b, i) => s + (b.close - intercept - slope * i) ** 2, 0) / n);
-  return { slope, sigma, series: rows.map((b, i) => ({ timestamp: b.timestamp, value: intercept + slope * i })) };
+  const residual = rows.reduce((s, b, i) => s + (b.close - intercept - slope * i) ** 2, 0);
+  const total = rows.reduce((s, b) => s + (b.close - meanY) ** 2, 0);
+  return { slope, sigma, period: n, rSquared: total === 0 ? 1 : 1 - residual / total,
+    series: rows.map((b, i) => ({ timestamp: b.timestamp, value: intercept + slope * i })) };
 }
 export function drawingEvidence(drawing: Pick<Drawing, "name" | "points">, bars: StudyBar[]): string {
   try {
-    if (drawing.name === "brontide-position") { const r = riskReward(drawing.points); return `Risk ${r.risk.toFixed(2)} · Reward ${r.reward.toFixed(2)} · ${r.ratio.toFixed(2)}R`; }
+    if (drawing.name === "brontide-position") { const r = riskRewardDetails(drawing.points); return `Entry ${r.entry.toFixed(2)} · Stop ${r.stop.toFixed(2)} (${r.stopPercent.toFixed(2)}%) · T1 ${r.targets[0].toFixed(2)} · ${r.rewards[0].ratio.toFixed(2)}R`; }
     if (drawing.name === "brontide-date") { const r = dateMeasurement(drawing.points, bars); return `${r.sessions} sessions (inclusive) · ${r.intervals} intervals · ${r.days.toFixed(0)} calendar days`; }
-    if (drawing.name === "brontide-contraction") { const r = contractions(drawing.points, bars); return `${r.depths.map(d => d.toFixed(1) + "%").join(" → ")} · ${r.tightening ? "Contracting" : "Not contracting"} · manual markup`; }
+    if (drawing.name === "brontide-contraction") { const r = contractionMetrics(drawing.points, bars); return `${r.pairs.map(pair => `${pair.label} ${pair.depth.toFixed(1)}%/${pair.sessions} bars`).join(" → ")} · ${r.tightening ? "Contracting" : "Not contracting"} · manual markup`; }
     if (drawing.name === "brontide-vwap") { const r = anchoredVWAP(drawing.points[0]?.timestamp, bars).at(-1); return r?.value === undefined ? "Unavailable: cumulative volume is zero." : `Anchored VWAP ${r.value.toFixed(2)} · typical price × volume`; }
-    if (drawing.name === "brontide-regression") { const r = regressionChannel(drawing.points, bars); return `Close regression · ±2σ (${(2 * r.sigma).toFixed(2)}) · slope ${r.slope.toFixed(3)}/session`; }
     if (drawing.name === "brontide-measure") {
       const [a, b] = drawing.points.map(p => p.value);
       return finite(a) && a !== 0 && finite(b) ? `${(b - a).toFixed(2)} · ${((b / a - 1) * 100).toFixed(2)}%` : "Unavailable: a nonzero start price is required.";
     }
+    if (["brontide-date-price", "brontide-info"].includes(drawing.name)) { const r = priceDateMeasurement(drawing.points, bars); return `${r.change.toFixed(2)} · ${r.percent.toFixed(2)}% · ${r.sessions} bars · ${r.days.toFixed(0)} days`; }
+    if (drawing.name === "brontide-regression") { const r = regressionChannel(drawing.points, bars); return `Close regression · ${r.period} bars · R² ${r.rSquared.toFixed(3)} · σ ${r.sigma.toFixed(2)} · slope ${r.slope.toFixed(3)}`; }
     return "Anchors save by session and price. Drag handles or edit values below.";
   } catch (error) { return `Unavailable: ${(error as Error).message}`; }
 }

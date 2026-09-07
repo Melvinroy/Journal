@@ -5,7 +5,7 @@ import ts from 'typescript';
 const compiled = ts.transpileModule(readFileSync(new URL('../lib/drawing-workspace.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { decodeDrawings, drawingHistory, changeDrawings, travelDrawings, duplicateDrawing, reorderDrawing, updateDrawings, riskReward, dateMeasurement, contractions, anchoredVWAP, regressionChannel, drawingEvidence } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { decodeDrawings, drawingHistory, changeDrawings, travelDrawings, duplicateDrawing, reorderDrawing, updateDrawings, riskReward, riskRewardDetails, dateMeasurement, priceDateMeasurement, contractions, contractionMetrics, anchoredVWAP, anchoredVWAPBands, regressionChannel, drawingEvidence } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const day = 86400000;
 const bars = [0, 1, 4, 5, 6, 7].map((d, i) => ({ timestamp: Date.UTC(2026, 8, 3) + d * day, high: 10 + i * 2, low: 10 + i * 2, close: 10 + i * 2, volume: i ? 300 : 100 }));
 const anchors = (first, last) => [{ timestamp: bars[first].timestamp, value: 10 }, { timestamp: bars[last].timestamp, value: 20 }];
@@ -51,9 +51,19 @@ test('long position gives 2R for entry 100, stop 95, target 110', () => {
   assert.deepEqual(riskReward([100,95,110].map(value=>({value}))),{risk:5,reward:10,ratio:2});
   for (const values of [[100,100,110],[100,105,110],[100,95,90],[0,-5,10],[100,NaN,110]]) assert.throws(()=>riskReward(values.map(value=>({value}))));
 });
+test('long risk/reward reports percentages, three targets and optional position size',()=>{
+  const r=riskRewardDetails([100,95,110].map(value=>({value})),{targets:[115,120,115],accountSize:10000,riskPercent:1});
+  assert.equal(r.stopPercent,5); assert.equal(r.allowedRisk,100); assert.equal(r.shares,20);
+  assert.deepEqual(r.targets,[110,115,120]); assert.deepEqual(r.rewards.map(row=>row.ratio),[2,3,4]);
+  assert.equal(riskRewardDetails([100,95,110].map(value=>({value}))).shares,undefined);
+});
 test('date measurement counts loaded sessions inclusively and calendar weekends separately', () => {
   assert.deepEqual(dateMeasurement(anchors(0,2),bars),{sessions:3,intervals:2,days:4});
   assert.throws(()=>dateMeasurement(anchors(2,0),bars)); assert.throws(()=>dateMeasurement([{timestamp:1},anchors(0,2)[1]],bars));
+});
+test('combined price/date measurement reports exact price, percentage, bars and dates',()=>{
+  assert.deepEqual(priceDateMeasurement(anchors(0,2),bars),{start:10,end:20,change:10,percent:100,sessions:3,intervals:2,days:4});
+  assert.throws(()=>priceDateMeasurement([{...anchors(0,2)[0],value:0},anchors(0,2)[1]],bars));
 });
 test('manual contractions expose 20%, 10%, 5% without inventing a setup signal', () => {
   const points=[100,80,100,90,100,95].map((value,i)=>({timestamp:bars[i].timestamp,value}));
@@ -61,6 +71,19 @@ test('manual contractions expose 20%, 10%, 5% without inventing a setup signal',
   assert.equal(contractions(points.map((p,i)=>i===5?{...p,value:70}:p),bars).tightening,false);
   assert.throws(()=>contractions(points.slice(0,4),bars));
   assert.throws(()=>contractions(points.map((p,i)=>i===1?{...p,timestamp:bars[0].timestamp}:p),bars));
+});
+test('two-to-five manual contraction pairs report duration, relative depth and deterministic labels',()=>{
+  const points=[100,80,100,90,100,95].map((value,i)=>({timestamp:bars[i].timestamp,value}));
+  const r=contractionMetrics(points,bars); assert.deepEqual(r.pairs.map(row=>row.label),['C1','C2','C3']);
+  assert.deepEqual(r.pairs.map(row=>row.sessions),[2,2,2]); assert.equal(r.pairs[1].relativeToPrevious,.5); assert.equal(r.pairs[2].relativeToPrevious,.5); assert.equal(r.tightening,true);
+  assert.deepEqual(contractionMetrics(points.slice(0,4),bars).pairs.map(row=>row.label),['C1','C2']);
+  const fivePairs=Array.from({length:5},(_,index)=>[
+    {timestamp:Date.UTC(2026,8,14+index*2),value:100},
+    {timestamp:Date.UTC(2026,8,15+index*2),value:80+index*4},
+  ]).flat();
+  const fiveBars=Array.from({length:10},(_,index)=>({timestamp:Date.UTC(2026,8,14+index),high:100,low:80,close:90,volume:100}));
+  assert.deepEqual(contractionMetrics(fivePairs,fiveBars).pairs.map(row=>row.label),['C1','C2','C3','C4','C5']);
+  assert.throws(()=>contractionMetrics(points.slice(0,2),bars)); assert.throws(()=>contractionMetrics([...points,...points],bars));
 });
 test('anchored daily VWAP weights typical price by volume, excluding earlier history', () => {
   const rows=[{timestamp:1,high:12,low:8,close:10,volume:100},{timestamp:2,high:14,low:10,close:12,volume:300}];
@@ -70,10 +93,16 @@ test('anchored daily VWAP weights typical price by volume, excluding earlier his
   assert.equal(anchoredVWAP(1,[{...rows[0],volume:0}])[0].value,undefined);
   assert.throws(()=>anchoredVWAP(3,rows));
 });
+test('anchored VWAP bands use cumulative volume-weighted population deviation',()=>{
+  const rows=[{timestamp:1,high:12,low:8,close:10,volume:100},{timestamp:2,high:14,low:10,close:12,volume:300}];
+  const last=anchoredVWAPBands(1,rows).at(-1); assert.equal(last.value,11.5); assert.ok(Math.abs(last.deviation-Math.sqrt(.75))<1e-12);
+  assert.equal(last.upper1,last.value+last.deviation); assert.equal(last.lower2,last.value-2*last.deviation);
+});
 test('regression uses session indices, fixed sample range, and population residual deviation', () => {
   const exact=regressionChannel(anchors(0,5),bars); assert.equal(exact.slope,2); assert.equal(exact.sigma,0); assert.equal(exact.series.at(-1).value,20);
   const noisy=[2,1,4].map((close,i)=>({...bars[i],close}));
   const r=regressionChannel(anchors(0,2),noisy); assert.equal(r.slope,1); assert.ok(Math.abs(r.sigma-Math.sqrt(8/9))<1e-10);
+  assert.equal(r.period,3); assert.ok(Math.abs(r.rSquared-3/7)<1e-12);
   assert.deepEqual(regressionChannel(anchors(0,2),bars),regressionChannel(anchors(0,2),bars.slice(0,3)));
   assert.throws(()=>regressionChannel(anchors(0,1),bars));
 });

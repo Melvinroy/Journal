@@ -10,9 +10,10 @@ const groupId = "brontide-drawings";
 const modeFor = (snap: SnapPreference) => snap === "off" ? "normal" as const : `${snap}_magnet` as const;
 
 export function useDrawingController({ chartRef, generation, storageKey, bars, visibleCount, snap, keepDrawing,
-  onSelect, onFinish, onContextMenu, onProperties }: {
+  eraserMode, onSelect, onFinish, onContextMenu, onProperties }: {
   chartRef: RefObject<Chart | null>; generation: number; storageKey: string; bars: StudyBar[];
   visibleCount: number; snap: SnapPreference; keepDrawing: boolean;
+  eraserMode: boolean;
   onSelect: (id: string | null) => void; onFinish: () => void;
   onContextMenu?: (id: string, point: { x: number; y: number }) => void; onProperties?: (id: string) => void;
 }) {
@@ -24,8 +25,8 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
   const restoring = useRef(false);
   const activeSpec = useRef<{ name: string; note: string } | null>(null);
   const repeat = useRef<{ name: string; note: string } | null>(null);
-  const current = useRef({ store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, snap });
-  current.current = { store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, snap };
+  const current = useRef({ store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, eraserMode, snap });
+  current.current = { store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, eraserMode, snap };
 
   const cancel = () => {
     if (!draft.current) return false;
@@ -54,7 +55,8 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
       return false;
     };
     return {
-      onSelected: ({ overlay }) => { if (valid()) current.current.onSelect(overlay.id); },
+      onSelected: ({ overlay }) => { if (valid() && !current.current.eraserMode) current.current.onSelect(overlay.id); },
+      onClick: ({ overlay, preventDefault }) => { if (!valid() || !current.current.eraserMode) return; preventDefault?.(); current.current.store.change(rows => rows.filter(row => row.id !== overlay.id || row.lock)); current.current.onSelect(null); },
       onDeselected: () => { if (valid() && !draft.current && !restoring.current) current.current.onSelect(null); },
       onDrawEnd: ({ overlay }) => {
         draft.current = null;
@@ -68,10 +70,11 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
   };
   const begin = (chart: Chart, name: string, note: string) => {
     activeSpec.current = { name, note };
+    const annotation = ["simpleAnnotation","simpleTag","brontide-text","brontide-callout"].includes(name);
     const created = chart.createOverlay({ id: `drawing-${crypto.randomUUID()}`, name, groupId, paneId: "candle_pane",
       mode: modeFor(current.current.snap), needDefaultPointFigure: true,
-      styles: { line: { color: "#4586c9", size: 2, style: "solid" } },
-      extendData: name.startsWith("brontide-") ? { history: current.current.bars } : name === "simpleAnnotation" ? note : undefined,
+      styles: { line: { color: name === "brontide-highlighter" ? "rgba(245, 190, 40, .34)" : "#4586c9", size: name === "brontide-highlighter" ? 14 : 2, style: "solid" } },
+      extendData: name.startsWith("brontide-") ? { history: current.current.bars, ...(annotation ? { saved: { text: note } } : {}) } : annotation ? note : undefined,
       ...callbacks(chart, current.current.storageKey) });
     draft.current = typeof created === "string" ? created : null;
     return !!draft.current;

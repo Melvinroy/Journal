@@ -60,6 +60,10 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
   const [targetCount, setTargetCount] = useState<ExitCount>(2);
   const [stopCount, setStopCount] = useState<ExitCount>(1);
   const [runnerEnabled, setRunnerEnabled] = useState(true);
+  const [importedTargets, setImportedTargets] = useState<number[] | null>(null);
+  const [contextImportPending, setContextImportPending] = useState(false);
+
+  useEffect(() => setContextImportPending(false), [context]);
 
   useEffect(() => {
     try {
@@ -112,7 +116,8 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
 
   const runnerShares = runnerEnabled ? Math.floor(result.shares * .3) : 0;
   const targetShares = distributeShares(Math.max(0, result.shares - runnerShares), targetCount);
-  const targetPrices = [result.oneRPrice, result.twoRPrice, entryPrice + (side === "Long" ? 1 : -1) * result.riskPerShare * 3];
+  const calculatedTargets = [result.oneRPrice, result.twoRPrice, entryPrice + (side === "Long" ? 1 : -1) * result.riskPerShare * 3];
+  const targetPrices = calculatedTargets.map((value,index)=>importedTargets?.[index]??value);
   const allocationLimited = result.valid && result.sharesByAllocation < result.sharesByRisk;
 
   function saveSettings() {
@@ -129,6 +134,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
       symbol: symbol.trim().toUpperCase(), side, entryPrice, stopPrice, stopSource,
       accountEquity, riskPercent, maxAllocationPercent, result,
       exitPlan: { targetCount, stopCount, runnerEnabled, targetShares, runnerShares },
+      targetPrices: targetPrices.slice(0,targetCount),
       savedAt: new Date().toISOString(),
     }));
     setStageState("staged");
@@ -193,7 +199,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
           <button type="button" onClick={() => setSettingsOpen(true)}>Change</button>
         </div>
       </header>
-      {context && <p className="workspace-notice">Chart context: {context.symbol} · {context.mode} · {context.adjustment}{context.asOf?` · ${context.asOf}`:""}. Existing saved plan was not changed. <button onClick={()=>{if(window.confirm("Use this instrument for the current draft? Saved plan will become a draft.")){editPlan();setSymbol(context.symbol);setEntryPrice(0);setStopPrice(0);}}}>Use instrument</button> <button onClick={()=>onChart?.(context)}>Open chart</button></p>}
+      {context && <p className="workspace-notice">Chart context: {context.symbol} · {context.mode} · {context.adjustment}{context.asOf?` · ${context.asOf}`:""}{context.tradeDraft?` · long ${price(context.tradeDraft.entry)} / stop ${price(context.tradeDraft.stop)} / ${context.tradeDraft.targets.length} target${context.tradeDraft.targets.length===1?"":"s"}`:""}. Existing saved plan was not changed. {!contextImportPending?<button onClick={()=>setContextImportPending(true)}>{context.tradeDraft?"Load drawing":"Use instrument"}</button>:<span role="alert"> Load into the current draft? <button onClick={()=>{editPlan();setSymbol(context.symbol);setSide(context.tradeDraft?.side??"Long");setEntryPrice(context.tradeDraft?.entry??0);setStopPrice(context.tradeDraft?.stop??0);setStopSource(context.tradeDraft?"Manual":"LoD");setImportedTargets(context.tradeDraft?.targets??null);if(context.tradeDraft?.targets.length)setTargetCount(Math.min(3,context.tradeDraft.targets.length) as ExitCount);setContextImportPending(false);}}>Confirm import</button> <button onClick={()=>setContextImportPending(false)}>Cancel</button></span>} <button onClick={()=>onChart?.(context)}>Open chart</button></p>}
 
       <section className="trade-actionbar" aria-label="Quick trade actions">
         <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={stageState === "draft" && (!result.valid || !symbol.trim())} onClick={stageState === "staged" ? cancelStage : stageEntry}>

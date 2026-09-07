@@ -3,10 +3,11 @@ import { Copy, DotsThree, Eye, EyeSlash, Lock, LockOpen, Trash, X } from "@phosp
 import { DrawingEditor } from "./DrawingEditor";
 import type { Drawing, StudyBar } from "../lib/drawing-workspace";
 
-export function DrawingContextToolbar({ drawings, bars, unavailable, position, propertiesOpen, close, more, updateMany, update, duplicate, removeMany, remove }: {
+export function DrawingContextToolbar({ drawings, bars, unavailable, position, propertiesOpen, close, more, updateMany, update, duplicate, removeMany, remove, sendToPlan }: {
   drawings: Drawing[]; bars: StudyBar[]; unavailable: string[]; position?: { left: number; top: number }; propertiesOpen: boolean; close: () => void; more: () => void;
   updateMany: (ids: string[], patch: Partial<Drawing>) => boolean; update: (id: string, patch: Partial<Drawing>) => boolean;
   duplicate: (id: string) => boolean; removeMany: (ids: string[]) => boolean; remove: (id: string) => boolean;
+  sendToPlan?: (draft:{entry:number;stop:number;targets:number[]})=>void;
 }) {
   if (!drawings.length) return null;
   const ids = drawings.map(row => row.id), primary = drawings.at(-1)!;
@@ -26,7 +27,7 @@ export function DrawingContextToolbar({ drawings, bars, unavailable, position, p
     <button title="Close" aria-label="Close drawing toolbar" onClick={close}><X size={15}/></button>
     {propertiesOpen && drawings.length === 1 && <div className="drawing-context-properties" role="dialog" aria-label="Drawing properties">
       <strong>Drawing properties</strong>
-      <DrawingEditor key={`${primary.id}:${JSON.stringify(primary.points)}:${String(primary.extendData)}`} drawing={primary} bars={bars} unavailable={unavailable.includes(primary.id)} update={update} remove={remove}/>
+      <DrawingEditor key={`${primary.id}:${JSON.stringify(primary.points)}:${JSON.stringify(primary.extendData)}`} drawing={primary} bars={bars} unavailable={unavailable.includes(primary.id)} update={update} remove={remove} sendToPlan={sendToPlan}/>
     </div>}
     {propertiesOpen && drawings.length > 1 && <div className="drawing-context-properties"><p>Common settings are available in the toolbar. Open one object for coordinates and tool-specific properties.</p></div>}
   </div>;

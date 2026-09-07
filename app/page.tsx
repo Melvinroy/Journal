@@ -680,7 +680,7 @@ export default function Home() {
           <div hidden={!originalPlanner}><TradePlanner demo={demoMode} context={planContext} onChart={openChart}/></div>
           <div hidden={originalPlanner}><TradingWorkspace demo={demoMode} context={planContext} onChart={openChart}/></div>
         </div>
-        {active === "Charts" && <ChartDashboard navigation={[...nav.map(([label])=>({label,onSelect:()=>navigate(label)})),...reviewLinks.map(label=>({label:`Review: ${label}`,onSelect:()=>openRecovered(label)})),...(!demoMode?[{label:"Cloud settings",onSelect:()=>setSettingsOpen(true)}]:[])]} context={chartContext} onExit={()=>selectView("Scans")} onPlan={context=>{setPlanContext({...context});selectView("Trade",false);}}/>}
+        {active === "Charts" && <ChartDashboard navigation={[...nav.map(([label])=>({label,onSelect:()=>navigate(label)})),...reviewLinks.map(label=>({label:`Review: ${label}`,onSelect:()=>openRecovered(label)})),...(!demoMode?[{label:"Cloud settings",onSelect:()=>setSettingsOpen(true)}]:[])]} context={chartContext} onExit={()=>selectView("Scans")} onPlan={context=>{setPlanContext({...context});selectView("Trade",!!context.tradeDraft);}}/>}
         <div hidden={active!=="Scans"}><ResearchWorkspace originalRequest={originalRequests.scan} demo={demoMode} kind="scan" onChart={openChart}/></div>
         <div hidden={active!=="Backtest"}><ResearchWorkspace originalRequest={originalRequests.backtest} demo={demoMode} kind="backtest" onChart={openChart}/></div>
         <div className="journal-content" hidden={active!=="Journal"}>

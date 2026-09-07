@@ -206,7 +206,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   const drawingPreferences = useDrawingPreferences();
   const drawings = useDrawingController({ chartRef, generation: chartGeneration,
     storageKey: chartStorageKey({ symbol, mode, adjustment }), bars: allBars, visibleCount: bars.length,
-    snap: drawingPreferences.ready ? drawingPreferences.value.snap : "off", keepDrawing: drawingPreferences.value.keepDrawing,
+    snap: drawingPreferences.ready ? drawingPreferences.value.snap : "off", keepDrawing: drawingPreferences.value.keepDrawing, eraserMode: activeTool === "eraser",
     onSelect: id => { setSelectedDrawing(id); setSelectedDrawingIds(id ? [id] : []); if (!id) setDrawingPropertiesOpen(false); },
     onFinish: () => setActiveTool("select"), onContextMenu: () => setDrawingPropertiesOpen(false),
     onProperties: () => setDrawingPropertiesOpen(true) });
@@ -531,6 +531,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
     const definition = DRAWING_TOOL_BY_ID.get(tool);
     if (!definition || (tool !== "select" && !definition.overlay)) return;
     if (tool === "select") { setActiveTool("select"); rememberTool(tool); return; }
+    if (tool === "eraser") { setActiveTool("eraser"); rememberTool(tool); return; }
     if (definition.overlay && drawings.start(definition.overlay, note)) { setActiveTool(tool); rememberTool(tool); }
   };
   const toggleFavorite = (tool: DrawingToolId) => {
@@ -654,7 +655,8 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
           {renderError && <div className="drawing-hint" role="alert">Interactive chart unavailable · Static preview <button onClick={() => setRetry((value) => value + 1)}>Retry</button></div>}<div ref={containerRef} className={`market-chart ${chartReady ? "ready" : ""}`}/>
           <DrawingContextToolbar drawings={selectedManuals} bars={allBars} unavailable={drawings.unavailable} position={drawingContextPosition} propertiesOpen={drawingPropertiesOpen}
             close={() => { setSelectedDrawing(null); setSelectedDrawingIds([]); setDrawingPropertiesOpen(false); }} more={() => setDrawingPropertiesOpen(value => !value)}
-            updateMany={drawings.updateMany} update={drawings.update} duplicate={drawings.duplicate} removeMany={drawings.removeMany} remove={drawings.remove}/>
+            updateMany={drawings.updateMany} update={drawings.update} duplicate={drawings.duplicate} removeMany={drawings.removeMany} remove={drawings.remove}
+            sendToPlan={onPlan ? draft => onPlan({symbol,mode,adjustment,asOf,tradeDraft:{side:"Long",...draft}}) : undefined}/>
           {drawings.error && <p className="drawing-hint" role="alert">{drawings.error}</p>}
           {activeTool !== "select" && <p className="drawing-hint" role="status">{toolHints[activeTool] ?? `Place ${DRAWING_TOOL_BY_ID.get(activeTool)?.label.toLowerCase()} anchors on the chart.`} Escape to cancel.</p>}
           <div className="chart-corner-controls">

@@ -39,8 +39,9 @@ test('unapproved legacy tools remain labelled for saved-object recovery but cann
   }
 });
 
-test('incomplete approved tools belong to the registry but stay out of creation flyouts', () => {
-  const planned = registry.DRAWING_TOOLS.filter(tool => tool.id !== 'select' && !tool.overlay);
-  assert.deepEqual(planned.map(tool => tool.id), ['eraser', 'infoLine', 'flatChannel', 'fibExtension', 'datePriceRange', 'highlighter', 'text', 'callout']);
-  for (const group of registry.DRAWING_GROUPS) assert.ok(registry.toolsForGroup(group.id, []).every(tool => tool.id === 'select' || tool.overlay));
+test('Gate 2D exposes all approved tools through one canonical implementation path', () => {
+  assert.equal(registry.IMPLEMENTED_DRAWING_TOOLS.length, 29);
+  assert.deepEqual(registry.DRAWING_TOOLS.filter(tool => tool.id !== 'select' && !tool.overlay), []);
+  assert.deepEqual(registry.toolsForGroup('cursor', []).map(tool => tool.id), ['select','eraser']);
+  for (const group of registry.DRAWING_GROUPS) assert.equal(registry.toolsForGroup(group.id, []).length, registry.DRAWING_TOOLS.filter(tool=>tool.groupId===group.id).length);
 });
