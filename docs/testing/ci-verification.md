@@ -9,3 +9,9 @@ The job supplies no production credentials. `npm run verify` assigns dummy provi
 On failure, the workflow uploads the captured verification log, EOD and Playwright JUnit reports when reached, the Playwright HTML report, traces, actual screenshots, and screenshot differences. A failure before a report-producing stage remains visible in `verify.log` and the Actions step log.
 
 The workflow does not deploy, change branch protection, or configure lint. The dedicated harness PR targets `codex/chart-phase-2-drawings` because these regressions depend on the unmerged Phase 2 chart corrections in PR #2.
+
+## Pending branch protection
+
+Harness Step 4 remains pending because PR #2 cannot produce the required `Windows verification` check while the workflow exists only in dependent PR #3. Do not enable the required check yet.
+
+The release sequence is: obtain explicit approval to merge and deploy PR #2; update PR #3 to target the resulting `main`; require a fresh successful verification against that current base; obtain separate approval to merge and deploy PR #3; then enable and read back protection for `main`. Until those releases are authorized, keep both PRs unmerged and leave protection unchanged so PR #2 is not blocked by an unavailable check.
