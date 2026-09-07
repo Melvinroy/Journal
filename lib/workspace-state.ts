@@ -1,4 +1,4 @@
-export type MarketContext = { symbol: string; mode: "sample" | "local"; adjustment: string; asOf?: string; signalId?: string; strategyId?: string };
+export type MarketContext = { symbol: string; mode: "sample" | "local"; adjustment: string; asOf?: string; signalId?: string; strategyId?: string; tradeDraft?: { side:"Long"; entry:number; stop:number; targets:number[] } };
 export type WatchItem = { symbol: string; note: string };
 export const WATCH_KEY = "brontide-watchlist-v1";
 export function validWatchlist(value:unknown):value is WatchItem[] {
@@ -29,7 +29,54 @@ export function writeStored<T>(storage: Pick<Storage, "setItem">, key: string, v
   storage.setItem(key, JSON.stringify({ version: 1, value }));
 }
 export function chartStorageKey(context: MarketContext) {
-  return `brontide-drawings-v1:${context.mode}:${context.symbol}:1Day:${context.adjustment}`;
+  return `brontide-drawings-v2:${context.mode}:${encodeURIComponent(normalizeTicker(context.symbol))}:${context.adjustment}`;
+}
+export function legacyChartStorageKey(context: MarketContext) {
+  return `brontide-drawings-v1:${context.mode}:${normalizeTicker(context.symbol)}:1Day:${context.adjustment}`;
+}
+export type DrawingStorageContext = {
+  symbol: string; mode: "sample" | "local"; adjustment: string;
+  adjustmentBasis: "raw" | "split-dividend-adjusted";
+};
+export type DrawingDocumentV2<T> = {
+  version: 2; kind: "manual-drawings"; context: DrawingStorageContext;
+  timeframeVisibility: "all"; savedAt: number; value: T;
+};
+export function drawingStorageContext(key: string): DrawingStorageContext {
+  const match = /^brontide-drawings-v2:(sample|local):([^:]+):(all|raw)$/.exec(key);
+  if (!match) throw new Error("Invalid drawing storage key");
+  const symbol = normalizeTicker(decodeURIComponent(match[2])), adjustment = match[3];
+  return { symbol, mode: match[1] as "sample" | "local", adjustment,
+    adjustmentBasis: adjustment === "raw" ? "raw" : "split-dividend-adjusted" };
+}
+export function legacyKeyForDrawingKey(key: string) {
+  const context = drawingStorageContext(key);
+  return legacyChartStorageKey(context);
+}
+export function serializeDrawingDocument<T>(key: string, value: T, savedAt = Date.now()) {
+  const document: DrawingDocumentV2<T> = { version: 2, kind: "manual-drawings", context: drawingStorageContext(key), timeframeVisibility: "all", savedAt, value };
+  return JSON.stringify(document);
+}
+export function readDrawingDocument<T>(storage: Pick<Storage, "getItem">, key: string, fallback: T): { value: T; raw: string | null; migrated: boolean } {
+  const raw = storage.getItem(key);
+  if (raw === null) {
+    const legacyKey = legacyKeyForDrawingKey(key), legacyRaw = storage.getItem(legacyKey);
+    return legacyRaw === null ? { value: fallback, raw: null, migrated: false }
+      : { value: readStored(storage, legacyKey, fallback), raw: null, migrated: true };
+  }
+  const document = JSON.parse(raw) as DrawingDocumentV2<T>;
+  const expected = drawingStorageContext(key);
+  if (document?.version !== 2 || document.kind !== "manual-drawings" || document.timeframeVisibility !== "all" || !("value" in document) ||
+      document.context?.symbol !== expected.symbol || document.context?.mode !== expected.mode || document.context?.adjustment !== expected.adjustment ||
+      document.context?.adjustmentBasis !== expected.adjustmentBasis || !Number.isFinite(document.savedAt))
+    throw new Error("Saved drawings have an unsupported or mismatched format. They have not been overwritten.");
+  return { value: document.value, raw, migrated: false };
+}
+export function writeDrawingDocument<T>(storage: Pick<Storage, "setItem" | "getItem">, key: string, value: T, savedAt = Date.now()) {
+  const raw = serializeDrawingDocument(key, value, savedAt);
+  storage.setItem(key, raw);
+  if (storage.getItem(key) !== raw) throw new Error("Drawing storage write could not be verified.");
+  return raw;
 }
 export function movingAverageByTime(rows: {timestamp:number;close:number}[], periods: number[]): Map<number, Record<string, number>> {
   const sums = periods.map(() => 0);
