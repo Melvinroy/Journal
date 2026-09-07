@@ -3,11 +3,12 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Chart, Overlay, OverlayCreate } from "klinecharts";
 import { type Drawing, type StudyBar } from "./drawing-workspace";
 import { useDrawingWorkspace } from "./use-drawing-workspace";
+import type { SnapPreference } from "./drawing-tools";
 
 const groupId = "brontide-drawings";
 export function useDrawingController({ chartRef, generation, storageKey, bars, visibleCount, snap, onSelect, onFinish }: {
   chartRef: RefObject<Chart | null>; generation: number; storageKey: string; bars: StudyBar[];
-  visibleCount: number; snap: boolean; onSelect: (id: string | null) => void; onFinish: () => void;
+  visibleCount: number; snap: SnapPreference; onSelect: (id: string | null) => void; onFinish: () => void;
 }) {
   const store = useDrawingWorkspace(storageKey);
   const [error, setError] = useState("");
@@ -59,7 +60,7 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
     for (const row of store.drawings) {
       const points = row.points.map(p => ({ ...p, dataIndex: p.timestamp === undefined ? undefined : bars.findIndex(b => b.timestamp === p.timestamp) - (bars.length - visibleCount) }));
       if (row.points.some(p => p.timestamp !== undefined && !bars.some(b => b.timestamp === p.timestamp))) { missing.push(row.id); continue; }
-      const id = chart.createOverlay({ ...row, points, groupId, paneId: "candle_pane", mode: snap ? "strong_magnet" : "normal",
+      const id = chart.createOverlay({ ...row, points, groupId, paneId: "candle_pane", mode: snap === "off" ? "normal" : `${snap}_magnet`,
         needDefaultPointFigure: true,
         extendData: row.name.startsWith("brontide-") ? { history: bars, saved: row.extendData } : row.extendData,
         ...callbacks(chart, storageKey) });
@@ -75,7 +76,7 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
     const chart = chartRef.current;
     if (!chart || !store.ready) return false;
     const created = chart.createOverlay({ id: `drawing-${crypto.randomUUID()}`, name, groupId, paneId: "candle_pane",
-      mode: snap ? "strong_magnet" : "normal", needDefaultPointFigure: true,
+      mode: snap === "off" ? "normal" : `${snap}_magnet`, needDefaultPointFigure: true,
       styles: { line: { color: "#4586c9", size: 2, style: "solid" } },
       extendData: name.startsWith("brontide-") ? { history: bars } : name === "simpleAnnotation" ? note : undefined,
       ...callbacks(chart, storageKey) });

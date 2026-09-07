@@ -1,6 +1,6 @@
 # Phase 2 — drawing workflow review
 
-Status: superseded as an approval packet by the 7 September 2026 remediation specification. Its results remain retained evidence, but Phase 2 is not complete. See the [Gate 2A as-built inventory and reconciliation](as-built-inventory.md).
+Status: superseded as a final approval packet by the 7 September 2026 remediation specification. Its results remain retained evidence, but Phase 2 is not complete. Gate 2A is approved; [Gate 2B](gate-2b.md) is implemented and awaiting owner review.
 
 Branch: `codex/chart-phase-2-drawings`, based on Phase 1's released merge commit `fd6e934c2085d4a1639246f2bbbd29c3525585ac`.
 
