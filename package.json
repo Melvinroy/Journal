@@ -8,7 +8,8 @@
     "start": "next start",
     "local": "node scripts/local.mjs",
     "test:chart": "node --test tests/chart-data.test.mjs",
-    "test:ui-regressions": "node scripts/run-ui-regressions.mjs"
+    "test:ui-regressions": "node scripts/run-ui-regressions.mjs",
+    "verify": "node scripts/verify.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
