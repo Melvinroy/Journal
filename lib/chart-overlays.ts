@@ -1,5 +1,6 @@
 import type { OverlayTemplate, OverlayFigure } from "klinecharts";
 import { anchoredVWAPBands, contractionMetrics, regressionChannel, riskRewardDetails, drawingEvidence, type StudyBar } from "./drawing-workspace";
+import { displayIndexForTimestamp } from "./chart-timeframe";
 
 type SavedSettings = { text?: string; bands?: 0 | 1 | 2; deviation?: 1 | 2; showStatistics?: boolean; targets?: number[]; accountSize?: number; riskPercent?: number; ratios?: number[]; fillOpacity?: number; setupStart?: number; pivot?: number; alignment?: "left"|"center"|"right"; fontSize?:number; background?:boolean };
 const settings = (overlay: { extendData?: unknown }): SavedSettings => {
@@ -79,10 +80,13 @@ export const workflowOverlays: OverlayTemplate[] = [
 ].map(([kind, steps]) => ({
   name: `brontide-${kind}`, totalStep: steps as number, needDefaultPointFigure: true,
   createPointFigures: ({ chart, coordinates, overlay }) => {
-    const bars = (overlay.extendData as { history?: StudyBar[] } | undefined)?.history ?? [], config=settings(overlay);
-    const indexByTime = new Map(bars.map((bar, index) => [bar.timestamp, index]));
-    const offset = indexByTime.get(chart.getDataList()[0]?.timestamp) ?? -1;
-    const points = overlay.points.map(p => ({ value: p.value, timestamp: p.dataIndex !== undefined && offset >= 0 ? bars[Math.round(p.dataIndex) + offset]?.timestamp : p.timestamp }));
+    const data = overlay.extendData as { history?: StudyBar[]; displayHistory?: StudyBar[] } | undefined;
+    const bars = data?.history ?? [], displayBars = data?.displayHistory ?? bars, config=settings(overlay);
+    const displayIndexByTime = new Map(displayBars.map((bar, index) => [bar.timestamp, index]));
+    const offset = displayIndexByTime.get(chart.getDataList()[0]?.timestamp) ?? -1;
+    const weekly = displayBars.length < bars.length;
+    const points = overlay.points.map(p => ({ value: p.value, timestamp: p.timestamp ?? (p.dataIndex !== undefined && offset >= 0 ? displayBars[Math.round(p.dataIndex) + offset]?.timestamp : undefined) }));
+    const dataIndex = (timestamp: number) => (weekly ? displayIndexForTimestamp(timestamp, displayBars, "1Week") : displayIndexByTime.get(timestamp) ?? -1) - offset;
     const figures: OverlayFigure[] = [];
     const line = (coords: { x: number; y: number }[], color?: string) => figures.push({ type: "line", attrs: { coordinates: coords }, ...(color ? { styles: { color } } : {}) });
     if (!coordinates.length) return figures;
@@ -100,11 +104,11 @@ export const workflowOverlays: OverlayTemplate[] = [
     } else if (kind === "vwap") {
       try { const rows=anchoredVWAPBands(points[0]?.timestamp,bars), band=config.bands??0;
         const keys:("value"|"upper1"|"lower1"|"upper2"|"lower2")[]=["value",...(band>=1?["upper1","lower1"] as const:[]),...(band>=2?["upper2","lower2"] as const:[])];
-        for(const key of keys){const coords=rows.filter(p=>p[key]!==undefined&&p[key]!>0).map(p=>chart.convertToPixel({dataIndex:indexByTime.get(p.timestamp)!-offset,value:p[key]!},{paneId:"candle_pane"}) as {x:number;y:number});if(coords.length>1)line(coords,key==="value"?undefined:"#7a8fa8");}
+        for(const key of keys){const coords=rows.filter(p=>p[key]!==undefined&&p[key]!>0&&dataIndex(p.timestamp)>=0).map(p=>chart.convertToPixel({dataIndex:dataIndex(p.timestamp),value:p[key]!},{paneId:"candle_pane"}) as {x:number;y:number});if(coords.length>1)line(coords,key==="value"?undefined:"#7a8fa8");}
       } catch {}
     } else if (kind === "regression") {
       try { const result=regressionChannel(points,bars), deviation=config.deviation??1;
-        for (const shift of [-deviation * result.sigma, 0, deviation * result.sigma]) { const coords=result.series.map(p=>chart.convertToPixel({dataIndex:indexByTime.get(p.timestamp)!-offset,value:p.value+shift},{paneId:"candle_pane"}) as {x:number;y:number}); if(coords.length>1)line(coords); }
+        for (const shift of [-deviation * result.sigma, 0, deviation * result.sigma]) { const coords=result.series.filter(p=>dataIndex(p.timestamp)>=0).map(p=>chart.convertToPixel({dataIndex:dataIndex(p.timestamp),value:p.value+shift},{paneId:"candle_pane"}) as {x:number;y:number}); if(coords.length>1)line(coords); }
       } catch {}
     }
     if (points.length >= (steps as number) - 1 && !(kind==="regression"&&config.showStatistics===false)) figures.push({ type:"text", attrs:{x:Math.max(6,a.x),y:Math.max(55,a.y-12),text:drawingEvidence({name:overlay.name,points},bars),align:"left",baseline:"bottom"}, styles:{color:overlay.styles?.line?.color??"#477ba6",size:12,family:"Inter, ui-sans-serif, system-ui",backgroundColor:"transparent"} });

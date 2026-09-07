@@ -3,6 +3,7 @@ import type { OverlayCreate } from "klinecharts";
 export type DrawingPoint = { timestamp?: number; value?: number };
 export type Drawing = Pick<OverlayCreate, "name" | "styles" | "extendData"> & {
   id: string; points: DrawingPoint[]; lock: boolean; visible: boolean; displayName?: string;
+  timeframeVisibility?: "all" | ("1Day" | "1Week")[];
 };
 export type History = { past: Drawing[][]; present: Drawing[]; future: Drawing[][] };
 export type StudyBar = { timestamp: number; high: number; low: number; close: number; volume?: number };
@@ -22,7 +23,8 @@ export function decodeDrawings(value: unknown): Drawing[] {
     return { name: row.name, id, points: row.points.map(({ timestamp, value }: DrawingPoint) => ({ timestamp, value })),
       lock: row.lock === true, visible: row.visible !== false,
       ...(typeof row.displayName === "string" && row.displayName.trim() ? { displayName: row.displayName.trim() } : {}),
-      ...(row.styles ? { styles: row.styles } : {}), ...(row.extendData !== undefined ? { extendData: row.extendData } : {}) };
+      ...(row.styles ? { styles: row.styles } : {}), ...(row.extendData !== undefined ? { extendData: row.extendData } : {}),
+      ...(row.timeframeVisibility === "all" || (Array.isArray(row.timeframeVisibility) && row.timeframeVisibility.length > 0 && row.timeframeVisibility.every((value: unknown) => value === "1Day" || value === "1Week")) ? { timeframeVisibility: row.timeframeVisibility } : {}) };
   });
 }
 export function drawingHistory(present: Drawing[]): History { return { past: [], present, future: [] }; }

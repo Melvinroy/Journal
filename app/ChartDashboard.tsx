@@ -27,6 +27,7 @@ import {
   type DrawingIconKey, type DrawingToolId, type SnapPreference,
 } from "../lib/drawing-tools";
 import { useDrawingPreferences } from "../lib/use-drawing-preferences";
+import { aggregateWeeklyBars, rangeSizeForTimeframe, type ChartTimeframe } from "../lib/chart-timeframe";
 
 const localBuild = process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1";
 const phase2AutomationVisible = false;
@@ -108,10 +109,6 @@ function movingAverage(rows: Bar[], period: number) {
   });
 }
 
-function rangeSize(range: RangeKey) {
-  return range === "1M" ? 22 : range === "3M" ? 66 : range === "6M" ? 132 : range === "1Y" ? 252 : 9999;
-}
-
 function formatVolume(value: number) {
   return value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : `${Math.round(value / 1000)}K`;
 }
@@ -170,8 +167,10 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [symbol, setSymbol] = useState<string>("NVDA");
   const [range, setRange] = useState<RangeKey>("6M");
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>("1Day");
   const [activeTool, setActiveTool] = useState<DrawingToolId>("select");
   const [openToolGroup, setOpenToolGroup] = useState<string | null>(null);
+  const [mobileDrawOpen, setMobileDrawOpen] = useState(false);
   const [logScale, setLogScale] = useState(false);
   const [show20, setShow20] = useState(true);
   const [show50, setShow50] = useState(true);
@@ -202,10 +201,11 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   const sampleBars = useMemo(() => makeBars(symbols[sampleSymbol]), [sampleSymbol]);
   const sourceBars = mode === "sample" ? sampleBars : localBars;
   const allBars = useMemo(()=>asOf ? sourceBars.filter(row=>new Date(row.timestamp).toISOString().slice(0,10)<=asOf) : sourceBars,[sourceBars,asOf]);
-  const bars = useMemo(() => allBars.slice(-rangeSize(range)), [allBars, range]);
+  const displayAllBars = useMemo(() => timeframe === "1Day" ? allBars : aggregateWeeklyBars(allBars), [allBars, timeframe]);
+  const bars = useMemo(() => displayAllBars.slice(-rangeSizeForTimeframe(range, timeframe)), [displayAllBars, range, timeframe]);
   const drawingPreferences = useDrawingPreferences();
   const drawings = useDrawingController({ chartRef, generation: chartGeneration,
-    storageKey: chartStorageKey({ symbol, mode, adjustment }), bars: allBars, visibleCount: bars.length,
+    storageKey: chartStorageKey({ symbol, mode, adjustment }), bars: allBars, displayBars: displayAllBars, visibleCount: bars.length, timeframe,
     snap: drawingPreferences.ready ? drawingPreferences.value.snap : "off", keepDrawing: drawingPreferences.value.keepDrawing, eraserMode: activeTool === "eraser",
     onSelect: id => { setSelectedDrawing(id); setSelectedDrawingIds(id ? [id] : []); if (!id) setDrawingPropertiesOpen(false); },
     onFinish: () => setActiveTool("select"), onContextMenu: () => setDrawingPropertiesOpen(false),
@@ -223,8 +223,8 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   })();
   const drawingLabel = drawingToolLabelForOverlay;
   const latestAverages = useMemo(() => Object.fromEntries([20, 50, 200].map((period) => [period,
-    allBars.length >= period ? allBars.slice(-period).reduce((total, bar) => total + bar.close, 0) / period : undefined,
-  ])), [allBars]);
+    displayAllBars.length >= period ? displayAllBars.slice(-period).reduce((total, bar) => total + bar.close, 0) / period : undefined,
+  ])), [displayAllBars]);
   const trendStore = useBrowserStore(`brontide-auto:${AUTO_TREND_VERSION}:${mode}:${symbol}:${adjustment}:${logScale?"log":"linear"}:${asOf??"latest"}`, EMPTY_TRENDS, validTrendSettings);
   const recentStore=useBrowserStore(`brontide-recent-v1:${mode}:${symbol}:${adjustment}:${logScale?"log":"linear"}:${asOf??"latest"}`,false,value=>typeof value==="boolean");
   const recentResult=useMemo(()=>{try{return {lines:findRecentTrends(allBars,logScale),error:""};}catch{return {lines:[],error:"Recent Trend cannot analyze these bars."};}},[allBars,logScale]);
@@ -252,7 +252,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   const name = mode === "sample" ? symbols[sampleSymbol].name : payload?.instrument.name ?? symbol;
   const statusLabel = mode === "sample" ? "Simulated prices" : loadState === "loading" ? "Loading EOD" : loadState === "error" ? "API error" : loadState === "empty" ? "No bars" : payload?.status.freshness === "stale" ? "Stale EOD" : payload?.status.freshness === "unknown" ? "EOD · check freshness" : "Local EOD";
   const issues = [storageError, drawings.error, drawingPreferences.error].filter(Boolean);
-  const previousClose = allBars.at(-2)?.close;
+  const previousClose = displayAllBars.at(-2)?.close;
   const dailyChange = latest && previousClose ? (latest.close / previousClose - 1) * 100 : undefined;
   const menuProps = (id: string) => ({ open: openMenu === id, onToggle: () => { setSearchOpen(false); setOpenToolGroup(null); setOpenMenu(value => value === id ? null : id); }, onClose: () => setOpenMenu(value => value === id ? null : value) });
 
@@ -265,6 +265,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
       if (event.key !== "Escape") return;
       if (searchOpen) { setSearchOpen(false); document.querySelector<HTMLButtonElement>(".chart-search-trigger")?.focus(); }
       if (openToolGroup) { document.querySelector<HTMLButtonElement>(`.drawing-tool-group button[aria-expanded="true"]`)?.focus(); setOpenToolGroup(null); }
+      else if (mobileDrawOpen) { setMobileDrawOpen(false); queueMicrotask(() => document.querySelector<HTMLButtonElement>(".mobile-draw-trigger")?.focus()); }
     };
     const outside = (event: PointerEvent) => {
       const target = event.target as Element;
@@ -274,15 +275,16 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
     document.addEventListener("keydown", close);
     document.addEventListener("pointerdown", outside);
     return () => { document.removeEventListener("keydown", close); document.removeEventListener("pointerdown", outside); };
-  }, [searchOpen, openToolGroup]);
+  }, [searchOpen, openToolGroup, mobileDrawOpen]);
 
   useEffect(() => setHovered(latest), [latest]);
 
   useEffect(() => {
     try {
-      const saved=readStored<{symbol?:string;range?:RangeKey;show20?:boolean;show50?:boolean;show200?:boolean;logScale?:boolean;adjustment?:string}>(window.localStorage,"brontide-layout-v1",{});
+      const saved=readStored<{symbol?:string;range?:RangeKey;timeframe?:ChartTimeframe;show20?:boolean;show50?:boolean;show200?:boolean;logScale?:boolean;adjustment?:string}>(window.localStorage,"brontide-layout-v1",{});
       if (saved.symbol && (localBuild || saved.symbol in symbols)) setSymbol(saved.symbol);
       if (saved.range && ["1M","3M","6M","1Y","Max"].includes(saved.range)) setRange(saved.range);
+      if (saved.timeframe === "1Day" || saved.timeframe === "1Week") setTimeframe(saved.timeframe);
       if (typeof saved.show20==="boolean") setShow20(saved.show20);
       if (typeof saved.show50==="boolean") setShow50(saved.show50);
       if (typeof saved.show200==="boolean") setShow200(saved.show200);
@@ -299,9 +301,9 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
   },[context]);
   useEffect(()=>{
     if (!layoutReady) return;
-    try {writeStored(window.localStorage,"brontide-layout-v1",{symbol,range,show20,show50,show200,logScale,adjustment});}
+    try {writeStored(window.localStorage,"brontide-layout-v1",{symbol,range,timeframe,show20,show50,show200,logScale,adjustment});}
     catch {setStorageError("Layout could not be saved. Browser storage may be full.");}
-  },[symbol,range,show20,show50,show200,logScale,adjustment,layoutReady]);
+  },[symbol,range,timeframe,show20,show50,show200,logScale,adjustment,layoutReady]);
 
   useEffect(() => {
     if (mode !== "local") return;
@@ -391,9 +393,11 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
         },
       });
       if (!chart) { setRenderError(true); return; }
+      const interactiveSurface = chartContainer.querySelector<HTMLElement>("[tabindex]");
+      if (interactiveSurface) { interactiveSurface.tabIndex = 0; interactiveSurface.setAttribute("role", "application"); interactiveSurface.setAttribute("aria-label", `${symbol} interactive price chart. Use chart viewport controls for keyboard navigation.`); }
       chart.overrideYAxis({ paneId: "candle_pane", name: logScale ? "logarithm" : "normal" });
       chart.setSymbol({ ticker: symbol, pricePrecision: 2, volumePrecision: 0 });
-      chart.setPeriod({ span: 1, type: "day" });
+      chart.setPeriod({ span: 1, type: timeframe === "1Day" ? "day" : "week" });
       chart.setDataLoader({ getBars: ({ type, callback }) => callback(type === "init" ? bars : [], false) });
       let followingSelectedRange = true;
       const applyDefaultViewport = () => {
@@ -428,7 +432,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
         paneId: "candle_pane",
         calcParams: visibleAverages.map(([period]) => period),
         calc: data => {
-          const values = movingAverageByTime(allBars, visibleAverages.map(([period])=>period));
+          const values = movingAverageByTime(displayAllBars, visibleAverages.map(([period])=>period));
           return data.map(row=>values.get(row.timestamp) ?? {});
         },
         styles: { lines: visibleAverages.map(([, color]) => ({ color, size: 1, style: "dashed", dashedValue: [5, 4] })), tooltip: { showRule: "none" } },
@@ -457,7 +461,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
       fitViewportRef.current = null;
       setChartReady(false);
     };
-  }, [allBars, bars, range, retry, show20, show50, show200, symbol, logScale, theme, mode, adjustment]);
+  }, [allBars, displayAllBars, bars, range, timeframe, retry, show20, show50, show200, symbol, logScale, theme, mode, adjustment]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -530,9 +534,9 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
     setOpenToolGroup(null);
     const definition = DRAWING_TOOL_BY_ID.get(tool);
     if (!definition || (tool !== "select" && !definition.overlay)) return;
-    if (tool === "select") { setActiveTool("select"); rememberTool(tool); return; }
-    if (tool === "eraser") { setActiveTool("eraser"); rememberTool(tool); return; }
-    if (definition.overlay && drawings.start(definition.overlay, note)) { setActiveTool(tool); rememberTool(tool); }
+    if (tool === "select") { setActiveTool("select"); setMobileDrawOpen(false); rememberTool(tool); return; }
+    if (tool === "eraser") { setActiveTool("eraser"); setMobileDrawOpen(false); rememberTool(tool); return; }
+    if (definition.overlay && drawings.start(definition.overlay, note)) { setActiveTool(tool); setMobileDrawOpen(false); rememberTool(tool); }
   };
   const toggleFavorite = (tool: DrawingToolId) => {
     if (!drawingPreferences.ready) return;
@@ -571,8 +575,8 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
           {searchOpen && <div className="chart-search-popover"><label>Find an instrument<input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Ticker or company" aria-label="Search instruments"/></label><p role="status">{searchStatus}</p>{matches.map(item => <button key={item.symbol} onClick={() => changeSymbol(item.symbol)}><b>{item.symbol}</b><span>{item.name}</span><small>{item.exchange} · {item.status}</small></button>)}<button onClick={() => setSearchOpen(false)}>Close search</button></div>}
         </div>
         <div className="chart-quote" title={name}><span className="chart-company">{name}</span><b>{latest?.close.toFixed(2) ?? "—"}</b>{dailyChange !== undefined && <span className={dailyChange >= 0 ? "up" : "down"}>{dailyChange >= 0 ? "+" : ""}{dailyChange.toFixed(2)}%</span>}</div>
-        <ChartMenu label={<>D · {range}<CaretDown size={12}/></>} title="Time interval and range" {...menuProps("time")}>
-          <label>Interval<select aria-label="Candle interval" value="daily" onChange={() => {}}><option value="daily">Daily</option></select></label>
+        <ChartMenu label={<>{timeframe === "1Day" ? "D" : "W"} · {range}<CaretDown size={12}/></>} title="Time interval and range" {...menuProps("time")}>
+          <label>Interval<select aria-label="Candle interval" value={timeframe} onChange={event => setTimeframe(event.target.value as ChartTimeframe)}><option value="1Day">Daily</option><option value="1Week">Weekly</option></select></label>
           <label>Visible range<select aria-label="Visible range" value={range} onChange={event => setRange(event.target.value as RangeKey)}>{(["1M", "3M", "6M", "1Y", "Max"] as RangeKey[]).map(item => <option key={item} value={item}>{item === "Max" ? "All available history" : item}</option>)}</select></label>
         </ChartMenu>
         <ChartMenu label={<>Studies<CaretDown size={12}/></>} title="Studies" className="chart-studies-menu" {...menuProps("studies")}>
@@ -610,7 +614,9 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
       </header>
 
       <div className="chart-analysis-body"><div className="chart-stage-area">
-        <aside className="drawing-rail" aria-label="Drawing tools">
+        <button className="mobile-draw-trigger" aria-expanded={mobileDrawOpen} aria-controls="mobile-drawing-tools" onClick={() => setMobileDrawOpen(value => !value)}><PaintBrush size={18}/><span>{activeTool === "select" ? "Draw" : DRAWING_TOOL_BY_ID.get(activeTool)?.label}</span></button>
+        <aside id="mobile-drawing-tools" className={`drawing-rail${mobileDrawOpen ? " mobile-open" : ""}`} aria-label="Drawing tools">
+          <div className="mobile-drawing-sheet-header"><strong>Drawing tools</strong><button onClick={() => { setMobileDrawOpen(false); setOpenToolGroup(null); }}>Done</button></div>
           {DRAWING_GROUPS.map((group) => {
             const lastUsedId = drawingPreferences.value.lastUsed[group.id] ?? group.defaultTool;
             const lastUsed = DRAWING_TOOL_BY_ID.get(lastUsedId) ?? DRAWING_TOOL_BY_ID.get(group.defaultTool)!;
@@ -639,14 +645,14 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
             <button aria-label="Undo drawing change · Ctrl/⌘ Z" title="Undo drawing change · Ctrl/⌘ Z" disabled={!drawings.canUndo} onClick={drawings.undo}><ArrowCounterClockwise size={17}/></button>
             <button aria-label="Redo drawing change · Ctrl/⌘ Shift Z or Ctrl+Y" title="Redo drawing change · Ctrl/⌘ Shift Z or Ctrl+Y" disabled={!drawings.canRedo} onClick={drawings.redo}><ArrowClockwise size={17}/></button>
             <ChartMenu label={<Stack size={17}/>} title="Drawing objects" className="drawing-objects-menu" {...menuProps("objects")}>
-              <DrawingObjectsPanel symbol={symbol} adjustment={adjustment} drawings={drawings.drawings} selected={selectedDrawingIds} unavailable={drawings.unavailable} label={drawingLabel}
+              <DrawingObjectsPanel symbol={symbol} adjustment={adjustment} timeframe={timeframe} saveStatus={drawings.saveStatus} drawings={drawings.drawings} selected={selectedDrawingIds} unavailable={drawings.unavailable} label={drawingLabel}
                 select={ids => { setSelectedDrawingIds(ids); setSelectedDrawing(ids.at(-1) ?? null); setDrawingPropertiesOpen(false); }}
                 locate={drawings.locate} update={drawings.update} updateMany={drawings.updateMany} duplicate={drawings.duplicate} reorder={drawings.reorder} remove={drawings.remove} removeMany={drawings.removeMany}/>
             </ChartMenu>
           </div>
         </aside>
 
-        <div className="chart-canvas-shell">
+        <div className={`chart-canvas-shell${activeTool !== "select" ? " drawing-active" : ""}`}>
           {mode === "sample" && <span className="chart-demo-watermark" aria-hidden="true">SIMULATED DATA</span>}
           {hovered && <div className="chart-ohlc"><span>{mode === "sample" ? "Demo session · " : ""}{formatDate(hovered.timestamp)}</span><span>O <b>{hovered.open.toFixed(2)}</b></span><span>H <b>{hovered.high.toFixed(2)}</b></span><span>L <b>{hovered.low.toFixed(2)}</b></span><span>C <b>{hovered.close.toFixed(2)}</b></span><strong className={hovered.close >= hovered.open ? "up" : "down"}>{((hovered.close / hovered.open - 1) * 100).toFixed(2)}%</strong><span>Vol <b>{formatVolume(hovered.volume)}</b></span></div>}
           <div className="chart-legend">{show20 && <span className="ma20">MA20: {latestAverages[20]?.toFixed(2) ?? "—"}</span>}{show50 && <span className="ma50">MA50: {latestAverages[50]?.toFixed(2) ?? "—"}</span>}{show200 && <span className="ma200">MA200: {latestAverages[200]?.toFixed(2) ?? "—"}</span>}</div>

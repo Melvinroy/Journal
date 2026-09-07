@@ -1,88 +1,127 @@
-# Phase 2 — drawing workflow review
+# Phase 2 — complete drawing workflow review package
 
-Status: superseded as a final approval packet by the 7 September 2026 remediation specification. Its results remain retained evidence, but Phase 2 is not complete. Gates 2A–2C are approved; [Gate 2D](gate-2d.md) is implemented and awaiting owner review.
+Status: Gates 2A–2E are implemented and validated. This is the final Phase 2 approval checkpoint. [PR #2](https://github.com/Melvinroy/Journal/pull/2) remains draft and unmerged; no deployment or Phase 3 work has begun.
 
-Branch: `codex/chart-phase-2-drawings`, based on Phase 1's released merge commit `fd6e934c2085d4a1639246f2bbbd29c3525585ac`.
+Branch: `codex/chart-phase-2-drawings`
+Base and unchanged `main`: `fd6e934c2085d4a1639246f2bbbd29c3525585ac`
 
-Phase 1 was approved by the request to move to Phase 2. [PR #1](https://github.com/Melvinroy/Journal/pull/1) was merged, [Pages deployment 34063396837](https://github.com/Melvinroy/Journal/actions/runs/34063396837) succeeded, and the published `/Journal/charts/` chart was smoke-tested before this phase began.
+## 1. As-built reconciliation
 
-## What changed
+The required pre-implementation inspection and decision record is in [as-built-inventory.md](as-built-inventory.md). It identifies the old renderer/storage owners, duplicates and incomplete controls, maps every approved canonical ID, and records the approved legacy treatment.
 
-- Retained the grouped tools and added five customizable favorites. Defaults: segment, horizontal ray, parallel channel, rectangle, and price/percentage range. Pin/unpin controls live beside each tool.
-- Added snapping to candle OHLC, undo/redo, Escape cancellation, and an Objects menu to select, show/hide, lock, delete, and clear unlocked manual drawings. Clear/delete are undoable; right-click selects instead of invoking the renderer's destructive default.
-- Selected drawings use an **Edit drawing** control in the existing top row. The editor supports color, width, line style, exact session/price anchors, and annotation text. No additional permanent toolbar or panel.
-- Added long-position risk/reward, inclusive session/calendar measurement, three-contraction manual markup, daily anchored VWAP, and a close-regression channel.
-- Kept the version-1 drawing storage key and array format compatible, with additive appearance/visibility fields. History is isolated by source, symbol, and price adjustment. Theme, visible range, and Lin/Log do not reset it. Corrupt reads and conflicting writes retain saved data.
+Final reconciliation:
 
-## Calculation definitions and limits
-
-| Tool | Definition |
+| Requirement | Final result |
 |---|---|
-| Long position | Risk = entry − stop; reward = target − entry; R = reward/risk. Requires 0 < stop < entry < target. Per-share price distances, excluding fees/slippage. |
-| Date/session range | Counts supplied EOD sessions inclusively; separately reports intervals and elapsed calendar days. Requires two loaded sessions in chronological order. |
-| Manual contractions | Six chronological high/low anchors. Each depth = (high − low)/high; "Contracting" requires strictly decreasing depths. This is annotation evidence, not automated VCP qualification. |
-| Anchored VWAP | Cumulative `(high + low + close)/3 × volume`, divided by cumulative volume, from the selected session through the last supplied bar. Daily approximation; missing volume or zero cumulative volume is explicitly unavailable. |
-| Regression channel | OLS of closes against session indices over the selected dates. Center plus/minus twice the population standard deviation of residuals. At least three sessions. Calculation stays in price space on Lin and Log displays. |
+| Compact grouped rail | Eight groups plus four utilities, one canonical access path per approved tool |
+| Approved manual inventory | 29 tools: 2 cursor actions and 27 saved-object tools |
+| Four unapproved legacy tools | Creation buttons removed; valid saved instances remain editable and recoverable without data loss |
+| Incomplete Auto Trendline / Recent Trend | Controls hidden; saved state retained for later migration |
+| Common lifecycle | Shared placement, selection, handles, editing, locking, visibility, duplicate/delete, object manager, Escape, snapping, and history |
+| Specialized tools | Long Risk/Reward, date/price measurements, Manual Contraction, Anchored VWAP, and Regression Channel complete with explicit evidence states |
+| Persistence | Validated v2 documents, non-destructive v1 migration, symbol/mode/adjustment isolation, daily/weekly coordinate safety, verified writes, visible failures |
+| Responsive/accessibility | Desktop rail and mobile sheets, named/focusable controls, touch targets, keyboard flows, no viewport overflow |
 
-New anchors use loaded sessions. Drawings whose saved dates are outside supplied history remain stored and accessible in Objects, with an explicit unavailable state. They are not silently moved onto other sessions. Raw and adjusted drawings are separate; no automatic corporate-action conversion is attempted. Drawing tools belong to the price pane.
+## 2. Tool lifecycle matrix
 
-Undo/redo retains up to 50 changes per chart context during the mounted workspace session. Saved geometry, appearance, visibility, and locks survive page refresh; the undo stack does not. Automatic trendlines retain their existing separate edit/reset workflow in Auto. No detection engine or broker execution was added.
+The complete 29-row create/cancel/select/move/resize/edit/lock/hide/duplicate/delete/undo/restore matrix is in [gate-2d.md](gate-2d.md#tool-by-tool-lifecycle-matrix). All applicable cells pass. The 27 saved-object rows run as separately named lifecycle subtests; Cursor/Select and Eraser have explicit action-tool contracts.
 
-## QC results
+## 3. Automated checks
 
-| Check | Result |
+| Command/check | Result |
 |---|---|
-| Production Pages build (`BRONTIDE_LOCAL_BUILD=0`) | Pass: static export and TypeScript checks |
-| Production local build (`BRONTIDE_LOCAL_BUILD=1`) | Pass: static export and TypeScript checks |
-| Existing + new focused tests | 32/32 pass, including 10 drawing tests |
-| 1440×900, 1280×720, 1024×768 | Pass: 48px single toolbar, 48px rail, chart reaches viewport bottom, document dimensions equal viewport, no page scrolling or toolbar wrapping |
-| Light/dark and Lin/Log | Pass: editor, native controls, Objects, saved geometry; regression evidence unchanged at ±2σ 13.90 and slope 0.545/session in the inspected NVDA example |
-| Placement and exact editing | Pass: segment, ray, text note, risk/reward, date range, VWAP, regression, and six-anchor contraction placement; appearance and exact price/date editing |
-| Drag/undo | Pass: contraction anchor moved from May 15 to May 19 and changed first depth from 9.9% to 8.8%; one undo restored original anchors and 9.9% |
-| Lock/hide/delete/restore | Pass: locked edits/delete disabled; hidden objects remain editable in Objects; delete/undo restores; clear preserves locked objects; one undo restores the cleared set |
-| Favorites and snapping | Pass: pin/unpin and refresh persistence; ray snapped to 219.86, matching the supplied August 20 NVDA candle high |
-| Keyboard and cancellation | Pass: Ctrl-Z and Ctrl-Shift-Z undo/redo a text edit; Escape discards an unfinished rectangle without saving it |
-| Wrong-pane protection | Pass: a volume-pane VWAP click is rejected with an explicit message and leaves zero saved objects; subsequent candle-pane placement succeeds. This renderer edge case was found, fixed, and retested during QC. |
-| Refresh and contexts | Pass: six drawings restored with visibility/lock/style state; EOD refresh retained drawings; MRNA and raw NVDA showed separate empty collections; adjusted NVDA restored its six objects |
-| Visible-range independence | Pass: anchored VWAP stayed at 211.02 when changing 6M to 1M with its May anchor offscreen |
-| Date validation | Pass: a weekend date is rejected without replacing saved anchors; valid session dates save. Native date submission bug found during QC was fixed and retested. |
-| Chart navigation / plan handoff | Pass: Create plan navigated to Trading with `New plan · NVDA`; returned to Charts without creating a plan |
-| Pages `/Journal/charts/` smoke test | Pass: rendering, menus, note edit, undo/redo, cancellation, and cleanup; no browser console errors |
+| `node --test tests/*.test.mjs` | 87/87 pass |
+| `npx tsc --noEmit` | Pass |
+| `npm run build` | Pass; Pages static export |
+| `BRONTIDE_LOCAL_BUILD=1 node scripts/build.mjs` | Pass; local static export |
+| `git diff --check` | Pass; no whitespace errors |
+| Browser console | 0 errors across acceptance workflows |
 
-Tests:
+The repository has no lint script or lint configuration. The configured TypeScript and production-build checks both pass.
 
-```powershell
-node --test tests/drawing-workspace.test.mjs tests/chart-data.test.mjs tests/auto-trendlines.test.mjs tests/workspace-state.test.mjs tests/ui-recovery.test.mjs
-```
+## 4. Fixed calculation fixtures
 
-Known data limitation: local raw NVDA has no stored bars, so isolation and disabled placement were tested in that state. Adjusted local EOD and the Pages sample dataset were both exercised. Existing local freshness/calendar warnings remain visible.
+The exact fixture table is in [gate-2d.md](gate-2d.md#fixed-calculation-fixtures). Observed values match expected values for:
 
-Temporary QC drawings were removed through the undoable UI. The local preview returns to NVDA, adjusted EOD, 6M, light theme, linear scale, snapping off, and the default favorites. No user trade records were created. Existing `next.config.ts` and untracked `output/` remain outside this change set.
+- combined range: 10→20, +100%, three inclusive sessions, two intervals, four calendar days;
+- long risk: entry 100, stop 95, targets 110/115/120, producing 2R/3R/4R and 20 shares at $10,000 × 1%;
+- contractions: 20%, 10%, 5%, relative depth 0.5 then 0.5;
+- anchored VWAP: 11.5 with weighted σ 0.866025 and exact ±1/±2 bands;
+- regression: slope 1, σ 0.942809, period 3, R² 0.428571;
+- weekly aggregation and raw/adjusted corporate-action coordinates.
 
-## Screenshots
+Malformed input, invalid ordering, unavailable dates, nonpositive risk prices, invalid close/volume values, context mismatch, future storage schema, and unverifiable writes all produce explicit rejected or unavailable states.
 
-The annotations below are deliberate QC examples, not generated trading recommendations.
+## 5. Screenshot evidence
 
-![Risk/reward with an exact 2R example at 1280×720](risk-reward-1280.png)
+Gate evidence is organized by checkpoint:
 
-![Manual contraction editing at 1440×900](contractions-1440.png)
+- [Gate 2B toolbar structure](gate-2b.md#screenshots)
+- [Gate 2C common lifecycle](gate-2c.md#screenshots)
+- [Gate 2D complete tool inventory](gate-2d.md#screenshots)
+- [Gate 2E persistence, responsive, and accessibility](gate-2e.md#screenshots)
 
-![Objects menu in dark mode at 1024×768](objects-1024-dark.png)
+Gate 2E includes 1440×900, 1280×720, 1024×768, 390×844 portrait, 844×390 landscape, material light/dark contrast, mobile group sheets, Weekly restoration, and visible storage failure.
 
-![Price-space regression on a logarithmic display](regression-log-1024.png)
+## 6. Persistence and coordinate integrity
 
-![New measurement tools in the Pages export](pages-tool-menu.png)
+[Gate 2E](gate-2e.md#persistence-and-coordinate-evidence) records the exact v1 migration, v2 schema, symbol isolation, daily/weekly timestamp mapping, adjustment basis, Lin/Log/range/zoom/resize stability, pending-write handling, corrupt/future rejection, and simulated failure evidence.
 
-## Proposed release contents
+The v2 document stores canonical daily timestamps and price values. Rendering derives viewport coordinates, so pan, zoom, resize, range, and Lin/Log never rewrite saved geometry. Weekly maps each canonical session to its containing completed week. Raw and adjusted data remain distinct, including the fixed same-date price 100 versus 50 corporate-action fixture.
 
-- `app/ChartDashboard.tsx`: grouped tools, favorites, contextual editor, object controls, history/snapping shortcuts.
-- `app/DrawingEditor.tsx`: manual drawing editor and visible evidence.
-- `app/chart-workspace.css`: rail, editor, Objects, and native theme styling.
-- `lib/drawing-workspace.ts`: storage migration, history transitions, calculation definitions and unavailable states.
-- `lib/use-drawing-workspace.ts`: explicit persistence, conflict protection, per-context history.
-- `lib/use-drawing-controller.ts`: renderer lifecycle, placement/edit callbacks, cancellation, and restoration.
-- `lib/chart-overlays.ts`: five new drawing overlays.
-- `tests/drawing-workspace.test.mjs`: focused migration/history/calculation tests.
-- This review packet and five screenshots.
+## 7. Accessibility and keyboard
 
-Release gate: stop here for owner review. Merge this phase only after approval, verify its Pages deployment and published chart, then begin Phase 3.
+- 28 desktop controls audited: zero unnamed, zero clipped, zero under 24×24 px.
+- Mobile drawing and group sheets: zero controls under 44×44 px.
+- Named Chart commands and Drawing tools landmarks; named application chart surface.
+- Logical named Tab sequence; Escape closes menus/cancels drawing and restores trigger focus.
+- Ctrl/Command-Z and Ctrl/Command-Shift-Z exact undo/redo; Delete/Backspace, lock, hide, object actions, and tool cancellation validated in the lifecycle suite.
+- Touch placement and two-finger chart pinch do not create accidental drawings.
+
+## 8. Known limitations and deferred items
+
+- Drawing persistence is current-device browser storage; account/cloud sync is outside Phase 2.
+- Version-1 keys remain as migration recovery data.
+- Per-object timeframe visibility is represented in v2 but has no Phase 2 editor; new drawings show on all timeframes.
+- Raw/adjusted drawings are isolated and are not automatically converted.
+- Short Risk/Reward, automatic VCP qualification, logarithmic regression, broker execution, and streaming data remain outside Phase 2.
+- The standalone `/charts/` route omits Trade Plan handoff because it has no planner host; the full workspace handoff is validated.
+- Existing candlesticks remain the only chart type; there is no chart-type selector in the current product.
+
+## 9. Exact PR #2 change set
+
+Product code:
+
+- `app/ChartDashboard.tsx`
+- `app/DrawingContextToolbar.tsx`
+- `app/DrawingEditor.tsx`
+- `app/DrawingObjectsPanel.tsx`
+- `app/TradePlanner.tsx`
+- `app/chart-workspace.css`
+- `app/page.tsx`
+- `lib/chart-overlays.ts`
+- `lib/chart-timeframe.ts`
+- `lib/drawing-tools.ts`
+- `lib/drawing-workspace.ts`
+- `lib/use-drawing-controller.ts`
+- `lib/use-drawing-preferences.ts`
+- `lib/use-drawing-workspace.ts`
+- `lib/workspace-state.ts`
+
+Focused tests:
+
+- `tests/chart-timeframe.test.mjs`
+- `tests/drawing-tool-lifecycle.test.mjs`
+- `tests/drawing-tools.test.mjs`
+- `tests/drawing-workspace.test.mjs`
+- `tests/workspace-state.test.mjs`
+
+Review evidence: this directory, its Gate 2B–2E documents, inventory, and screenshots.
+
+The diff implements the canonical drawing registry and grouped UI, shared lifecycle/controller, specialized overlays and calculations, trade-plan handoff, versioned storage, daily/weekly rendering, responsive sheets, accessibility state, focused tests, and review evidence. The unrelated working-tree `next.config.ts` and `output/` are excluded.
+
+## 10. Phase 1 and release boundary
+
+Phase 1 remains deployed at commit `fd6e934c2085d4a1639246f2bbbd29c3525585ac`. GitHub Pages run [34063396837](https://github.com/Melvinroy/Journal/actions/runs/34063396837) succeeded. `origin/main` still resolves to that exact commit, so this review branch has not changed the published application.
+
+The complete Phase 2 acceptance suite passes. Stop here for final owner approval. Do not merge PR #2, deploy, or begin Phase 3. Approval authorizes the Phase 2 merge only; Phase 3 requires a separate instruction.

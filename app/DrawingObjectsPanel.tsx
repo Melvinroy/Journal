@@ -3,8 +3,8 @@ import { ArrowDown, ArrowUp, Copy, Eye, EyeSlash, Lock, LockOpen, PencilSimple, 
 import { useMemo, useState } from "react";
 import type { Drawing } from "../lib/drawing-workspace";
 
-export function DrawingObjectsPanel({ symbol, adjustment, drawings, selected, unavailable, label, select, locate, update, updateMany, duplicate, reorder, remove, removeMany }: {
-  symbol: string; adjustment: string; drawings: Drawing[]; selected: string[]; unavailable: string[]; label: (name: string) => string;
+export function DrawingObjectsPanel({ symbol, adjustment, timeframe, saveStatus, drawings, selected, unavailable, label, select, locate, update, updateMany, duplicate, reorder, remove, removeMany }: {
+  symbol: string; adjustment: string; timeframe: "1Day" | "1Week"; saveStatus: "saved" | "saving" | "error"; drawings: Drawing[]; selected: string[]; unavailable: string[]; label: (name: string) => string;
   select: (ids: string[]) => void; locate: (id: string) => void; update: (id: string, patch: Partial<Drawing>) => boolean; updateMany: (ids: string[], patch: Partial<Drawing>) => boolean;
   duplicate: (id: string) => boolean; reorder: (id: string, direction: -1 | 1) => boolean; remove: (id: string) => boolean; removeMany: (ids: string[]) => boolean;
 }) {
@@ -16,7 +16,7 @@ export function DrawingObjectsPanel({ symbol, adjustment, drawings, selected, un
   const toggleSelection = (id: string, checked: boolean) => select(checked ? [...selected.filter(value => value !== id), id] : selected.filter(value => value !== id));
   return <div className="drawing-objects-panel">
     <strong>Objects · {symbol} · {adjustment === "raw" ? "raw" : "adjusted"}</strong>
-    <p>{drawings.length} manual drawing{drawings.length === 1 ? "" : "s"} · saved automatically</p>
+    <p>{drawings.length} manual drawing{drawings.length === 1 ? "" : "s"} · {timeframe === "1Day" ? "Daily" : "Weekly"} · <span className={`drawing-save-state ${saveStatus}`}>{saveStatus === "saving" ? "Saving…" : saveStatus === "error" ? "Save failed" : "Saved on this device"}</span></p>
     <div className="drawing-objects-bulk">
       <select aria-label="Filter drawings by type" value={filter} onChange={event => setFilter(event.target.value)}><option value="all">All types</option>{types.map(type => <option key={type} value={type}>{label(type)}</option>)}</select>
       <button disabled={!drawings.length} onClick={() => updateMany(drawings.map(row => row.id), { visible: !allVisible })}>{allVisible ? <EyeSlash size={14}/> : <Eye size={14}/>} {allVisible ? "Hide all" : "Show all"}</button>

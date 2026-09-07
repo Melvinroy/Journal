@@ -5,14 +5,15 @@ import { duplicateDrawing, reorderDrawing, updateDrawings, type Drawing, type St
 import { useDrawingWorkspace } from "./use-drawing-workspace";
 import type { SnapPreference } from "./drawing-tools";
 import { drawingToolLabelForOverlay } from "./drawing-tools";
+import { displayIndexForTimestamp, type ChartTimeframe } from "./chart-timeframe";
 
 const groupId = "brontide-drawings";
 const modeFor = (snap: SnapPreference) => snap === "off" ? "normal" as const : `${snap}_magnet` as const;
 
-export function useDrawingController({ chartRef, generation, storageKey, bars, visibleCount, snap, keepDrawing,
+export function useDrawingController({ chartRef, generation, storageKey, bars, displayBars, visibleCount, timeframe, snap, keepDrawing,
   eraserMode, onSelect, onFinish, onContextMenu, onProperties }: {
-  chartRef: RefObject<Chart | null>; generation: number; storageKey: string; bars: StudyBar[];
-  visibleCount: number; snap: SnapPreference; keepDrawing: boolean;
+  chartRef: RefObject<Chart | null>; generation: number; storageKey: string; bars: StudyBar[]; displayBars: StudyBar[];
+  visibleCount: number; timeframe: ChartTimeframe; snap: SnapPreference; keepDrawing: boolean;
   eraserMode: boolean;
   onSelect: (id: string | null) => void; onFinish: () => void;
   onContextMenu?: (id: string, point: { x: number; y: number }) => void; onProperties?: (id: string) => void;
@@ -25,8 +26,8 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
   const restoring = useRef(false);
   const activeSpec = useRef<{ name: string; note: string } | null>(null);
   const repeat = useRef<{ name: string; note: string } | null>(null);
-  const current = useRef({ store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, eraserMode, snap });
-  current.current = { store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, eraserMode, snap };
+  const current = useRef({ store, bars, displayBars, visibleCount, timeframe, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, eraserMode, snap });
+  current.current = { store, bars, displayBars, visibleCount, timeframe, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, eraserMode, snap };
 
   const cancel = () => {
     if (!draft.current) return false;
@@ -36,11 +37,11 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
     const valid = () => chartRef.current === chart && key === current.current.storageKey;
     const save = (overlay: Overlay) => {
       if (!valid()) return false;
-      const { store: latest, bars: history, visibleCount: count } = current.current;
+      const { store: latest, displayBars: display, visibleCount: count } = current.current;
       try {
         if (overlay.paneId !== "candle_pane") throw new Error("Place price drawings in the candle pane, above volume. This drawing was not saved.");
         const points = overlay.points.map(p => {
-          const timestamp = p.dataIndex === undefined ? p.timestamp : history[Math.round(p.dataIndex) + history.length - count]?.timestamp;
+          const timestamp = p.dataIndex === undefined ? p.timestamp : display[Math.round(p.dataIndex) + display.length - count]?.timestamp;
           if (timestamp === undefined || !Number.isFinite(p.value) || p.value! <= 0) throw new Error("Place drawing anchors inside loaded sessions and above zero.");
           return { timestamp, value: p.value };
         });
@@ -74,7 +75,7 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
     const created = chart.createOverlay({ id: `drawing-${crypto.randomUUID()}`, name, groupId, paneId: "candle_pane",
       mode: modeFor(current.current.snap), needDefaultPointFigure: true,
       styles: { line: { color: name === "brontide-highlighter" ? "rgba(245, 190, 40, .34)" : "#4586c9", size: name === "brontide-highlighter" ? 14 : 2, style: "solid" } },
-      extendData: name.startsWith("brontide-") ? { history: current.current.bars, ...(annotation ? { saved: { text: note } } : {}) } : annotation ? note : undefined,
+      extendData: name.startsWith("brontide-") ? { history: current.current.bars, displayHistory: current.current.displayBars, ...(annotation ? { saved: { text: note } } : {}) } : annotation ? note : undefined,
       ...callbacks(chart, current.current.storageKey) });
     draft.current = typeof created === "string" ? created : null;
     return !!draft.current;
@@ -86,10 +87,11 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
     if (!store.ready) { restoring.current = false; return; }
     const missing: string[] = [];
     for (const row of store.drawings) {
-      const points = row.points.map(p => ({ ...p, dataIndex: p.timestamp === undefined ? undefined : bars.findIndex(b => b.timestamp === p.timestamp) - (bars.length - visibleCount) }));
-      if (row.points.some(p => p.timestamp !== undefined && !bars.some(b => b.timestamp === p.timestamp))) { missing.push(row.id); continue; }
+      const points = row.points.map(p => ({ ...p, dataIndex: p.timestamp === undefined ? undefined : displayIndexForTimestamp(p.timestamp, displayBars, timeframe) - (displayBars.length - visibleCount) }));
+      if (row.timeframeVisibility !== undefined && row.timeframeVisibility !== "all" && !row.timeframeVisibility.includes(timeframe)) continue;
+      if (row.points.some(p => p.timestamp !== undefined && (!bars.some(b => b.timestamp === p.timestamp) || displayIndexForTimestamp(p.timestamp, displayBars, timeframe) < 0))) { missing.push(row.id); continue; }
       const id = chart.createOverlay({ ...row, points, groupId, paneId: "candle_pane", mode: modeFor(snap), needDefaultPointFigure: true,
-        extendData: row.name.startsWith("brontide-") ? { history: bars, saved: row.extendData } : row.extendData,
+        extendData: row.name.startsWith("brontide-") ? { history: bars, displayHistory: displayBars, saved: row.extendData } : row.extendData,
         ...callbacks(chart, storageKey) });
       if (!id) missing.push(row.id);
     }
@@ -97,7 +99,7 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
     const pending = repeat.current; repeat.current = null;
     if (pending && keepDrawing) queueMicrotask(() => { if (chartRef.current === chart) begin(chart, pending.name, pending.note); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generation, store.revision, store.ready, bars, visibleCount, snap, storageKey]);
+  }, [generation, store.revision, store.ready, bars, displayBars, visibleCount, timeframe, snap, storageKey]);
   useEffect(() => { onSelect(null); setError(""); activeSpec.current = null; repeat.current = null; }, [storageKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const setBypass = (value: boolean) => {
@@ -117,7 +119,7 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
   const remove = (id: string) => removeMany([id]);
   const duplicate = (id: string) => { cancel(); const newId = `drawing-${crypto.randomUUID()}`, row = store.drawings.find(d => d.id === id); const success = store.change(rows => duplicateDrawing(rows, id, newId, row ? drawingToolLabelForOverlay(row.name) : undefined)); if (success) onSelect(newId); return success; };
   const reorder = (id: string, direction: -1 | 1) => { cancel(); return store.change(rows => reorderDrawing(rows, id, direction)); };
-  const locate = (id: string) => { const row = store.drawings.find(d => d.id === id); if (!row) return; onSelect(id); if (row.points[0]?.timestamp) chartRef.current?.scrollToTimestamp(row.points[0].timestamp, 180); };
+  const locate = (id: string) => { const row = store.drawings.find(d => d.id === id); if (!row) return; onSelect(id); if (row.points[0]?.timestamp) { const index = displayIndexForTimestamp(row.points[0].timestamp, displayBars, timeframe); if (index >= 0) chartRef.current?.scrollToTimestamp(displayBars[index].timestamp, 180); } };
   return { ...store, error: store.error || error, unavailable, snapBypassed, start, cancel, update, updateMany, remove, removeMany, duplicate, reorder, locate,
     clear: () => { cancel(); if (store.change(rows => rows.filter(d => d.lock))) onSelect(null); },
     undo: () => { cancel(); if (store.undo()) onSelect(null); }, redo: () => { cancel(); if (store.redo()) onSelect(null); } };
