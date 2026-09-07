@@ -1,30 +1,40 @@
 "use client";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Chart, Overlay, OverlayCreate } from "klinecharts";
-import { type Drawing, type StudyBar } from "./drawing-workspace";
+import { duplicateDrawing, reorderDrawing, updateDrawings, type Drawing, type StudyBar } from "./drawing-workspace";
 import { useDrawingWorkspace } from "./use-drawing-workspace";
 import type { SnapPreference } from "./drawing-tools";
+import { drawingToolLabelForOverlay } from "./drawing-tools";
 
 const groupId = "brontide-drawings";
-export function useDrawingController({ chartRef, generation, storageKey, bars, visibleCount, snap, onSelect, onFinish }: {
+const modeFor = (snap: SnapPreference) => snap === "off" ? "normal" as const : `${snap}_magnet` as const;
+
+export function useDrawingController({ chartRef, generation, storageKey, bars, visibleCount, snap, keepDrawing,
+  onSelect, onFinish, onContextMenu, onProperties }: {
   chartRef: RefObject<Chart | null>; generation: number; storageKey: string; bars: StudyBar[];
-  visibleCount: number; snap: SnapPreference; onSelect: (id: string | null) => void; onFinish: () => void;
+  visibleCount: number; snap: SnapPreference; keepDrawing: boolean;
+  onSelect: (id: string | null) => void; onFinish: () => void;
+  onContextMenu?: (id: string, point: { x: number; y: number }) => void; onProperties?: (id: string) => void;
 }) {
   const store = useDrawingWorkspace(storageKey);
   const [error, setError] = useState("");
   const [unavailable, setUnavailable] = useState<string[]>([]);
-  const [repaint, setRepaint] = useState(0);
+  const [snapBypassed, setSnapBypassed] = useState(false);
   const draft = useRef<string | null>(null);
-  const current = useRef({ store, bars, visibleCount, onSelect, onFinish, storageKey });
-  current.current = { store, bars, visibleCount, onSelect, onFinish, storageKey };
+  const restoring = useRef(false);
+  const activeSpec = useRef<{ name: string; note: string } | null>(null);
+  const repeat = useRef<{ name: string; note: string } | null>(null);
+  const current = useRef({ store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, snap });
+  current.current = { store, bars, visibleCount, onSelect, onFinish, onContextMenu, onProperties, storageKey, keepDrawing, snap };
+
   const cancel = () => {
-    if (draft.current) chartRef.current?.removeOverlay({ id: draft.current });
-    draft.current = null; current.current.onFinish();
+    if (!draft.current) return false;
+    chartRef.current?.removeOverlay({ id: draft.current }); draft.current = null; repeat.current = null; return true;
   };
   const callbacks = (chart: Chart, key: string): Partial<OverlayCreate> => {
     const valid = () => chartRef.current === chart && key === current.current.storageKey;
     const save = (overlay: Overlay) => {
-      if (!valid()) return;
+      if (!valid()) return false;
       const { store: latest, bars: history, visibleCount: count } = current.current;
       try {
         if (overlay.paneId !== "candle_pane") throw new Error("Place price drawings in the candle pane, above volume. This drawing was not saved.");
@@ -35,63 +45,77 @@ export function useDrawingController({ chartRef, generation, storageKey, bars, v
         });
         const data = overlay.extendData as { history?: StudyBar[]; saved?: unknown } | undefined;
         const extendData = overlay.name.startsWith("brontide-") && data && typeof data === "object" && "history" in data ? data.saved : overlay.extendData;
+        const existing = latest.drawings.find(row => row.id === overlay.id);
         const row: Drawing = { id: overlay.id, name: overlay.name, points, styles: overlay.styles,
-          visible: overlay.visible, lock: overlay.lock, ...(extendData !== undefined ? { extendData } : {}) };
-        if (latest.change(rows => [...rows.filter(d => d.id !== row.id), row])) { setError(""); current.current.onSelect(row.id); }
+          visible: overlay.visible, lock: overlay.lock, ...(existing?.displayName ? { displayName: existing.displayName } : {}),
+          ...(extendData !== undefined ? { extendData } : {}) };
+        if (latest.change(rows => rows.some(d => d.id === row.id) ? rows.map(d => d.id === row.id ? row : d) : [...rows, row])) { setError(""); current.current.onSelect(row.id); return true; }
       } catch (err) { setError((err as Error).message); }
-      // Reconcile even failed writes, so visible geometry never implies a successful save.
-      setRepaint(v => v + 1);
+      return false;
     };
     return {
       onSelected: ({ overlay }) => { if (valid()) current.current.onSelect(overlay.id); },
-      onDrawEnd: ({ overlay }) => { draft.current = null; save(overlay); current.current.onFinish(); },
+      onDeselected: () => { if (valid() && !draft.current && !restoring.current) current.current.onSelect(null); },
+      onDrawEnd: ({ overlay }) => {
+        draft.current = null;
+        if (save(overlay) && current.current.keepDrawing && activeSpec.current) repeat.current = activeSpec.current;
+        else current.current.onFinish();
+      },
       onPressedMoveEnd: ({ overlay }) => save(overlay),
-      // Right-click must not invoke the renderer's destructive default removal.
-      onRightClick: ({ overlay, preventDefault }) => { preventDefault?.(); if (valid()) current.current.onSelect(overlay.id); },
+      onDoubleClick: ({ overlay, preventDefault }) => { preventDefault?.(); if (valid()) { current.current.onSelect(overlay.id); current.current.onProperties?.(overlay.id); } },
+      onRightClick: ({ overlay, pageX, pageY, preventDefault }) => { preventDefault?.(); if (valid()) { current.current.onSelect(overlay.id); current.current.onContextMenu?.(overlay.id, { x: pageX ?? 0, y: pageY ?? 0 }); } },
     };
+  };
+  const begin = (chart: Chart, name: string, note: string) => {
+    activeSpec.current = { name, note };
+    const created = chart.createOverlay({ id: `drawing-${crypto.randomUUID()}`, name, groupId, paneId: "candle_pane",
+      mode: modeFor(current.current.snap), needDefaultPointFigure: true,
+      styles: { line: { color: "#4586c9", size: 2, style: "solid" } },
+      extendData: name.startsWith("brontide-") ? { history: current.current.bars } : name === "simpleAnnotation" ? note : undefined,
+      ...callbacks(chart, current.current.storageKey) });
+    draft.current = typeof created === "string" ? created : null;
+    return !!draft.current;
   };
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    draft.current = null; current.current.onFinish();
-    chart.removeOverlay({ groupId });
-    if (!store.ready) return;
+    draft.current = null; restoring.current = true; chart.removeOverlay({ groupId });
+    if (!store.ready) { restoring.current = false; return; }
     const missing: string[] = [];
     for (const row of store.drawings) {
       const points = row.points.map(p => ({ ...p, dataIndex: p.timestamp === undefined ? undefined : bars.findIndex(b => b.timestamp === p.timestamp) - (bars.length - visibleCount) }));
       if (row.points.some(p => p.timestamp !== undefined && !bars.some(b => b.timestamp === p.timestamp))) { missing.push(row.id); continue; }
-      const id = chart.createOverlay({ ...row, points, groupId, paneId: "candle_pane", mode: snap === "off" ? "normal" : `${snap}_magnet`,
-        needDefaultPointFigure: true,
+      const id = chart.createOverlay({ ...row, points, groupId, paneId: "candle_pane", mode: modeFor(snap), needDefaultPointFigure: true,
         extendData: row.name.startsWith("brontide-") ? { history: bars, saved: row.extendData } : row.extendData,
         ...callbacks(chart, storageKey) });
       if (!id) missing.push(row.id);
     }
-    setUnavailable(missing);
-    // Callbacks read current store refs; renderer is rebuilt only for geometry/state changes.
+    setUnavailable(missing); restoring.current = false;
+    const pending = repeat.current; repeat.current = null;
+    if (pending && keepDrawing) queueMicrotask(() => { if (chartRef.current === chart) begin(chart, pending.name, pending.note); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generation, store.revision, store.ready, repaint, bars, visibleCount, snap, storageKey]);
-  useEffect(() => { onSelect(null); setError(""); }, [storageKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const start = (name: string, note: string) => {
-    cancel(); setError("");
-    const chart = chartRef.current;
-    if (!chart || !store.ready) return false;
-    const created = chart.createOverlay({ id: `drawing-${crypto.randomUUID()}`, name, groupId, paneId: "candle_pane",
-      mode: snap === "off" ? "normal" : `${snap}_magnet`, needDefaultPointFigure: true,
-      styles: { line: { color: "#4586c9", size: 2, style: "solid" } },
-      extendData: name.startsWith("brontide-") ? { history: bars } : name === "simpleAnnotation" ? note : undefined,
-      ...callbacks(chart, storageKey) });
-    draft.current = typeof created === "string" ? created : null;
-    return !!draft.current;
-  };
-  const update = (id: string, patch: Partial<Drawing>) => {
-    cancel(); return store.change(rows => rows.map(d => d.id === id ? { ...d, ...patch, id: d.id, name: d.name } : d));
-  };
-  const remove = (id: string) => {
-    cancel(); const success = store.change(rows => rows.filter(d => d.id !== id || d.lock));
-    if (success) onSelect(null); return success;
-  };
-  return { ...store, error: store.error || error, unavailable, start, cancel, update, remove,
+  }, [generation, store.revision, store.ready, bars, visibleCount, snap, storageKey]);
+  useEffect(() => { onSelect(null); setError(""); activeSpec.current = null; repeat.current = null; }, [storageKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const setBypass = (value: boolean) => {
+      setSnapBypassed(value); const chart = chartRef.current; if (!chart) return;
+      for (const overlay of chart.getOverlays({ groupId })) chart.overrideOverlay({ id: overlay.id, mode: value ? "normal" : modeFor(current.current.snap) });
+    };
+    const down = (event: KeyboardEvent) => { if (event.key === "Alt") setBypass(true); };
+    const up = (event: KeyboardEvent) => { if (event.key === "Alt") setBypass(false); };
+    const blur = () => setBypass(false);
+    document.addEventListener("keydown", down); document.addEventListener("keyup", up); window.addEventListener("blur", blur);
+    return () => { document.removeEventListener("keydown", down); document.removeEventListener("keyup", up); window.removeEventListener("blur", blur); };
+  }, [chartRef]);
+  const start = (name: string, note: string) => { cancel(); setError(""); const chart = chartRef.current; return !!chart && store.ready && begin(chart, name, note); };
+  const updateMany = (ids: string[], patch: Partial<Drawing>) => { cancel(); return store.change(rows => updateDrawings(rows, ids, patch)); };
+  const update = (id: string, patch: Partial<Drawing>) => updateMany([id], patch);
+  const removeMany = (ids: string[]) => { cancel(); const selected = new Set(ids); const success = store.change(rows => rows.filter(d => !selected.has(d.id) || d.lock)); if (success) onSelect(null); return success; };
+  const remove = (id: string) => removeMany([id]);
+  const duplicate = (id: string) => { cancel(); const newId = `drawing-${crypto.randomUUID()}`, row = store.drawings.find(d => d.id === id); const success = store.change(rows => duplicateDrawing(rows, id, newId, row ? drawingToolLabelForOverlay(row.name) : undefined)); if (success) onSelect(newId); return success; };
+  const reorder = (id: string, direction: -1 | 1) => { cancel(); return store.change(rows => reorderDrawing(rows, id, direction)); };
+  const locate = (id: string) => { const row = store.drawings.find(d => d.id === id); if (!row) return; onSelect(id); if (row.points[0]?.timestamp) chartRef.current?.scrollToTimestamp(row.points[0].timestamp, 180); };
+  return { ...store, error: store.error || error, unavailable, snapBypassed, start, cancel, update, updateMany, remove, removeMany, duplicate, reorder, locate,
     clear: () => { cancel(); if (store.change(rows => rows.filter(d => d.lock))) onSelect(null); },
-    undo: () => { cancel(); if (store.undo()) onSelect(null); },
-    redo: () => { cancel(); if (store.redo()) onSelect(null); } };
+    undo: () => { cancel(); if (store.undo()) onSelect(null); }, redo: () => { cancel(); if (store.redo()) onSelect(null); } };
 }

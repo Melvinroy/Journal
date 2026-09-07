@@ -5,7 +5,7 @@ import ts from 'typescript';
 const compiled = ts.transpileModule(readFileSync(new URL('../lib/drawing-workspace.ts', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { decodeDrawings, drawingHistory, changeDrawings, travelDrawings, riskReward, dateMeasurement, contractions, anchoredVWAP, regressionChannel, drawingEvidence } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const { decodeDrawings, drawingHistory, changeDrawings, travelDrawings, duplicateDrawing, reorderDrawing, updateDrawings, riskReward, dateMeasurement, contractions, anchoredVWAP, regressionChannel, drawingEvidence } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const day = 86400000;
 const bars = [0, 1, 4, 5, 6, 7].map((d, i) => ({ timestamp: Date.UTC(2026, 8, 3) + d * day, high: 10 + i * 2, low: 10 + i * 2, close: 10 + i * 2, volume: i ? 300 : 100 }));
 const anchors = (first, last) => [{ timestamp: bars[first].timestamp, value: 10 }, { timestamp: bars[last].timestamp, value: 20 }];
@@ -33,7 +33,19 @@ test('create, edit, lock, hide, delete and clear undo atomically; redo restores 
 test('no-op edits retain redo and history is bounded', () => {
   let h=drawingHistory([]); assert.equal(changeDrawings(h,[]),h);
   for(let i=0;i<70;i++) h=changeDrawings(h,[{...decodeDrawings([original])[0],id:String(i)}]);
-  assert.equal(h.past.length,50); assert.equal(travelDrawings(drawingHistory([]),'undo').past.length,0);
+  assert.equal(h.past.length,70); assert.equal(travelDrawings(drawingHistory([]),'undo').past.length,0);
+});
+test('history keeps 100 actions and shared object actions are exact and non-destructive', () => {
+  let h=drawingHistory([]); for(let i=0;i<130;i++) h=changeDrawings(h,[{...decodeDrawings([original])[0],id:String(i)}]);
+  assert.equal(h.past.length,100);
+  const a={...decodeDrawings([original])[0],displayName:'Pivot'};
+  const b={...a,id:'two',displayName:'Support'};
+  const copied=duplicateDrawing([a,b],a.id,'copy');
+  assert.deepEqual(copied.map(row=>row.id),['old','copy','two']); assert.equal(copied[1].displayName,'Pivot copy'); assert.equal(copied[1].lock,false);
+  assert.deepEqual(reorderDrawing(copied,'copy',1).map(row=>row.id),['old','two','copy']);
+  const updated=updateDrawings(copied,['old','two'],{visible:false,id:'unsafe',name:'unsafe'});
+  assert.equal(updated[0].visible,false); assert.equal(updated[2].visible,false); assert.equal(updated[0].id,'old'); assert.equal(updated[0].name,'segment');
+  assert.equal(duplicateDrawing([a],a.id,a.id)[0],a); assert.equal(reorderDrawing([a],a.id,-1)[0],a);
 });
 test('long position gives 2R for entry 100, stop 95, target 110', () => {
   assert.deepEqual(riskReward([100,95,110].map(value=>({value}))),{risk:5,reward:10,ratio:2});

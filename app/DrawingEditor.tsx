@@ -11,15 +11,18 @@ export function DrawingEditor({ drawing, bars, unavailable, update, remove }: {
     date: p.timestamp ? new Date(p.timestamp).toISOString().slice(0, 10) : "", price: p.value?.toString() ?? "",
   })));
   const [note, setNote] = useState(typeof drawing.extendData === "string" ? drawing.extendData : "");
+  const [displayName, setDisplayName] = useState(drawing.displayName ?? "");
+  const lineKind = drawing.styles?.line?.style === "solid" ? "solid" : drawing.styles?.line?.dashedValue?.[0] === 2 ? "dotted" : "dashed";
   return <>
     <p role="status">{unavailable ? "Anchors are outside loaded history, or this tool is unavailable. The saved drawing is retained." : drawingEvidence(drawing, bars)}</p>
+    <label>Name<input aria-label="Drawing name" maxLength={80} value={displayName} placeholder="Automatic name" onChange={event => setDisplayName(event.target.value)} onBlur={() => update(drawing.id, { displayName: displayName.trim() || undefined })}/></label>
     <label><input type="checkbox" checked={drawing.lock} onChange={e => update(drawing.id, { lock: e.target.checked })}/>Lock drawing</label>
     <label><input type="checkbox" checked={drawing.visible} onChange={e => update(drawing.id, { visible: e.target.checked })}/>Show drawing</label>
     <fieldset disabled={drawing.lock} className="drawing-editor-fields">
       <legend>Appearance</legend>
       <label>Color<input aria-label="Drawing color" type="color" value={drawing.styles?.line?.color ?? "#4586c9"} onChange={e => update(drawing.id, { styles: { ...drawing.styles, line: { ...drawing.styles?.line, color: e.target.value }, text: { ...drawing.styles?.text, color: e.target.value } } })}/></label>
       <label>Width<select aria-label="Drawing width" value={drawing.styles?.line?.size ?? 2} onChange={e => update(drawing.id, { styles: { ...drawing.styles, line: { ...drawing.styles?.line, size: Number(e.target.value) } } })}>{[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}px</option>)}</select></label>
-      <label>Line<select aria-label="Drawing line style" value={drawing.styles?.line?.style ?? "solid"} onChange={e => update(drawing.id, { styles: { ...drawing.styles, line: { ...drawing.styles?.line, style: e.target.value as "solid" | "dashed", dashedValue: [5, 4] } } })}><option value="solid">Solid</option><option value="dashed">Dashed</option></select></label>
+      <label>Line<select aria-label="Drawing line style" value={lineKind} onChange={e => update(drawing.id, { styles: { ...drawing.styles, line: { ...drawing.styles?.line, style: e.target.value === "solid" ? "solid" : "dashed", dashedValue: e.target.value === "dotted" ? [2, 3] : [6, 4] } } })}><option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select></label>
     </fieldset>
     <form onSubmit={event => {
       event.preventDefault();

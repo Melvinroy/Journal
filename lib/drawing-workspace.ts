@@ -2,7 +2,7 @@ import type { OverlayCreate } from "klinecharts";
 
 export type DrawingPoint = { timestamp?: number; value?: number };
 export type Drawing = Pick<OverlayCreate, "name" | "styles" | "extendData"> & {
-  id: string; points: DrawingPoint[]; lock: boolean; visible: boolean;
+  id: string; points: DrawingPoint[]; lock: boolean; visible: boolean; displayName?: string;
 };
 export type History = { past: Drawing[][]; present: Drawing[]; future: Drawing[][] };
 export type StudyBar = { timestamp: number; high: number; low: number; close: number; volume?: number };
@@ -21,13 +21,14 @@ export function decodeDrawings(value: unknown): Drawing[] {
     ids.add(id);
     return { name: row.name, id, points: row.points.map(({ timestamp, value }: DrawingPoint) => ({ timestamp, value })),
       lock: row.lock === true, visible: row.visible !== false,
+      ...(typeof row.displayName === "string" && row.displayName.trim() ? { displayName: row.displayName.trim() } : {}),
       ...(row.styles ? { styles: row.styles } : {}), ...(row.extendData !== undefined ? { extendData: row.extendData } : {}) };
   });
 }
 export function drawingHistory(present: Drawing[]): History { return { past: [], present, future: [] }; }
 export function changeDrawings(history: History, next: Drawing[]): History {
   if (JSON.stringify(next) === JSON.stringify(history.present)) return history;
-  return { past: [...history.past, history.present].slice(-50), present: next, future: [] };
+  return { past: [...history.past, history.present].slice(-100), present: next, future: [] };
 }
 export function travelDrawings(history: History, direction: "undo" | "redo"): History {
   if (direction === "undo") {
@@ -36,6 +37,31 @@ export function travelDrawings(history: History, direction: "undo" | "redo"): Hi
   }
   const next = history.future[0];
   return next ? { past: [...history.past, history.present], present: next, future: history.future.slice(1) } : history;
+}
+
+export function duplicateDrawing(rows: Drawing[], id: string, newId: string, baseName?: string): Drawing[] {
+  const index = rows.findIndex(row => row.id === id);
+  if (index < 0 || rows.some(row => row.id === newId)) return rows;
+  const source = rows[index];
+  const copy: Drawing = JSON.parse(JSON.stringify({ ...source, id: newId,
+    displayName: `${source.displayName ?? baseName ?? source.name} copy`, lock: false }));
+  return [...rows.slice(0, index + 1), copy, ...rows.slice(index + 1)];
+}
+export function reorderDrawing(rows: Drawing[], id: string, direction: -1 | 1): Drawing[] {
+  const index = rows.findIndex(row => row.id === id), target = index + direction;
+  if (index < 0 || target < 0 || target >= rows.length) return rows;
+  const next = [...rows]; [next[index], next[target]] = [next[target], next[index]]; return next;
+}
+export function updateDrawings(rows: Drawing[], ids: string[], patch: Partial<Drawing>): Drawing[] {
+  const selected = new Set(ids); let changed = false;
+  const next = rows.map(row => {
+    if (!selected.has(row.id)) return row;
+    const safePatch = { ...patch }; delete safePatch.id; delete safePatch.name;
+    const candidate = { ...row, ...safePatch, id: row.id, name: row.name };
+    if (JSON.stringify(candidate) === JSON.stringify(row)) return row;
+    changed = true; return candidate;
+  });
+  return changed ? next : rows;
 }
 
 export function riskReward(points: DrawingPoint[]) {
