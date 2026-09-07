@@ -88,14 +88,14 @@ html:has(.chart-layout-v1), body:has(.chart-layout-v1) { height: 100%; overflow:
 /* Drawing workflow keeps all permanent controls in the existing row and rail. */
 .chart-layout-v1.theme-dark { color-scheme: dark; }
 .chart-layout-v1.theme-light { color-scheme: light; }
-.chart-layout-v1 .drawing-rail { gap: 2px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; }
+.chart-layout-v1 .drawing-rail { gap: 2px; padding-inline: 2px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; }
 .chart-layout-v1 .drawing-tool-group, .chart-layout-v1 .drawing-group-slot,
-.chart-layout-v1 .drawing-actions > button { width: 35px; height: 32px; flex: 0 0 32px; }
+.chart-layout-v1 .drawing-actions > button { width: 43px; height: 32px; flex: 0 0 32px; }
 .chart-layout-v1 .drawing-group-slot { position: relative; }
 .chart-layout-v1 .drawing-group-slot > button:first-child { width: 35px; height: 32px; }
-.chart-layout-v1 .drawing-group-slot > .drawing-group-open { position: absolute; right: -9px; bottom: 0; width: 24px; height: 24px; padding: 10px 0 0 10px; border-radius: 3px; background: color-mix(in srgb, var(--chart-panel) 82%, transparent); }
+.chart-layout-v1 .drawing-group-slot > .drawing-group-open { position: absolute; right: 0; bottom: 0; width: 24px; height: 24px; padding: 10px 4px 0 6px; border-radius: 3px; background: transparent; }
 .chart-layout-v1 .drawing-group-slot > .drawing-group-open:hover, .chart-layout-v1 .drawing-group-slot > .drawing-group-open[aria-expanded="true"] { color: var(--chart-accent); background: var(--chart-control-hover); }
-.chart-layout-v1 .drawing-group-slot:has(> button.active) > .drawing-group-open { color: white; background: color-mix(in srgb, var(--chart-accent) 82%, black); }
+.chart-layout-v1 .drawing-group-slot:has(> button.active) > .drawing-group-open { color: white; }
 .chart-layout-v1 .drawing-tool-group + .drawing-tool-group { padding-top: 0; border-top: 0; }
 .chart-layout-v1 .drawing-actions { margin-top: auto; display: grid; gap: 2px; padding-top: 6px; }
 .chart-layout-v1 .drawing-rail .drawing-tool-menu { position: fixed; top: 56px; left: 54px; max-height: calc(100dvh - 68px); width: 330px; }

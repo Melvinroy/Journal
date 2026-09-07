@@ -100,3 +100,18 @@ The five new tests raise the repository total from 82 to 87. They cover weekly a
 - The existing candlestick renderer remains the chart type; the product has no separate chart-type selector to regress.
 
 Gate 2E and the integrated Phase 2 acceptance suite are complete. PR #2 must remain unmerged until the owner approves the complete review package. That approval authorizes the Phase 2 merge only; Phase 3 still requires a separate instruction.
+
+## Final UI review corrections
+
+The owner withheld final approval and requested two Phase 2 corrections. Both are implemented and revalidated:
+
+- The group-opening chevron now stays inside the 48 px desktop rail. Its idle surface is transparent, its active color is integrated with the quick-tool button, and the quick-tool center remains independently clickable. Geometry checks passed for every group in light and dark themes at 1440×900, 1280×720, and 1024×768.
+- Portrait and landscape bottom sheets retain separate 44×44 px group openers. Every opener stays inside its sheet and no mobile control falls below 44×44 px.
+- The built-in 5/10/20-period volume moving averages are disabled by passing an empty parameter list to the volume indicator. Volume bars and their colors are unchanged. The independent MA20/MA50/MA200 price-chart indicator and legend remain visible and unchanged.
+- Regression after the correction: 87/87 tests, TypeScript, Pages production build, five viewport geometry checks, both themes, mobile target checks, and zero browser console errors all pass.
+
+![Corrected desktop rail and bar-only volume pane in light theme](gate-2e/review-fix-desktop-1280x720-light.png)
+
+![Corrected desktop rail and bar-only volume pane in dark theme](gate-2e/review-fix-desktop-1280x720-dark.png)
+
+![Corrected mobile drawing sheet](gate-2e/review-fix-mobile-390x844-light.png)

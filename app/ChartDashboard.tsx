@@ -423,7 +423,7 @@ export function ChartDashboard({ onExit, context, onPlan, navigation }: { onExit
         if (followingSelectedRange) applyDefaultViewport();
       });
       resizeObserver.observe(containerRef.current);
-      chart.createIndicator({ name: "VOL", paneId: "volume_pane", styles: { bars: [{ upColor: palette.volumeUp, downColor: palette.volumeDown, noChangeColor: palette.neutral }] } });
+      chart.createIndicator({ name: "VOL", paneId: "volume_pane", calcParams: [], styles: { bars: [{ upColor: palette.volumeUp, downColor: palette.volumeDown, noChangeColor: palette.neutral }], tooltip: { showRule: "none" } } });
       chart.setPaneOptions({ id: "volume_pane", height: 92, minHeight: 58, dragEnabled: true, order: 20 });
       const averages = [[20, "#875fd2", show20], [50, "#4169ca", show50], [200, "#ba7641", show200]] as const;
       const visibleAverages = averages.filter(([, , visible]) => visible);

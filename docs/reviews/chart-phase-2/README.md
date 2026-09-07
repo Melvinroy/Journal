@@ -1,6 +1,6 @@
 # Phase 2 — complete drawing workflow review package
 
-Status: Gates 2A–2E are implemented and validated. This is the final Phase 2 approval checkpoint. [PR #2](https://github.com/Melvinroy/Journal/pull/2) remains draft and unmerged; no deployment or Phase 3 work has begun.
+Status: Gates 2A–2E and the two final UI review corrections are implemented and validated. This is the renewed final Phase 2 approval checkpoint. [PR #2](https://github.com/Melvinroy/Journal/pull/2) remains draft and unmerged; no deployment or Phase 3 work has begun.
 
 Branch: `codex/chart-phase-2-drawings`
 Base and unchanged `main`: `fd6e934c2085d4a1639246f2bbbd29c3525585ac`
@@ -62,6 +62,8 @@ Gate evidence is organized by checkpoint:
 - [Gate 2E persistence, responsive, and accessibility](gate-2e.md#screenshots)
 
 Gate 2E includes 1440×900, 1280×720, 1024×768, 390×844 portrait, 844×390 landscape, material light/dark contrast, mobile group sheets, Weekly restoration, and visible storage failure.
+
+The final-review screenshots in [Gate 2E](gate-2e.md#final-ui-review-corrections) show the corrected contained rail chevron and the bar-only volume pane on desktop in both themes, plus the corrected mobile sheet. The MA20/MA50/MA200 lines remain on the main price chart.
 
 ## 6. Persistence and coordinate integrity
 
