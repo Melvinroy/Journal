@@ -10,4 +10,4 @@
 ## Delivery
 
 - Work on the scoped branch and follow [the execution plan](docs/EXECUTION_PLAN.md), [the Windows handoff](docs/WINDOWS_CODEX_HANDOFF.md), and the active phase review packet. Do not push until the user approves the exact commit SHA, and do not merge or deploy until the user explicitly approves that action. Approval of one commit or gate does not carry forward; an implementation, local pass, or CI pass is not approval.
-- Keep harness work separate from chart PR #2. The current CI and pending branch-protection dependency are recorded in [the CI verification guide](docs/testing/ci-verification.md).
+- Follow the current required checks and protection settings in [the CI verification guide](docs/testing/ci-verification.md). Chart PR #2 and harness PR #3 are merged; their former stacked-PR dependency is historical, not a pending release gate.

@@ -4,7 +4,11 @@ Use this as the prompt for the Codex session running on the Windows laptop. The 
 
 ## Initial instructions
 
-You are working in `C:\Users\melvi\Projects\Journal`, public repository `Melvinroy/Journal`. The database is `services/eod/data/brontide.duckdb`. Read AGENTS.md if present, README.md, docs/EXECUTION_PLAN.md, docs/EXECUTION_E1_VALIDATION.md and services/eod/README.md. Inspect status and history before modifying anything.
+Use the explicitly selected checkout of public repository `Melvinroy/Journal`; confirm its path, branch and HEAD before work. Read [AGENTS.md](../AGENTS.md), README.md, docs/EXECUTION_PLAN.md, docs/EXECUTION_E1_VALIDATION.md and services/eod/README.md. Inspect status and history before modifying anything.
+
+Maintenance checkout record (8 September 2026): use `C:\Users\melvi\Projects\Journal-maintenance` for the reconciled development source. It was created on `codex/harness-docs-maintenance` from remote `main` at `333f8cd7c1c07335699cd82eb33575c0dcceb393` and contains the merged guidance, verification command and CI workflow. The original `C:\Users\melvi\Projects\Journal` checkout remains at `fd6e934` with unrelated `next.config.ts`, `output/` and `test-results/` changes preserved. Do not resume development there on the assumption that its local `main` is current. Recheck this dated record against actual worktree and remote state before a later task; keep future product changes off the documentation-maintenance branch.
+
+The existing local database remains under the original checkout at `services/eod/data/brontide.duckdb`. The new worktree does not copy ignored dependencies, service environments, credentials or databases. Follow [local verification prerequisites](testing/local-verification.md) when executable work is authorized; do not assume that a source checkout alone is runtime-ready. Any real-data validation must explicitly identify its configured database and reviewed source revision without moving or overwriting the original data.
 
 The cloud implementation and Windows validation must use the same reviewed commit. Fetch main read-only, report the current HEAD, and check for uncommitted or unpublished work. Fast-forward only when safe. Never reset, overwrite, delete or stash unrelated work automatically. If the requested commit is unavailable, report that exact limitation; do not recreate an approximation. A cloud-local commit will not be fetchable until its approved push or an explicitly supplied patch/bundle.
 
@@ -19,7 +23,7 @@ Validate the phase specified by Melvin or the accompanying implementation report
 For chart/local-data changes:
 
 1. Install the lockfile dependencies with npm ci. Report npm audit findings; no force upgrade.
-2. Run npm run test:chart and npm run build. Run backend tests using the documented EOD environment.
+2. Use focused checks while iterating. For release-ready executable changes, run `npm run verify` using the [documented EOD environment](testing/local-verification.md); it includes the full Node and backend suites, TypeScript, focused browser regressions and one production build. Do not repeat those stages separately without a specific validation need. Minor documentation-only changes use targeted checks as specified in AGENTS.md.
 3. Start npm run local in a separate terminal. Use the documented `python -m brontide_eod.verify_chart` command from the configured EOD environment to compare AAPL/MSFT/NVDA/SPY against the real database. Do not download bars to fix a discrepancy without diagnosing it.
 4. Check local versus sample labeling, symbol search, adjustment selection, loading/empty/error/retry/stale states, ranges, right whitespace, theme, keyboard and desktop/mobile layouts.
 5. For E2 specifically, compare the same dated moving average across chart ranges, with sufficient warm-up. Verify each tool's actual behavior, saved drawings/layouts, watchlist persistence and navigation context.

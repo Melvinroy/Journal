@@ -19,7 +19,7 @@ The four tests cover the rail geometry and real click targets in light/dark them
 
 The toolbar images were reviewed at their original 48×280 resolution. They show the active Trend Line and chevron wholly inside the rail. The chart images were reviewed at their original 1232×672 resolution. They show the seeded price chart with MA20/MA50/MA200 and a lower pane containing volume bars without line overlays.
 
-## Defect-detection proof
+## Historical defect-detection proof
 
 The corrected branch passed the documented command: four tests passed, covering both defects in light and dark themes.
 
@@ -30,16 +30,16 @@ Each original defect was then reintroduced separately in the disposable detached
 | Original protruding chevron CSS from `b4ee336` | `npm run test:ui-regressions -- --grep "active tool"` | Exit 1; both theme cases reported expected `contained: true`, received `contained: false` |
 | Original KLineCharts VOL defaults from `b4ee336` | `npm run test:ui-regressions -- --grep "volume is"` | Exit 1; light comparison differed by 1,577 pixels and dark by 1,536 pixels, localized to the three rendered volume-average lines |
 
-The disposable worktree was removed after the proof. A normal run against the corrected checkout passes all four locked comparisons.
+The disposable worktree was removed after the proof. The corrected checkout passed all four locked comparisons at that time. These records are retained evidence, not new test results from documentation maintenance.
 
 ## Scope and limitations
 
-- Step 1 runs Chromium at 1280×720 on one worker. It targets the two reported desktop defects rather than repeating the broader Phase 2 responsive suite.
+- The harness runs Chromium at 1280×720 on one worker. It targets the two reported desktop defects rather than repeating the broader Phase 2 responsive suite.
 - Pixel baselines are environment-sensitive. They were captured and verified on the project’s current Windows Chromium environment; a future Linux CI job should use baselines generated and reviewed in that fixed environment.
 - The 75-pixel tolerance absorbs minor antialiasing noise. The reproduced volume defect changed more than 1,500 pixels per theme.
-- The runner starts the Next.js development server. Production build verification remains a separate Phase 2 check.
+- The runner starts the Next.js development server. Production build verification is the final stage of [the unified verification command](local-verification.md). The harness is merged; [CI and branch protection](ci-verification.md) enforce verification on pull requests.
 
-## Step 1 changed files
+## Historical Step 1 changed files
 
 - `.gitignore` — ignores Playwright reports and transient test results.
 - `package.json`, `package-lock.json` — adds the command and the sole new dependency, `@playwright/test`.
@@ -49,4 +49,4 @@ The disposable worktree was removed after the proof. A normal run against the co
 - `tests/ui/__screenshots__/*.png` — contains the four reviewed visual baselines.
 - `docs/testing/chart-ui-regressions.md` — documents execution, proof, baselines, and limitations.
 
-No application source, global instruction, hook, CI, branch-protection, or deployment file changes are part of Step 1.
+No application source, global instruction, hook, CI, branch-protection, or deployment file changes were part of Step 1. This list describes that original step, not the current overall harness status.
