@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,9 @@ const tsc = path.join(root, "node_modules", "typescript", "bin", "tsc");
 const build = path.join(root, "scripts", "build.mjs");
 const browserRunner = path.join(root, "scripts", "run-ui-regressions.mjs");
 const isolatedRoot = mkdtempSync(path.join(tmpdir(), "brontide-verify-"));
+const reportRoot = process.env.BRONTIDE_VERIFY_REPORT_DIR
+  ? path.resolve(process.env.BRONTIDE_VERIFY_REPORT_DIR)
+  : undefined;
 const started = Date.now();
 let completed = 0;
 
@@ -49,6 +52,7 @@ requireFile(python, `EOD Python environment is missing at ${python}. Create it a
 requireFile(tsc, "TypeScript is missing. Run npm install before npm run verify.");
 requireFile(build, `Production build runner is missing at ${build}.`);
 requireFile(browserRunner, `Browser regression runner is missing at ${browserRunner}.`);
+if (reportRoot) mkdirSync(reportRoot, { recursive: true });
 
 const nodeParts = process.versions.node.split(".").map(Number);
 if (nodeParts[0] < 20 || nodeParts[0] === 20 && nodeParts[1] < 9) fail(`Node ${process.versions.node} is unsupported; Next.js requires Node >=20.9.`);
@@ -100,7 +104,9 @@ const backendEnv = {
 
 try {
   runStage("Node tests", process.execPath, ["--test", "tests/*.test.mjs"]);
-  runStage("EOD backend tests", python, ["-m", "pytest", "-q"], { cwd: service, env: backendEnv });
+  const pytestArgs = ["-m", "pytest", "-q"];
+  if (reportRoot) pytestArgs.push(`--junitxml=${path.join(reportRoot, "eod-junit.xml")}`);
+  runStage("EOD backend tests", python, pytestArgs, { cwd: service, env: backendEnv });
   runStage("TypeScript", process.execPath, [tsc, "--noEmit"]);
   runStage("Browser regressions", process.execPath, [browserRunner]);
   runStage("Production build", process.execPath, [build]);

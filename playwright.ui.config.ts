@@ -1,7 +1,9 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 
 const port = 3107;
 const serverEnv = { ...process.env, AI_AGENT: "", CODEX_SANDBOX: "", CODEX_CI: "", CODEX_THREAD_ID: "" };
+const reportDirectory = process.env.BRONTIDE_VERIFY_REPORT_DIR;
 
 export default defineConfig({
   testDir: "./tests/ui",
@@ -9,7 +11,13 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
-  reporter: "line",
+  reporter: reportDirectory
+    ? [
+        ["line"],
+        ["html", { outputFolder: path.join(reportDirectory, "playwright-report"), open: "never" }],
+        ["junit", { outputFile: path.join(reportDirectory, "playwright-junit.xml") }],
+      ]
+    : "line",
   snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",
   expect: { timeout: 10_000, toHaveScreenshot: { animations: "disabled", maxDiffPixels: 75 } },
   use: {
