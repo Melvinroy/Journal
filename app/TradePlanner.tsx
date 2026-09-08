@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { calculateTradePlan, type TradeSide } from "../lib/trade-planner";
+import { calculatePositionSize, targetPrice, type TradeDirection as TradeSide } from "../lib/trading-domain";
 import { demoStorageKey } from "../lib/review-demo";
 import type { MarketContext } from "../lib/workspace-state";
 
@@ -105,14 +105,14 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
     }
   }, []);
 
-  const result = useMemo(() => calculateTradePlan({
-    accountEquity,
-    riskPercent,
-    maxAllocationPercent,
-    entryPrice,
-    stopPrice,
-    side,
-  }), [accountEquity, riskPercent, maxAllocationPercent, entryPrice, stopPrice, side]);
+  const result = useMemo(() => {
+    const empty = { valid:false,error:"Enter the account, entry and stop values to calculate the trade.",riskBudget:0,riskPerShare:0,sharesByRisk:0,sharesByAllocation:0,shares:0,positionValue:0,plannedRisk:0,accountUsePercent:0,actualRiskPercent:0,oneRPrice:0,twoRPrice:0 };
+    try {
+      const sized=calculatePositionSize({accountBase:accountEquity,riskPercent,allocationPercent:maxAllocationPercent,entryPrice,stopPrice,direction:side});
+      if(!sized.shares)return {...empty,error:"The current limits do not allow at least one share."};
+      return {...sized,valid:true,error:"",oneRPrice:targetPrice(entryPrice,stopPrice,1,side),twoRPrice:targetPrice(entryPrice,stopPrice,2,side)};
+    } catch(error) { return {...empty,error:(error as Error).message}; }
+  }, [accountEquity, riskPercent, maxAllocationPercent, entryPrice, stopPrice, side]);
 
   const runnerShares = runnerEnabled ? Math.floor(result.shares * .3) : 0;
   const targetShares = distributeShares(Math.max(0, result.shares - runnerShares), targetCount);
@@ -188,8 +188,8 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
     <div className="trade-planner">
       <header className="trade-commandbar">
         <div>
-          <p className="eyebrow">Local trade planning</p>
-          <h1>Trade plan</h1>
+          <p className="eyebrow">Plan &amp; Position</p>
+          <h1>Trade planner</h1>
           <p>Calculate position size and save your intended entry and exit settings.</p>
         </div>
         <div className="trade-risk-banner" aria-label="Risk controls">
@@ -208,7 +208,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
         <button type="button" className={`trade-action-button exits ${afterFillStaged ? "active" : ""}`} disabled={!result.valid} onClick={afterFillStaged ? cancelAfterFill : stageAfterFill}>
           {afterFillStaged ? "Unsave exits" : "Save exits"}
         </button>
-        <span className="trade-execution-state">Saved in this browser · no orders sent</span>
+        <span className="trade-execution-state">Planning only · simulated states are never broker confirmation</span>
       </section>
 
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
@@ -220,7 +220,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
         <div className="trade-ticket-body">
           <div className="trade-input-grid">
             <label>Symbol<input className="trade-symbol-input" value={symbol} onChange={(event) => { editPlan(); setSymbol(event.target.value.toUpperCase().slice(0, 8)); }} placeholder="NVDA" aria-label="Stock symbol"/></label>
-            <label>Side<span className="trade-side-control"><button type="button" className={side === "Long" ? "active" : ""} onClick={() => { editPlan(); setSide("Long"); }}>Long</button><button type="button" className={side === "Short" ? "active" : ""} onClick={() => { editPlan(); setSide("Short"); }}>Short</button></span></label>
+            <div className="trade-field"><span>Side</span><span className="trade-side-control" role="group" aria-label="Trade side"><button type="button" aria-pressed={side === "Long"} className={side === "Long" ? "active" : ""} onClick={() => { editPlan(); setSide("Long"); }}>Long</button><button type="button" aria-pressed={side === "Short"} className={side === "Short" ? "active" : ""} onClick={() => { editPlan(); setSide("Short"); }}>Short</button></span></div>
             <label>Entry price<span className="trade-price-control"><span>$</span><input inputMode="decimal" value={entryPrice || ""} onChange={(event) => { editPlan(); setEntryPrice(safeNumber(event.target.value)); }} aria-label="Entry price"/></span></label>
             <label>Initial stop<span className="trade-combined-control"><select value={stopSource} onChange={(event) => { editPlan(); setStopSource(event.target.value as StopSource); }} aria-label="Stop source"><option>LoD</option><option>Manual</option></select><input inputMode="decimal" value={stopPrice || ""} onChange={(event) => { editPlan(); setStopPrice(safeNumber(event.target.value)); }} aria-label="Stop price"/></span></label>
           </div>

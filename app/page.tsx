@@ -5,7 +5,6 @@ import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import { supabase, supabaseConfig } from "../lib/supabase";
 import { isLegacyDemoDataset, LOCAL_TRADE_STORAGE_KEY } from "../lib/local-trade-migration";
 import { CatalystDashboard } from "./CatalystDashboard";
-import { TradePlanner } from "./TradePlanner";
 import { ScansDashboard } from "./ScansDashboard";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
@@ -14,6 +13,8 @@ import { useBrowserStore } from "../lib/use-browser-store";
 import { ChartDashboard } from "./ChartDashboard";
 import { withAuthTimeout } from "../lib/auth-ready";
 import type { MarketContext } from "../lib/workspace-state";
+import { demoJournalRows } from "../lib/trading-demo";
+import type { Execution } from "../lib/trading-domain";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -30,6 +31,10 @@ type Trade = {
   risk: number;
   plannedR: number;
   grade: Grade;
+  status?: string;
+  executions?: Execution[];
+  openQuantity?: number;
+  simulated?: true;
 };
 
 const setups = ["Momentum breakout", "EP breakout", "Earnings gap", "10/20 pullback", "VWAP rejection"];
@@ -449,25 +454,14 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 }
 
 export default function Home() {
-  type View = "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest" | "Review";
+  type View = "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest";
   const [active, setActive] = useState<View>("Charts");
-  const [originalPlanner, setOriginalPlanner] = useState(true);
-  const [prototype, setPrototype] = useState("Overview");
-  const navigation = useBrowserStore<{active:View;originalPlanner:boolean;prototype:string}>("brontide-navigation-review-v1", {active:"Charts",originalPlanner:true,prototype:"Overview"},
-    value => {const v=value as {active?:string;originalPlanner?:boolean;prototype?:string};return !!v && ["Journal","Catalyst","Trade","Charts","Scans","Backtest","Review"].includes(v.active??"") && typeof v.originalPlanner==="boolean" && ["Overview","Trades","Daily journal","Playbook","Insights"].includes(v.prototype??"");});
-  useEffect(()=>{if(navigation.ready){setActive(navigation.value.active==="Review"?"Journal":navigation.value.active);setOriginalPlanner(navigation.value.originalPlanner);setPrototype(navigation.value.prototype);}},[navigation.ready]);
-  const selectView=(next:View,original=originalPlanner,oldTab=prototype)=>{
-    setActive(next);setOriginalPlanner(original);setPrototype(oldTab);
-    navigation.save({active:next,originalPlanner:original,prototype:oldTab});
-  };
-  const reviewLinks = ["Trade","Charts","Catalyst","Scans","Backtest","Journal"] as const;
-  const [originalRequests,setOriginalRequests]=useState({scan:0,backtest:0});
-  const openRecovered=(view:typeof reviewLinks[number])=>{
-    if(view==="Scans"||view==="Backtest"){
-      const kind=view==="Scans"?"scan":"backtest";
-      setOriginalRequests(previous=>({...previous,[kind]:previous[kind]+1}));
-    }
-    selectView(view,true);
+  const navigation = useBrowserStore<{active:View}>("brontide-navigation-v2", {active:"Charts"},
+    value => {const item=value as {active?:string};return !!item&&["Journal","Catalyst","Trade","Charts","Scans","Backtest"].includes(item.active??"");});
+  useEffect(()=>{if(navigation.ready)setActive(navigation.value.active);},[navigation.ready]);
+  const selectView=(next:View)=>{
+    setActive(next);
+    navigation.save({active:next});
   };
   const [chartContext, setChartContext] = useState<MarketContext>();
   const [planContext, setPlanContext] = useState<MarketContext>();
@@ -492,13 +486,14 @@ export default function Home() {
   const [demoMode, setDemoMode] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupPreview, setSetupPreview] = useState(false);
+  const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
 
   useEffect(() => {
     const isDemo = new URLSearchParams(window.location.search).get("demo") === "1";
     setSetupPreview(new URLSearchParams(window.location.search).get("setup") === "1");
     if (isDemo) {
       setDemoMode(true);
-      setTrades(demoTrades);
+      setTrades([...demoJournalRows(),...demoTrades]);
     }
     const saved = window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY);
     if (saved && !isDemo) {
@@ -658,9 +653,6 @@ export default function Home() {
           <p className="nav-label">Workspace</p>
           {nav.map(([label, icon]) => <button key={label} className={`nav-item ${primary === label ? "active" : ""}`} aria-current={primary === label ? "page" : undefined} onClick={() => navigate(label)}><Icon name={icon}/><span>{label}</span></button>)}
         </nav>
-        <details className="review-navigation" open><summary>Review old tabs</summary><nav aria-label="Recovered views">
-          {reviewLinks.map(label=><button key={label} className={`nav-item ${active===label?"active":""}`} onClick={()=>openRecovered(label)}>{label}</button>)}
-        </nav></details>
         <div className="sidebar-spacer"/>
         {!demoMode && <div className="utility-nav"><button className="nav-item" onClick={() => setSettingsOpen(true)}><Icon name="settings"/><span>Cloud settings</span></button></div>}
         <div className="profile"><span className="avatar">{accountLabel.slice(0, 1)}</span><span><b>{accountLabel}</b><small>{accountEmail}</small></span><Icon name={demoMode ? "spark" : "check"} size={16}/></div>
@@ -670,19 +662,15 @@ export default function Home() {
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {nav.map(([label]) => <button key={label} className={primary === label ? "active" : ""} onClick={() => navigate(label)}>{label}</button>)}
         </nav>
-        <details className="mobile-review-navigation"><summary>Review old tabs</summary><nav aria-label="Recovered mobile views">{reviewLinks.map(label=><button key={label} onClick={()=>openRecovered(label)}>{label}</button>)}</nav></details>
         {primary === "Discover" && <nav className="workspace-subtabs" aria-label="Discover views"><button className={active==="Scans"?"active":""} onClick={()=>selectView("Scans")}>Scans</button><button className={active==="Catalyst"?"active":""} onClick={()=>selectView("Catalyst")}>Catalysts</button></nav>}
-        {primary === "Trading" && <nav className="workspace-subtabs" aria-label="Trading views"><button className={active==="Trade"?"active":""} onClick={()=>selectView("Trade")}>Plans &amp; Positions</button><button className={active==="Journal"?"active":""} onClick={()=>selectView("Journal")}>Journal</button></nav>}
+        {primary === "Trading" && <nav className="workspace-subtabs trading-tabs" aria-label="Trading views"><button className={active==="Trade"?"active":""} onClick={()=>selectView("Trade")}>Plan &amp; Position</button><button className={active==="Journal"?"active":""} onClick={()=>selectView("Journal")}>Journal</button></nav>}
         <div hidden={active!=="Catalyst"}><CatalystDashboard demo={demoMode} onChart={openChart}/></div>
         <div hidden={active!=="Trade"}>
-          <nav className="workspace-subtabs" aria-label="Planner versions"><button className={originalPlanner?"active":""} onClick={()=>selectView("Trade",true)}>Original Planner</button><button className={!originalPlanner?"active":""} onClick={()=>selectView("Trade",false)}>Current Planner</button></nav>
-          {demoMode&&<p className="workspace-notice">Sample plans and fills · isolated from your saved trading records.</p>}
-          <div hidden={!originalPlanner}><TradePlanner demo={demoMode} context={planContext} onChart={openChart}/></div>
-          <div hidden={originalPlanner}><TradingWorkspace demo={demoMode} context={planContext} onChart={openChart}/></div>
+          <TradingWorkspace demo={demoMode} context={planContext} onChart={openChart}/>
         </div>
-        {active === "Charts" && <ChartDashboard navigation={[...nav.map(([label])=>({label,onSelect:()=>navigate(label)})),...reviewLinks.map(label=>({label:`Review: ${label}`,onSelect:()=>openRecovered(label)})),...(!demoMode?[{label:"Cloud settings",onSelect:()=>setSettingsOpen(true)}]:[])]} context={chartContext} onExit={()=>selectView("Scans")} onPlan={context=>{setPlanContext({...context});selectView("Trade",!!context.tradeDraft);}}/>}
-        <div hidden={active!=="Scans"}><ResearchWorkspace originalRequest={originalRequests.scan} demo={demoMode} kind="scan" onChart={openChart}/></div>
-        <div hidden={active!=="Backtest"}><ResearchWorkspace originalRequest={originalRequests.backtest} demo={demoMode} kind="backtest" onChart={openChart}/></div>
+        {active === "Charts" && <ChartDashboard navigation={[...nav.map(([label])=>({label,onSelect:()=>navigate(label)})),...(!demoMode?[{label:"Cloud settings",onSelect:()=>setSettingsOpen(true)}]:[])]} context={chartContext} onExit={()=>selectView("Scans")} onPlan={context=>{setPlanContext({...context});selectView("Trade");}}/>}
+        <div hidden={active!=="Scans"}><ResearchWorkspace originalRequest={0} demo={demoMode} kind="scan" onChart={openChart}/></div>
+        <div hidden={active!=="Backtest"}><ResearchWorkspace originalRequest={0} demo={demoMode} kind="backtest" onChart={openChart}/></div>
         <div className="journal-content" hidden={active!=="Journal"}>
         {localWorkspace && !session && !demoMode && <p className="workspace-notice">Cloud Journal is not connected in local mode. Local plans and fills remain in Trading; existing cloud records are unchanged.</p>}
         <header className="topbar">
@@ -731,7 +719,7 @@ export default function Home() {
             <div className="panel-heading"><div><h2>Recent trades</h2><p>Risk, execution and realized outcome</p></div><span className="panel-meta">{filteredTrades.length} trades</span></div>
             <div className="trade-table">
               <div className="trade-row table-head"><span>Date</span><span>Symbol</span><span>Side</span><span>Risk</span><span>Planned R:R</span><span>Realized R</span><span>P&amp;L</span><span>Grade</span></div>
-              {latestTrades.map((trade) => <div className="trade-row" key={trade.id}><span>{shortDate(trade.date)}</span><span className="symbol-cell">{trade.symbol}<small>{trade.setup}</small></span><span><i className={`side-pill ${trade.side.toLowerCase()}`}>{trade.side}</i></span><span>{formatMoney(trade.risk, false)}</span><span>1:{trade.plannedR.toFixed(1)}</span><span className={trade.r >= 0 ? "positive" : "negative"}>{formatR(trade.r)}</span><span className={trade.pnl >= 0 ? "positive" : "negative"}>{formatMoney(trade.pnl)}</span><span><i className={`grade grade-${trade.grade.toLowerCase()}`}>{trade.grade}</i></span></div>)}
+              {latestTrades.map((trade) => <div className="journal-trade-group" key={trade.id}><div className={`trade-row ${trade.simulated?"simulated":""}`}><span>{shortDate(trade.date)}</span><span className="symbol-cell"><button className="journal-expand" aria-expanded={expandedTrade===trade.id} disabled={!trade.executions?.length} onClick={()=>setExpandedTrade(current=>current===trade.id?null:trade.id)}>{trade.symbol}</button><small>{trade.setup}{trade.simulated?" · Simulation":""}</small></span><span><i className={`side-pill ${trade.side.toLowerCase()}`}>{trade.side}</i></span><span>{formatMoney(trade.risk, false)}</span><span>1:{trade.plannedR.toFixed(1)}</span><span className={trade.r >= 0 ? "positive" : "negative"}>{formatR(trade.r)}</span><span className={trade.pnl >= 0 ? "positive" : "negative"}>{formatMoney(trade.pnl)}</span><span><i className={`grade grade-${trade.grade.toLowerCase()}`}>{trade.grade}</i></span></div>{expandedTrade===trade.id&&trade.executions&&<section className="journal-execution-details" aria-label={`${trade.symbol} entry and exit details`}><header><div><strong>{trade.symbol} execution detail</strong><span>{trade.status} · {trade.openQuantity} shares open</span></div><i>SIMULATED · NOT BROKER CONFIRMED</i></header><div className="journal-fill-head"><span>Type</span><span>Shares</span><span>Price</span><span>Fee</span><span>Time</span><span>Source</span></div>{trade.executions.map(execution=><div className="journal-fill-row" key={`${execution.sessionId}:${execution.executionId}`}><span data-label="Type"><b className={execution.effect}>{execution.effect}</b> · {execution.role}</span><span data-label="Shares">{execution.quantity}</span><span data-label="Price">{formatMoney(execution.price,false)}</span><span data-label="Fee">{formatMoney(execution.fee,false)}</span><span data-label="Time">{new Date(execution.occurredAt).toLocaleString()}</span><span data-label="Source">{execution.provenance==="manual-import"?"Changed in IBKR":execution.provenance}</span></div>)}</section>}</div>)}
             </div>
           </article>
 
