@@ -17,13 +17,38 @@ from pathlib import Path
 import threading
 from typing import Any, Mapping
 
+_IBAPI_AVAILABLE = True
+
 try:  # Installed from IBKR's official TWS API bundle by the operator.
     from ibapi.client import EClient
     from ibapi.contract import Contract
     from ibapi.order import Order
     from ibapi.wrapper import EWrapper
 except ImportError:  # pragma: no cover - exercised through sdk_available()
-    EClient = Contract = Order = EWrapper = None  # type: ignore[assignment,misc]
+    _IBAPI_AVAILABLE = False
+
+    class EWrapper:  # type: ignore[no-redef]
+        """Inert callback base so deterministic transport tests do not require IBKR."""
+
+        def __init__(self) -> None:
+            pass
+
+    class EClient:  # type: ignore[no-redef]
+        """Fail-closed stand-in; it can never establish a broker connection."""
+
+        def __init__(self, wrapper: Any) -> None:
+            self.wrapper = wrapper
+
+        def connect(self, *_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError(
+                "Install the official IBKR TWS API Python SDK before connected testing."
+            )
+
+    class Contract:  # type: ignore[no-redef]
+        pass
+
+    class Order:  # type: ignore[no-redef]
+        pass
 
 
 class PaperSafetyError(RuntimeError):
@@ -189,7 +214,7 @@ def validate_order_fields(account_id: str, ticket: Mapping[str, Any]) -> dict[st
 
 
 def sdk_available() -> bool:
-    return EClient is not None
+    return _IBAPI_AVAILABLE
 
 
 def mask_account_id(account_id: str) -> str:
@@ -255,7 +280,7 @@ class ReadOnlyInstrumentSnapshot:
     server_version: int
 
 
-if sdk_available():
+if EClient is not None:
 
     class TwsPaperClient(EWrapper, EClient):  # type: ignore[misc,valid-type]
         """Minimal official-SDK transport. No live submission mode exists."""
