@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useModalAccessibility } from "./useModalAccessibility";
 
 type BacktestRow = {
   id: string;
@@ -109,9 +110,11 @@ function pct(value: number) {
 }
 
 export function BacktestDashboard() {
+  const detailRef = useRef<HTMLElement>(null);
   const [filter, setFilter] = useState<Filter>("All");
   const [selected, setSelected] = useState<BacktestRow>(rows[0]);
   const [detailStrategy, setDetailStrategy] = useState<BacktestRow | null>(null);
+  useModalAccessibility(Boolean(detailStrategy), detailRef, () => setDetailStrategy(null));
   const [tradeDetails, setTradeDetails] = useState<TradeDetail[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -182,7 +185,7 @@ export function BacktestDashboard() {
           <div className="research-table-wrap">
             <table className="research-table backtest-table">
               <thead><tr><th>Run</th><th>Variant</th><th>Legacy classification</th><th>Trades</th><th>Wins</th><th>Win rate</th><th>Expectancy</th><th>Total return</th><th>Max DD</th><th>Evidence</th></tr></thead>
-              <tbody>{visible.map((row) => <tr key={row.id} className={selected.id === row.id ? "selected" : ""} onClick={() => openStrategy(row)}>
+              <tbody>{visible.map((row) => <tr key={row.id} className={selected.id === row.id ? "selected" : ""} tabIndex={0} aria-label={`Open ${row.id} strategy details`} onClick={() => openStrategy(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void openStrategy(row); } }}>
                 <td><b>{row.id}</b></td><td>{row.variant}</td><td><span className={`status-pill ${row.status.toLowerCase()}`}>{row.status === "Primary" ? "Previously primary" : row.status}</span></td><td>{row.trades.toLocaleString()}</td><td>{row.wins}</td><td>{(row.winRate * 100).toFixed(1)}%</td><td className={row.expectancy >= 0 ? "metric-good" : "metric-bad"}>{row.expectancy >= 0 ? "+" : ""}{row.expectancy.toFixed(3)}R</td><td className={row.totalReturn >= 0 ? "metric-good" : "metric-bad"}>{pct(row.totalReturn)}</td><td>{row.drawdown.toFixed(2)}R</td><td><span className={detailIds.has(row.id) ? "detail-available" : "detail-summary"}>{detailIds.has(row.id) ? "View trades →" : "Summary"}</span></td>
               </tr>)}</tbody>
             </table>
@@ -207,7 +210,7 @@ export function BacktestDashboard() {
       <p className="research-footnote">Returns are arithmetic sums from a fresh equal-sized position per trade, not compounded portfolio returns. Overlapping positions require separate capital.</p>
 
       {detailStrategy && <div className="trade-detail-backdrop" onMouseDown={() => setDetailStrategy(null)}>
-        <section className="trade-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="trade-detail-title" onMouseDown={(event) => event.stopPropagation()}>
+        <section ref={detailRef} tabIndex={-1} className="trade-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="trade-detail-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="trade-detail-close" onClick={() => setDetailStrategy(null)} aria-label="Close trade details">×</button>
           <header className="trade-detail-header">
             <div><p className="eyebrow">{detailStrategy.id} · provisional legacy cohort</p><h2 id="trade-detail-title">Winners and losers</h2><p>{detailStrategy.variant} · not reproduced on the final historical database</p></div>

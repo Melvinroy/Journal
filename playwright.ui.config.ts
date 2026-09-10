@@ -1,13 +1,16 @@
 import { defineConfig } from "@playwright/test";
 import path from "node:path";
+import { getPreviewIdentity } from "./scripts/preview-identity.mjs";
 
 const port = 3107;
-const serverEnv = { ...process.env, AI_AGENT: "", CODEX_SANDBOX: "", CODEX_CI: "", CODEX_THREAD_ID: "" };
+const previewIdentity = getPreviewIdentity(process.cwd());
+process.env.BRONTIDE_EXPECTED_PREVIEW_ID ||= previewIdentity.identifier;
+const serverEnv = { ...process.env, AI_AGENT: "", CODEX_SANDBOX: "", CODEX_CI: "", CODEX_THREAD_ID: "", NEXT_PUBLIC_BRONTIDE_UI_TEST_LOCAL: "1", NEXT_PUBLIC_BRONTIDE_PREVIEW_ID: process.env.BRONTIDE_EXPECTED_PREVIEW_ID };
 const reportDirectory = process.env.BRONTIDE_VERIFY_REPORT_DIR;
 
 export default defineConfig({
   testDir: "./tests/ui",
-  testMatch: "chart-regressions.spec.ts",
+  testMatch: ["chart-regressions.spec.ts", "workspace-quality.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

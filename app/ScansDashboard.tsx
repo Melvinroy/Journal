@@ -57,6 +57,7 @@ export function ScansDashboard() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [dateError, setDateError] = useState("");
 
   useEffect(() => {
     fetch("./data/scan_2x_rvol95.csv")
@@ -79,14 +80,34 @@ export function ScansDashboard() {
   const newest = filtered[0];
 
   function setWindow(days: number) {
+    setDateError("");
     setTo(DATA_AS_OF);
     setFrom(shiftDate(DATA_AS_OF, -(days - 1)));
   }
 
   function moveWindow(direction: -1 | 1) {
+    setDateError("");
     const span = Math.max(1, Math.round((new Date(`${to}T12:00:00Z`).getTime() - new Date(`${from}T12:00:00Z`).getTime()) / 86_400_000) + 1);
     setFrom(shiftDate(from, direction * span));
     setTo(shiftDate(to, direction * span));
+  }
+
+  function changeFrom(value: string) {
+    if (value > to) {
+      setDateError("From date must be on or before To date.");
+      return;
+    }
+    setDateError("");
+    setFrom(value);
+  }
+
+  function changeTo(value: string) {
+    if (value < from) {
+      setDateError("To date must be on or after From date.");
+      return;
+    }
+    setDateError("");
+    setTo(value);
   }
 
   return (
@@ -118,12 +139,13 @@ export function ScansDashboard() {
               {[15, 30, 60, 90].map((days) => <button key={days} className={from === shiftDate(DATA_AS_OF, -(days - 1)) && to === DATA_AS_OF ? "active" : ""} onClick={() => setWindow(days)} title={`${days} calendar days`}>{days}D</button>)}
             </div>
             <button className="scan-step" onClick={() => moveWindow(-1)} aria-label="Previous date window">←</button>
-            <label>From<input type="date" value={from} min="2024-02-06" max={to} onChange={(event) => setFrom(event.target.value)}/></label>
-            <label>To<input type="date" value={to} min={from} max={DATA_AS_OF} onChange={(event) => setTo(event.target.value)}/></label>
+            <label>From<input type="date" value={from} min="2024-02-06" max={to} aria-invalid={Boolean(dateError)} aria-describedby={dateError ? "scan-date-error" : undefined} onChange={(event) => changeFrom(event.target.value)}/></label>
+            <label>To<input type="date" value={to} min={from} max={DATA_AS_OF} aria-invalid={Boolean(dateError)} aria-describedby={dateError ? "scan-date-error" : undefined} onChange={(event) => changeTo(event.target.value)}/></label>
             <button className="scan-step" disabled={to >= DATA_AS_OF} onClick={() => moveWindow(1)} aria-label="Next date window">→</button>
             <input className="scan-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Ticker" aria-label="Search ticker"/>
           </div>
         </div>
+        {dateError && <p className="scan-validation" id="scan-date-error" role="alert">{dateError} The previous valid range is still applied.</p>}
 
         {error ? <p className="research-empty">{error}</p> : loading ? <p className="research-empty">Loading scan history…</p> : (
           <div className="research-table-wrap">

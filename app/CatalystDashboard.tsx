@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import type { MarketContext } from "../lib/workspace-state";
+import { useModalAccessibility } from "./useModalAccessibility";
 
 type WindowDays = 1 | 3 | 5;
 type Direction = "bullish" | "bearish" | "neutral";
@@ -162,11 +163,13 @@ function SignalCard({ row, rank }: { row: CatalystRow; rank: number }) {
 }
 
 export function CatalystDashboard({onChart,demo=false}:{demo?:boolean;onChart?:(context:MarketContext)=>void}) {
+  const detailRef = useRef<HTMLElement>(null);
   const [days, setDays] = useState<WindowDays>(1);
   const [direction, setDirection] = useState<DirectionFilter>("all");
   const [search, setSearch] = useState("");
   const [data, setData] = useState<CatalystData | null>(null);
   const [selected, setSelected] = useState<CatalystRow | null>(null);
+  useModalAccessibility(Boolean(selected), detailRef, () => setSelected(null));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry,setRetry] = useState(0);
@@ -336,7 +339,7 @@ export function CatalystDashboard({onChart,demo=false}:{demo?:boolean;onChart?:(
         <div className="catalyst-table-wrap">
           <table className="catalyst-table">
             <thead><tr><th>Signal</th><th>Ticker</th><th>Grade</th><th>Catalyst</th><th>Theme</th><th>Move</th><th>Freshness</th><th>Confidence</th><th>Action</th></tr></thead>
-            <tbody>{filtered.map((row) => <tr key={row.ticker} className={`row-${row.direction}`} onClick={() => setSelected(row)}>
+            <tbody>{filtered.map((row) => <tr key={row.ticker} className={`row-${row.direction}`} tabIndex={0} aria-label={`Open ${row.ticker} catalyst detail`} onClick={() => setSelected(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(row); } }}>
               <td><span className={`importance-dot importance-${importanceBand(row.importance_score)}`}/><b>{row.importance_score}</b></td>
               <td><strong className="catalyst-ticker">{row.ticker}</strong>{row.appearances > 1 && <small>{row.appearances}×</small>}</td>
               <td><span className={`catalyst-grade grade-${row.direction}`}>{gradeLabel(row.catalyst_quality_direction)}</span></td>
@@ -349,7 +352,7 @@ export function CatalystDashboard({onChart,demo=false}:{demo?:boolean;onChart?:(
         </div>
       </section>
 
-      {selected && <div className="catalyst-detail-backdrop" role="presentation" onClick={() => setSelected(null)}><aside className="catalyst-detail" role="dialog" aria-modal="true" aria-label={`${selected.ticker} catalyst detail`} onClick={(event) => event.stopPropagation()}>
+      {selected && <div className="catalyst-detail-backdrop" role="presentation" onClick={() => setSelected(null)}><aside ref={detailRef} tabIndex={-1} className="catalyst-detail" role="dialog" aria-modal="true" aria-label={`${selected.ticker} catalyst detail`} onClick={(event) => event.stopPropagation()}>
         <button type="button" className="catalyst-detail-close" aria-label="Close catalyst detail" onClick={() => setSelected(null)}>×</button>
         <div className="catalyst-detail-top"><span className={`catalyst-grade grade-${selected.direction}`}>{selected.catalyst_quality_direction}</span><span>{selected.importance_score}/100</span></div>
         <h2>{selected.ticker}</h2><h3>{selected.primary_catalyst_category} · {selected.theme}</h3>

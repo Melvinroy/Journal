@@ -2,6 +2,7 @@ import { spawnSync, spawn } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { getPreviewIdentity, PREVIEW_IDENTITY_MANIFEST } from './preview-identity.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const service = path.join(root, 'services', 'eod');
@@ -16,7 +17,11 @@ const build = spawnSync(process.execPath, [path.join(root, 'scripts/build.mjs')]
 });
 if (build.status !== 0) process.exit(build.status ?? 1);
 writeFileSync(path.join(root, 'out/brontide-local.json'), JSON.stringify({ mode: 'local' }));
-console.log('Open Brontide at http://127.0.0.1:8765/; standalone chart: /charts/ (or your configured API port).');
+const identity = getPreviewIdentity(root);
+writeFileSync(path.join(root, 'out', PREVIEW_IDENTITY_MANIFEST), JSON.stringify({ identifier: identity.identifier }));
+console.log(`[preview] checkout ${identity.checkout}`);
+console.log(`[preview] branch ${identity.branch} · revision ${identity.identifier}`);
+console.log('Open Brontide at http://127.0.0.1:8765/?demo=1; standalone chart: /charts/ (or your configured API port).');
 const child = spawn(python, ['-m', 'brontide_eod.cli', 'serve'], { cwd: service, stdio: 'inherit' });
 child.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
 child.on('exit', (code) => { process.exitCode = code ?? 1; });

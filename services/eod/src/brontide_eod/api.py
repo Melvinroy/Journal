@@ -6,13 +6,16 @@ from typing import Annotated, Literal
 from contextlib import asynccontextmanager
 
 import duckdb
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from brontide_eod.chart_repository import ChartRepository, DuckDBChartRepository
 from brontide_eod.config import Settings
+from brontide_eod.ibkr_readonly import IbkrReadOnlyService
+from brontide_eod.ibkr_tws import PaperSafetyError
 from brontide_eod.research_api import router as research_router, comparison_jobs, repository as research_repository
 
 @asynccontextmanager
@@ -27,6 +30,43 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
                    allow_credentials=False, allow_methods=["GET","POST"], allow_headers=["*"])
 app.include_router(research_router)
+
+_ibkr_read_only_service = IbkrReadOnlyService()
+
+
+def ibkr_read_only_service() -> IbkrReadOnlyService:
+    return _ibkr_read_only_service
+
+
+def require_local_broker_request(request: Request) -> None:
+    if request.headers.get("X-Brontide-Local") != "1":
+        raise HTTPException(403, "Local read-only broker request required.")
+
+
+class IbkrInstrumentRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9.-]+$")
+    route: Literal["SMART", "OVERNIGHT"] = "SMART"
+
+
+class PaperIntentRequest(BaseModel):
+    intentId: str = Field(min_length=1, max_length=128)
+    idempotencyKey: str = Field(min_length=1, max_length=192)
+    planId: str = Field(min_length=1, max_length=128)
+    campaignId: str = Field(min_length=1, max_length=128)
+    symbol: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9.-]+$")
+    direction: Literal["Long", "Short"]
+    method: Literal["Normal", "Limit", "Breakout", "Opening"] = "Normal"
+    sessionMode: Literal["Regular", "RegularExtended", "Overnight", "OvernightDay"] = "Regular"
+    duration: Literal["DAY", "GTC"] = "DAY"
+    protectionOrderType: Literal["STP", "STP LMT"] = "STP"
+    protectionLimitPrice: float | None = Field(default=None, gt=0)
+    quantity: int = Field(gt=0)
+    planningPrice: float = Field(gt=0)
+    hardCap: float = Field(gt=0)
+    stopPrice: float = Field(gt=0)
+    triggerPrice: float | None = Field(default=None, gt=0)
+    maximumPriceDriftPercent: float = Field(default=0.5, gt=0)
+    exitPlan: dict
 
 
 def repository():
@@ -58,6 +98,49 @@ def normalize_symbol(symbol: str) -> str:
 @app.get("/v1/runtime")
 def runtime():
     return {"mode": "local", "api_version": 1}
+
+
+@app.get("/v1/ibkr/read-only")
+def ibkr_read_only_status(
+    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
+):
+    return service.status()
+
+
+@app.post("/v1/ibkr/read-only/refresh", dependencies=[Depends(require_local_broker_request)])
+def refresh_ibkr_read_only(
+    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
+):
+    return service.refresh()
+
+
+@app.post("/v1/ibkr/read-only/disconnect", dependencies=[Depends(require_local_broker_request)])
+def disconnect_ibkr_read_only(
+    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
+):
+    return service.disconnect()
+
+
+@app.post("/v1/ibkr/read-only/instrument", dependencies=[Depends(require_local_broker_request)])
+def ibkr_read_only_instrument(
+    payload: IbkrInstrumentRequest,
+    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
+):
+    try:
+        return service.instrument(payload.symbol, payload.route)
+    except (PaperSafetyError, RuntimeError, OSError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@app.post("/v1/ibkr/paper/intents", dependencies=[Depends(require_local_broker_request)])
+def prepare_ibkr_paper_intent(
+    payload: PaperIntentRequest,
+    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
+):
+    try:
+        return service.prepare_intent(payload.model_dump())
+    except (PaperSafetyError, RuntimeError, OSError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from None
 
 
 @app.get("/health")

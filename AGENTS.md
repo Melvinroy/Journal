@@ -6,6 +6,8 @@
 - Use focused checks while iterating. Run `npm run verify` for executable-code, build, test-harness, or release-ready changes before presenting them for merge review. Minor documentation-only edits need only relevant targeted checks unless they affect verification behavior.
 - For chart-toolbar proposals, use [ChartDashboard](app/ChartDashboard.tsx), [chart styles](app/chart-workspace.css), [the focused browser tests](tests/ui/chart-regressions.spec.ts), and [their evidence guide](docs/testing/chart-ui-regressions.md). The harness covers four focused regressions for the corrected toolbar and volume behavior at its documented Windows viewport and themes, not the full responsive or end-to-end chart suite.
 - Never update screenshot baselines automatically. Review intentional baseline changes at their original dimensions in the fixed environment and inspect actual, expected, and diff images before accepting them.
+- Every frontend change must verify that the served preview identifier matches the intended checkout, HEAD, and current staged, unstaged, and eligible untracked source edits, and must report that identifier with the exact inspected URL. A build alone is insufficient: inspect the affected flow in a browser, including relevant responsive, interaction, keyboard, form-error, dialog, and accessibility states, plus a short independent review for additional defects.
+- Frontend handoffs must separate automated results, direct manual observations, and untested cases. Viewport or device-scale emulation is not native monitor/DPI evidence; carry a physical result forward only for the exact preview identifier that was tested. Follow the frontend evidence rules in [local verification](docs/testing/local-verification.md).
 
 ## Delivery
 
