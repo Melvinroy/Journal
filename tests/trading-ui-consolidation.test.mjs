@@ -11,8 +11,14 @@ const demo = await import(`data:text/javascript;base64,${Buffer.from(demoCode).t
 
 test('simulated campaigns produce exactly one Journal row each and replayed fills have one economic effect', () => {
   const rows = demo.demoJournalRows();
-  assert.equal(rows.length, demo.DEMO_CAMPAIGNS.length);
+  assert.equal(rows.filter(row => demo.DEMO_CAMPAIGNS.some(campaign => campaign.campaignId === row.campaignId)).length, demo.DEMO_CAMPAIGNS.length);
   assert.equal(new Set(rows.map(row => row.campaignId)).size, rows.length);
+  assert.equal(rows.some(row => row.id === 'journal-msft-review' && row.status === 'Incomplete'), true);
+  const msft = rows.find(row => row.id === 'journal-msft-review');
+  assert.equal(msft.executions.length, 0);
+  assert.equal(msft.openQuantity, 12);
+  assert.equal(msft.initialRiskAvailable, false);
+  assert.match(msft.historyStatus, /Historical fills and initial risk are unavailable/);
   const mrna = rows.find(row => row.symbol === 'MRNA');
   assert.equal(mrna.executions.length, 3);
   assert.equal(mrna.openQuantity, 12);
@@ -43,7 +49,7 @@ test('rendered navigation has four workspaces, two Trading tabs and no recovery/
   const workspaceLabels = [...page.matchAll(/\["(Discover|Charts|Strategies|Trading)",/g)].map(match => match[1]);
   assert.deepEqual(workspaceLabels, ['Discover','Charts','Strategies','Trading']);
   assert.match(page, /Plan &amp; Position/);
-  assert.match(page, />Journal<\/button>/);
+  assert.match(page, />\s*Journal\s*<\/button>/);
   for (const forbidden of ['Original Planner','Current Planner','Review old tabs','Recovered views','Review: ','Local journal / review']) assert.equal(page.includes(forbidden), false, forbidden);
   assert.equal((page.match(/aria-label="Trading views"/g) ?? []).length, 1);
 });
@@ -51,8 +57,8 @@ test('rendered navigation has four workspaces, two Trading tabs and no recovery/
 test('consolidated UI exposes persistence failure without overwriting and labels every demo execution surface', () => {
   const workspace = readFileSync(new URL('../app/TradingWorkspace.tsx', import.meta.url), 'utf8');
   assert.match(workspace, /Persistence blocked/);
-  assert.match(workspace, /Existing records were not overwritten/);
+  assert.match(workspace, /Existing records\s+were\s+not overwritten/);
   assert.match(workspace, /SIMULATED PREVIEW/);
   assert.match(workspace, /not broker confirmation/i);
-  assert.match(workspace, /Unlinked IBKR Positions/);
+  assert.match(workspace, /Unlinked IBKR positions/i);
 });

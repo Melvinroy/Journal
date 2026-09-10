@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "packageId": "BRONTIDE-PAPER-ACCEPTANCE-20260910-P3",
+  "limits": {
+    "currency": "USD",
+    "maximumSimultaneousEntryNotional": 500,
+    "maximumPlannedRiskPerCampaign": 10,
+    "maximumCombinedPlannedRisk": 20,
+    "maximumConcurrentCampaigns": 2
+  },
+  "exclusions": [
+    { "symbol": "PL", "direction": "Long", "quantity": 100 },
+    { "symbol": "AMD", "direction": "Short", "quantity": 100 }
+  ],
+  "batches": [
+    {
+      "batchId": "BRONTIDE-RTH-20260910-R2",
+      "status": "executable",
+      "session": "RTH",
+      "validFrom": "2026-09-10T13:30:00Z",
+      "validUntil": "2026-09-10T20:00:00Z",
+      "tickets": [
+        {
+          "ticketId": "QC-F-LONG",
+          "status": "executable",
+          "campaignId": "QC-F-LONG",
+          "planId": "QC-F-LONG-PLAN",
+          "idempotencyKey": "BRONTIDE-RTH-20260910-R2:QC-F-LONG:v1",
+          "symbol": "F",
+          "direction": "Long",
+          "method": "Normal",
+          "sessionMode": "Regular",
+          "requiredPhase": "RTH",
+          "duration": "DAY",
+          "quantity": 3,
+          "planningPrice": 13.54,
+          "hardCap": 13.54,
+          "stopPrice": 12.54,
+          "protectionOrderType": "STP",
+          "maximumPriceDriftPercent": 0.5,
+          "sessionCutoff": "Broker-returned RTH close; normally 16:00 America/New_York",
+          "plannedRisk": 3.0,
+          "maximumNotional": 40.62,
+          "exitPlan": {
+            "fixedPlannedRPerShare": 1.0,
+            "allocations": [
+              { "id": "T1", "role": "target", "quantity": 1, "allocationPercent": 34, "authoritativeMode": "R", "multipleR": 1.0 },
+              { "id": "R1", "role": "runner", "quantity": 1, "allocationPercent": 33, "activationR": 1.0, "trailingMethod": "Dollar", "trailingValue": 0.5 },
+              { "id": "R2", "role": "runner", "quantity": 1, "allocationPercent": 33, "activationR": 2.0, "trailingMethod": "Percentage", "trailingValue": 5.0 }
+            ],
+            "breakeven": { "thresholdR": 1.0, "offsetMode": "Dollar", "offsetValue": 0.0, "independentOfTargetFill": true, "neverLoosen": true }
+          },
+          "cleanup": { "orderType": "LMT", "duration": "DAY", "priceFloor": 12.54, "maximumAttempts": 2, "maximumRetries": 1, "attemptTimeoutSeconds": 60, "requiresOcaWithProtection": true, "retainProtectionIfBlocked": true }
+        },
+        {
+          "ticketId": "QC-SOFI-BREAKOUT",
+          "status": "executable",
+          "campaignId": "QC-SOFI-BREAKOUT",
+          "planId": "QC-SOFI-BREAKOUT-PLAN",
+          "idempotencyKey": "BRONTIDE-RTH-20260910-R2:QC-SOFI-BREAKOUT:v1",
+          "symbol": "SOFI",
+          "direction": "Long",
+          "method": "Breakout",
+          "sessionMode": "Regular",
+          "requiredPhase": "RTH",
+          "duration": "DAY",
+          "quantity": 2,
+          "planningPrice": 17.47,
+          "triggerPrice": 17.47,
+          "hardCap": 17.52,
+          "stopPrice": 16.97,
+          "protectionOrderType": "STP",
+          "maximumPriceDriftPercent": 0.5,
+          "sessionCutoff": "Broker-returned RTH close; normally 16:00 America/New_York",
+          "plannedRisk": 1.1,
+          "maximumNotional": 35.04,
+          "exitPlan": {
+            "fixedPlannedRPerShare": 0.5,
+            "worstCaseRiskPerShareAtCap": 0.55,
+            "allocations": [
+              { "id": "T1", "role": "target", "quantity": 1, "allocationPercent": 50, "authoritativeMode": "R", "multipleR": 1.0 },
+              { "id": "R1", "role": "runner", "quantity": 1, "allocationPercent": 50, "activationR": 1.0, "trailingMethod": "Percentage", "trailingValue": 5.0 }
+            ],
+            "breakeven": { "thresholdR": 1.0, "offsetMode": "Dollar", "offsetValue": 0.0, "independentOfTargetFill": true, "neverLoosen": true }
+          },
+          "cleanup": { "orderType": "LMT", "duration": "DAY", "priceFloor": 16.97, "maximumAttempts": 2, "maximumRetries": 1, "attemptTimeoutSeconds": 60, "requiresOcaWithProtection": true, "retainProtectionIfBlocked": true }
+        },
+        {
+          "ticketId": "QC-CSCO-SHORT",
+          "status": "blocked",
+          "symbol": "CSCO",
+          "direction": "Short",
+          "quantity": 2,
+          "minimumEntryPrice": 109.16,
+          "maximumEntryPrice": 110.15,
+          "stopPrice": 110.16,
+          "blockedReason": "A short sell MIDPRICE or LMT order can enforce a minimum sale price but cannot cap favorable price improvement above 110.15. Quote gating and cancellation cannot guarantee the upper fill bound, and no supported TWS stock order in the existing adapter enforces this two-sided interval. Short paper execution remains pending; no buy ticket substitutes for it."
+        },
+        {
+          "ticketId": "QC-OPG-CONSTRUCTION",
+          "status": "blocked",
+          "symbol": "UNASSIGNED",
+          "blockedReason": "LMT plus OPG remains construction-only because IBKR documents Auction orders as unsupported in paper."
+        }
+      ]
+    },
+    {
+      "batchId": "BRONTIDE-EXT-PRE-20260910-P1",
+      "status": "executable",
+      "session": "Premarket",
+      "validFrom": "2026-09-10T08:00:00Z",
+      "validUntil": "2026-09-10T13:30:00Z",
+      "tickets": [
+        {
+          "ticketId": "BRONTIDE-EXT-PRE-20260910-P1-F",
+          "status": "executable",
+          "campaignId": "BRONTIDE-EXT-PRE-20260910-P1-F",
+          "planId": "BRONTIDE-EXT-PRE-20260910-P1-F-PLAN",
+          "idempotencyKey": "BRONTIDE-EXT-PRE-20260910-P1:F:v1",
+          "symbol": "F",
+          "direction": "Long",
+          "method": "Limit",
+          "sessionMode": "RegularExtended",
+          "requiredPhase": "Premarket",
+          "duration": "DAY",
+          "quantity": 3,
+          "planningPrice": 13.56,
+          "hardCap": 13.6,
+          "stopPrice": 12.54,
+          "protectionOrderType": "STP LMT",
+          "protectionLimitPrice": 12.53,
+          "maximumPriceDriftPercent": 0.5,
+          "sessionCutoff": "09:30 America/New_York for premarket evidence; DAY entry remains broker-eligible until the returned 20:00 total-hours close unless cancelled at the premarket cutoff",
+          "plannedRisk": 3.18,
+          "maximumNotional": 40.8,
+          "exitPlan": {
+            "fixedPlannedRPerShare": 1.02,
+            "worstCaseRiskPerShareAtCap": 1.06,
+            "allocations": [
+              { "id": "T1", "role": "target", "quantity": 1, "allocationPercent": 34, "authoritativeMode": "R", "multipleR": 1.0 },
+              { "id": "R1", "role": "runner", "quantity": 1, "allocationPercent": 33, "activationR": 1.0, "trailingMethod": "Dollar", "trailingValue": 0.5 },
+              { "id": "R2", "role": "runner", "quantity": 1, "allocationPercent": 33, "activationR": 2.0, "trailingMethod": "Percentage", "trailingValue": 5.0 }
+            ],
+            "breakeven": { "thresholdR": 1.0, "offsetMode": "Dollar", "offsetValue": 0.0, "independentOfTargetFill": true, "neverLoosen": true },
+            "automationRequirement": "Brontide online with a fresh eligible bid; initial broker-held stop-limit remains active before advanced rules."
+          },
+          "cleanup": { "orderType": "LMT", "duration": "DAY", "outsideRth": true, "priceFloor": 12.54, "maximumAttempts": 2, "maximumRetries": 1, "attemptTimeoutSeconds": 60, "requiresOcaWithProtection": true, "retainProtectionIfBlocked": true }
+        }
+      ]
+    },
+    {
+      "batchId": "BRONTIDE-EXT-POST-20260910-P1",
+      "status": "pending-session",
+      "session": "Postmarket",
+      "validFrom": "2026-09-10T20:00:00Z",
+      "validUntil": "2026-09-11T00:00:00Z",
+      "tickets": [],
+      "pendingReason": "A new same-session type-1 postmarket quote is required before fixing symbol, entry limit, stop-limit, risk and cleanup bounds. Premarket and RTH prices are not reusable.",
+      "construction": { "entry": "SMART LMT DAY outsideRth=true", "protection": "full-quantity SMART STP LMT GTC outsideRth=true", "requiredPhase": "Postmarket", "minimumQuantityForTargetAndTwoRunners": 3 }
+    },
+    {
+      "batchId": "BRONTIDE-OVERNIGHT-PLANNING",
+      "status": "blocked",
+      "session": "Overnight",
+      "tickets": [],
+      "blockedReason": "OVERNIGHT advertises LMT and DAY but no verified broker-held STP, STP LMT or trailing protection. Planning only; submission is disabled."
+    },
+    {
+      "batchId": "BRONTIDE-OVERNIGHT-DAY-PLANNING",
+      "status": "blocked",
+      "session": "OvernightDay",
+      "tickets": [],
+      "blockedReason": "The installed TWS socket API has no verified documented equivalent of Web API OND and no verified continuous protection path. Planning only; submission is disabled."
+    }
+  ]
+}

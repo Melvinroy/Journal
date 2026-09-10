@@ -109,9 +109,8 @@ test('P12/P13 simulated — target allocation prerequisites conserve final prote
   assert.equal(broker.allocateTargetPlan(37).reduce((sum, value) => sum + value, 0), 37);
 });
 
-test('P14/P15/P16 simulated — breakeven moves only after invocation and never loosens a tighter stop', () => {
-  assert.deepEqual(broker.applyOneRTargetFill({ confirmedFill: false, direction: 'Long', actualAverageEntry: 100, currentStop: 98 }), { stop: 98, changed: false });
-  assert.deepEqual(broker.applyOneRTargetFill({ confirmedFill: true, direction: 'Long', actualAverageEntry: 100, currentStop: 98 }), { stop: 100, changed: true });
+test('P14/P15/P16 simulated — target fills have no breakeven trigger and the stop candidate never loosens protection', () => {
+  assert.equal(broker.applyOneRTargetFill, undefined);
   assert.equal(broker.breakevenProtection('Long', 100, 101), 101);
   assert.equal(broker.breakevenProtection('Short', 100, 102), 100);
   assert.equal(broker.breakevenProtection('Short', 100, 99), 99);
@@ -258,4 +257,189 @@ test('orders with omitted or unexpected accounts are locally rejected', () => {
   const auth = authorization();
   assert.throws(() => broker.assertOrderAccount(auth, {}), error => error.code === 'ORDER_ACCOUNT_MISMATCH');
   assert.throws(() => broker.assertOrderAccount(auth, { account: 'OTHER' }), error => error.code === 'ORDER_ACCOUNT_MISMATCH');
+});
+
+const lifecycleIntent = (overrides = {}) => broker.validatePaperIntent({
+  intentId: 'intent-1', idempotencyKey: 'campaign-1:entry:v1', planId: 'plan-1', campaignId: 'campaign-1',
+  accountBinding: 'private-binding-digest', instrumentIdentity: String(contract.conId), symbol: 'AAPL', direction: 'Long',
+  planningPrice: 100, quote: { bid: 99.99, ask: 100.01, observedAt: '2026-09-10T13:59:55Z' }, now: '2026-09-10T14:00:00Z',
+  maximumQuoteAgeMs: 10_000, maximumPriceDriftPercent: 0.5, minTick: 0.01,
+  package: packageFor({ quantity: 40, hardCap: 100.25, stopPrice: 98, idempotencyKey: 'campaign-1:entry:v1' }),
+  exitPlanSnapshot: { targets: [{ quantity: 10 }], runners: [{ quantity: 30 }] }, ...overrides,
+});
+
+const lifecycleFill = (executionId, overrides = {}) => ({
+  executionId, orderId: 'entry-101', effect: 'entry', role: 'entry', quantity: 10, price: 100,
+  fee: .5, occurredAt: '2026-09-10T14:01:00Z', ...overrides,
+});
+
+test('execution lifecycle persists intent before submit and distinguishes acknowledgement, fill, cancel request and confirmation', () => {
+  const values = new Map();
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  let record = lifecycleIntent();
+  let stored = broker.writePaperExecutionStore(storage, 'paper', null, broker.upsertPaperExecutionRecord({ schemaVersion: 1, records: [] }, record));
+  assert.equal(stored.ok, true);
+  record = broker.markIntentSubmitting(record, '2026-09-10T14:00:01Z');
+  stored = broker.writePaperExecutionStore(storage, 'paper', stored.raw, broker.upsertPaperExecutionRecord(broker.readPaperExecutionStore(storage, 'paper').store, record));
+  assert.equal(stored.ok, true);
+  record = broker.acknowledgePaperBracket(record, { entryOrderId: 'entry-101', protectionOrderId: 'stop-102', acknowledgedAt: '2026-09-10T14:00:02Z' });
+  assert.equal(record.status, 'Broker acknowledged');
+  record = broker.ingestPaperExecution(record, lifecycleFill('e1')).record;
+  assert.equal(record.status, 'Partially filled');
+  record = broker.confirmProtection(record, 10, '2026-09-10T14:01:01Z');
+  assert.equal(record.advancedExitsActive, false);
+  record = broker.requestPaperCancellation(record, '2026-09-10T14:02:00Z');
+  assert.equal(record.status, 'Cancellation pending');
+  record = broker.confirmPaperCancellation(record, '2026-09-10T14:02:05Z');
+  assert.equal(record.status, 'Filled');
+  assert.equal(record.entryFinal, true);
+  assert.equal(record.advancedExitsActive, true);
+});
+
+test('unknown submission is never retryable until reconciliation proves no economic action', () => {
+  let record = broker.markIntentSubmitting(lifecycleIntent(), '2026-09-10T14:00:01Z');
+  record = broker.markPaperSubmissionUnknown(record, 'Transport timeout after write.', '2026-09-10T14:00:11Z');
+  assert.equal(record.status, 'Unknown submission');
+  assert.throws(() => broker.markIntentSubmitting(record, '2026-09-10T14:00:12Z'));
+  const found = broker.reconcilePaperExecution(record, { observedAt: '2026-09-10T14:01:00Z', foundEntryOrder: true, entryOrderId: 'entry-101', protectionOrderId: 'stop-102', brokerOpenQuantity: 0, brokerProtectionQuantity: 0, brokerWorkingExitQuantity: 0 });
+  assert.equal(found.mayRetry, false);
+  assert.equal(found.record.status, 'Broker acknowledged');
+  const absent = broker.reconcilePaperExecution(record, { observedAt: '2026-09-10T14:01:00Z', foundEntryOrder: false, brokerOpenQuantity: 0, brokerProtectionQuantity: 0, brokerWorkingExitQuantity: 0 });
+  assert.equal(absent.mayRetry, true);
+  assert.equal(absent.record.status, 'Validated intent');
+});
+
+test('partial-entry touches defer rules; finalization requires fresh evaluation and full confirmed protection', () => {
+  let record = broker.acknowledgePaperBracket(broker.markIntentSubmitting(lifecycleIntent(), '2026-09-10T14:00:01Z'), { entryOrderId: 'entry-101', protectionOrderId: 'stop-102', acknowledgedAt: '2026-09-10T14:00:02Z' });
+  record = broker.ingestPaperExecution(record, lifecycleFill('e1', { quantity: 20 })).record;
+  record = broker.confirmProtection(record, 20, '2026-09-10T14:01:01Z');
+  record = broker.recordDeferredThresholdTouch(record, { ruleId: 'breakeven', quote: 102, observedAt: '2026-09-10T14:01:02Z' });
+  assert.equal(record.thresholdTouches[0].deferred, true);
+  assert.equal(record.advancedExitsActive, false);
+  record = broker.ingestPaperExecution(record, lifecycleFill('e2', { quantity: 20, price: 100.5, occurredAt: '2026-09-10T14:02:00Z' })).record;
+  assert.equal(record.entryFinal, true);
+  assert.equal(record.advancedExitsActive, false);
+  record = broker.confirmProtection(record, 40, '2026-09-10T14:02:01Z');
+  assert.equal(record.advancedExitsActive, true);
+  assert.throws(() => broker.recordDeferredThresholdTouch(record, { ruleId: 'breakeven', quote: 102, observedAt: '2026-09-10T14:02:02Z' }), /fresh quote/);
+});
+
+test('exit fills conserve quantity, reject over-close, deduplicate and reach partial/closed states', () => {
+  let record = broker.acknowledgePaperBracket(broker.markIntentSubmitting(lifecycleIntent(), '2026-09-10T14:00:01Z'), { entryOrderId: 'entry-101', protectionOrderId: 'stop-102', acknowledgedAt: '2026-09-10T14:00:02Z' });
+  record = broker.ingestPaperExecution(record, lifecycleFill('entry', { quantity: 40 })).record;
+  record = broker.confirmProtection(record, 40, '2026-09-10T14:01:01Z');
+  const firstExit = lifecycleFill('target-1', { orderId: 'target-103', effect: 'exit', role: 'target', quantity: 10, price: 104, occurredAt: '2026-09-10T15:00:00Z' });
+  record = broker.ingestPaperExecution(record, firstExit).record;
+  assert.equal(record.status, 'Partially exited');
+  assert.deepEqual([record.enteredQuantity, record.exitedQuantity, record.openQuantity], [40, 10, 30]);
+  assert.equal(broker.ingestPaperExecution(record, firstExit).duplicate, true);
+  assert.throws(() => broker.ingestPaperExecution(record, lifecycleFill('too-many', { effect: 'exit', role: 'stop', quantity: 31, price: 99 })), /over-close/);
+  record = broker.ingestPaperExecution(record, lifecycleFill('stop', { orderId: 'stop-102', effect: 'exit', role: 'stop', quantity: 30, price: 99, fee: 1, occurredAt: '2026-09-10T16:00:00Z' })).record;
+  assert.equal(record.status, 'Closed');
+  assert.equal(record.openQuantity, 0);
+});
+
+test('protection failure permits one reconciled retry then persists unprotected; offline automation is explicit', () => {
+  let record = broker.acknowledgePaperBracket(broker.markIntentSubmitting(lifecycleIntent(), '2026-09-10T14:00:01Z'), { entryOrderId: 'entry-101', protectionOrderId: 'stop-102', acknowledgedAt: '2026-09-10T14:00:02Z' });
+  record = broker.ingestPaperExecution(record, lifecycleFill('entry', { quantity: 40 })).record;
+  record = broker.rejectProtectionWithSingleRetry(record, '2026-09-10T14:01:01Z');
+  assert.equal(record.protection.state, 'retry-required');
+  record = broker.rejectProtectionWithSingleRetry(record, '2026-09-10T14:01:02Z');
+  assert.equal(record.protection.state, 'unprotected');
+  assert.equal(record.status, 'Unprotected');
+  record = broker.confirmProtection(record, 40, '2026-09-10T14:01:03Z');
+  record = broker.setAutomationConnection(record, false, '2026-09-10T14:01:04Z');
+  assert.equal(record.automationAvailability, 'offline');
+});
+
+test('Execution R freezes from final average entry and amendment application rejects stale broker state', () => {
+  let record = broker.acknowledgePaperBracket(broker.markIntentSubmitting(lifecycleIntent(), '2026-09-10T14:00:01Z'), { entryOrderId: 'entry-101', protectionOrderId: 'stop-102', acknowledgedAt: '2026-09-10T14:00:02Z' });
+  record = broker.ingestPaperExecution(record, lifecycleFill('entry-a', { quantity: 20, price: 100 })).record;
+  assert.throws(() => broker.freezePaperExecutionRisk(record, 98, '2026-09-10T14:01:01Z'), /entry quantity is final/);
+  record = broker.ingestPaperExecution(record, lifecycleFill('entry-b', { quantity: 20, price: 101 })).record;
+  record = broker.freezePaperExecutionRisk(record, 98, '2026-09-10T14:02:01Z');
+  assert.equal(record.actualAverageEntry, 100.5);
+  assert.equal(record.executionRiskPerShare, 2.5);
+  const draft = broker.createPaperAmendmentDraft(record, { amendmentId: 'amend-1', requestedExitPlan: { target: '3R' }, createdAt: '2026-09-10T14:03:00Z' });
+  assert.equal(draft.state, 'unapplied');
+  assert.deepEqual(draft.requestedExitPlan, { target: '3R' });
+  const applying = broker.beginPaperAmendment(record, draft, '2026-09-10T14:03:01Z');
+  assert.equal(applying.state, 'applying');
+  assert.equal(broker.confirmPaperAmendment(applying, 'broker-rev-2', '2026-09-10T14:03:02Z').state, 'broker-confirmed');
+  const changed = broker.confirmProtection(record, 40, '2026-09-10T14:03:03Z');
+  const stale = broker.beginPaperAmendment(changed, draft, '2026-09-10T14:03:04Z');
+  assert.equal(stale.state, 'rejected-stale');
+  assert.match(stale.error, /changed/);
+});
+
+test('intent validation rejects stale/crossed quotes, drift, tick mismatch and contract changes', () => {
+  assert.throws(() => lifecycleIntent({ quote: { bid: 99, ask: 100, observedAt: '2026-09-10T13:00:00Z' } }), /stale/);
+  assert.throws(() => lifecycleIntent({ quote: { bid: 101, ask: 100, observedAt: '2026-09-10T13:59:55Z' } }), /crossed/);
+  assert.throws(() => lifecycleIntent({ quote: { bid: 101, ask: 101.01, observedAt: '2026-09-10T13:59:55Z' } }), /drift/);
+  assert.throws(() => lifecycleIntent({ minTick: .03 }), /minimum tick/);
+  assert.throws(() => lifecycleIntent({ instrumentIdentity: '999' }), /identity changed/);
+});
+
+test('store compare-and-set prevents stale overwrite, failed round-trip blocks, and idempotency survives restart', () => {
+  const values = new Map();
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const record = lifecycleIntent();
+  const first = broker.writePaperExecutionStore(storage, 'paper', null, broker.upsertPaperExecutionRecord({ schemaVersion: 1, records: [] }, record));
+  assert.equal(first.ok, true);
+  assert.equal(broker.writePaperExecutionStore(storage, 'paper', null, { schemaVersion: 1, records: [] }).ok, false);
+  const reloaded = broker.readPaperExecutionStore(storage, 'paper').store;
+  assert.throws(() => broker.upsertPaperExecutionRecord(reloaded, { ...record, intent: { ...record.intent, intentId: 'different' } }), /idempotency/);
+  const broken = { getItem: () => null, setItem() {} };
+  assert.equal(broker.writePaperExecutionStore(broken, 'paper', null, reloaded).ok, false);
+});
+
+test('session policy keeps RTH default and separates duration from eligibility', () => {
+  const regular = broker.resolveExecutionSession({ mode: 'Regular', duration: 'GTC', protectionOrderType: 'STP', protectionStopPrice: 98 });
+  assert.deepEqual({ route: regular.route, entry: regular.entryOrderType, outside: regular.outsideRth, duration: regular.duration, eligible: regular.submissionEligible }, { route: 'SMART', entry: 'MIDPRICE', outside: false, duration: 'GTC', eligible: true });
+  assert.deepEqual(broker.sessionDurationOptions('Overnight'), ['DAY']);
+  assert.throws(() => broker.resolveExecutionSession({ mode: 'Overnight', duration: 'GTC', protectionOrderType: 'STP', protectionStopPrice: 98 }), /duration/);
+});
+
+test('extended-hours entries require an explicit limit and independent stop-limit protection', () => {
+  const missing = broker.resolveExecutionSession({ mode: 'RegularExtended', duration: 'DAY', protectionOrderType: 'STP', protectionStopPrice: 98 });
+  assert.equal(missing.submissionEligible, false);
+  assert.match(missing.blockedReason, /stop-limit protection/);
+  const policy = broker.resolveExecutionSession({ mode: 'RegularExtended', duration: 'GTC', protectionOrderType: 'STP LMT', protectionStopPrice: 98, protectionLimitPrice: 97.5 });
+  const value = packageFor({ method: 'Limit', sessionPolicy: policy });
+  assert.deepEqual({ entry: value.entry.orderType, entryOutside: value.entry.outsideRth, entryTif: value.entry.tif, protection: value.protection.orderType, protectionOutside: value.protection.outsideRth, trigger: value.protection.auxPrice, limit: value.protection.lmtPrice }, { entry: 'LMT', entryOutside: true, entryTif: 'GTC', protection: 'STP LMT', protectionOutside: true, trigger: 98, limit: 97.5 });
+  assert.throws(() => packageFor({ method: 'Normal', sessionPolicy: policy }), /incompatible/);
+  assert.throws(() => broker.validateStopLimitProtection('Long', 98, 98.01, .01), /at or below/);
+  assert.throws(() => broker.validateStopLimitProtection('Short', 102, 101.99, .01), /at or above/);
+});
+
+test('overnight modes remain planning-only without verified broker-held initial protection', () => {
+  const overnight = broker.resolveExecutionSession({ mode: 'Overnight', duration: 'DAY', protectionOrderType: 'STP LMT', protectionStopPrice: 98, protectionLimitPrice: 97.5 });
+  const combined = broker.resolveExecutionSession({ mode: 'OvernightDay', duration: 'DAY', protectionOrderType: 'STP LMT', protectionStopPrice: 98, protectionLimitPrice: 97.5 });
+  assert.equal(overnight.route, 'OVERNIGHT');
+  assert.equal(combined.route, 'OVERNIGHT+SMART');
+  assert.equal(overnight.submissionEligible, false);
+  assert.match(overnight.blockedReason, /broker-held initial stop/);
+  assert.match(combined.blockedReason, /OVT\/OND/);
+});
+
+test('session expiry finalizes only confirmed fills and never recreates the order', () => {
+  let record = broker.acknowledgePaperBracket(broker.markIntentSubmitting(lifecycleIntent(), '2026-09-10T14:00:01Z'), { entryOrderId: 'entry-101', protectionOrderId: 'stop-102', acknowledgedAt: '2026-09-10T14:00:02Z' });
+  record = broker.ingestPaperExecution(record, lifecycleFill('partial', { quantity: 20 })).record;
+  record = broker.confirmProtection(record, 20, '2026-09-10T14:01:01Z');
+  record = broker.expirePaperEntry(record, '2026-09-10T20:00:00Z');
+  assert.deepEqual({ status: record.status, final: record.entryFinal, open: record.openQuantity, exits: record.advancedExitsActive }, { status: 'Filled', final: true, open: 20, exits: true });
+  assert.match(record.audit.at(-1), /no-recreate/);
+  assert.throws(() => broker.expirePaperEntry(record, '2026-09-10T20:00:01Z'), /already final/);
+});
+
+test('protection presentation separates acknowledgement, eligibility, stop-limit fill risk and offline automation', () => {
+  let record = broker.acknowledgePaperBracket(broker.markIntentSubmitting(lifecycleIntent(), '2026-09-10T14:00:01Z'), { entryOrderId: 'entry-101', protectionOrderId: 'stop-102', acknowledgedAt: '2026-09-10T14:00:02Z' });
+  record = broker.ingestPaperExecution(record, lifecycleFill('entry', { quantity: 40 })).record;
+  record = broker.confirmProtection(record, 40, '2026-09-10T14:01:01Z');
+  assert.equal(broker.paperProtectionDisplay(record, { sessionEligible: true, connected: true }).state, 'eligible');
+  assert.equal(broker.paperProtectionDisplay(record, { sessionEligible: false, connected: true }).state, 'inactive');
+  assert.equal(broker.paperProtectionDisplay(record, { sessionEligible: true, connected: false }).state, 'broker-held');
+  assert.equal(broker.paperProtectionDisplay(record, { sessionEligible: true, connected: true, triggeredUnfilled: true }).state, 'triggered-unfilled');
+  const amendment = broker.createPaperAmendmentDraft(record, { amendmentId: 'session-amendment', requestedExitPlan: {}, createdAt: '2026-09-10T14:02:00Z' });
+  assert.equal(amendment.sessionPolicy.mode, 'Regular');
 });

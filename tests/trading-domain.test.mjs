@@ -42,10 +42,20 @@ test('daily Wilder ATR14 and ATR, day-extreme and manual stops validate directio
   close(domain.calculateWilderAtr14(bars.slice(0, 15)), 2);
   assert.equal(domain.deriveStop({ method: 'ATR', direction: 'Long', capturedEntry: 100, atr14: 2, atrMultiplier: 1 }), 98);
   assert.equal(domain.deriveStop({ method: 'ATR', direction: 'Short', capturedEntry: 100, atr14: 2, atrMultiplier: 1 }), 102);
+  assert.equal(domain.deriveStop({ method: 'ATR', direction: 'Long', capturedEntry: 100, atr14: 2, atrMultiplier: 1.5 }), 97);
+  assert.equal(domain.deriveStop({ method: 'ATR', direction: 'Short', capturedEntry: 100, atr14: 2, atrMultiplier: 1.5 }), 103);
   assert.equal(domain.deriveStop({ method: 'LoD', direction: 'Long', capturedEntry: 100, dayLow: 97 }), 97);
   assert.equal(domain.deriveStop({ method: 'HoD', direction: 'Short', capturedEntry: 100, dayHigh: 103 }), 103);
   assert.throws(() => domain.deriveStop({ method: 'Manual', direction: 'Long', capturedEntry: 100, manualStop: 100 }), /below/);
   assert.throws(() => domain.deriveStop({ method: 'LoD', direction: 'Short', capturedEntry: 100, dayLow: 97 }), /longs/);
+});
+
+test('approved planner sizing example uses the lower allocation limit', () => {
+  const result = domain.calculatePositionSize({ accountBase: 30000, riskPercent: .5, allocationPercent: 20, entryPrice: 100, stopPrice: 98, direction: 'Long' });
+  assert.equal(result.shares, 60);
+  assert.equal(result.positionValue, 6000);
+  assert.equal(result.plannedRisk, 120);
+  assert.equal(result.limitingConstraint, 'Allocation');
 });
 
 test('F3 partial entry, actual risk, targets, allocation and breakeven protection are exact', () => {
@@ -110,4 +120,63 @@ test('reconciliation is idempotent, broker-authoritative, and flags unsafe quant
   assert.strictEqual(domain.reconcileCheckpoint(next, checkpoint), next);
   const conflict = domain.reconcileCheckpoint(next, { ...checkpoint, brokerOpenQuantity: 9 });
   assert.equal(conflict.lifecycle.status, 'Needs Review'); assert.match(conflict.discrepancies.at(-1), /Conflicting/);
+});
+
+test('position risk distinguishes partial, full and missing protection without inventing total downside', () => {
+  assert.deepEqual(domain.positionRiskBreakdown({ direction: 'Long', openQuantity: 35, averageEntry: 101, confirmedProtectionQuantity: 35, confirmedStopPrice: 98 }), {
+    confirmedProtectionQuantity: 35, unprotectedQuantity: 0, confirmedStopRisk: 105, totalRemainingRisk: 105,
+  });
+  assert.deepEqual(domain.positionRiskBreakdown({ direction: 'Long', openQuantity: 35, averageEntry: 101, confirmedProtectionQuantity: 30, confirmedStopPrice: 98 }), {
+    confirmedProtectionQuantity: 30, unprotectedQuantity: 5, confirmedStopRisk: 90, totalRemainingRisk: null,
+  });
+  assert.deepEqual(domain.positionRiskBreakdown({ direction: 'Short', openQuantity: 12, averageEntry: 90, confirmedProtectionQuantity: 0 }), {
+    confirmedProtectionQuantity: 0, unprotectedQuantity: 12, confirmedStopRisk: 0, totalRemainingRisk: null,
+  });
+});
+
+test('position association requires exact identities and prevents duplicate links', () => {
+  const input = { associationId: 'a1', accountId: 'paper-1', instrumentId: 'conid-123', brokerPositionId: 'position-1', journalTradeId: 'trade-1', journalAccountId: 'paper-1', journalInstrumentId: 'conid-123', linkedAt: '2026-09-09T15:00:00Z', existing: [] };
+  const linked = domain.createPositionAssociation(input);
+  assert.equal(linked.journalTradeId, 'trade-1');
+  assert.throws(() => domain.createPositionAssociation({ ...input, associationId: 'a2', journalInstrumentId: 'same-ticker-different-contract' }), /ticker alone is not enough/);
+  assert.throws(() => domain.createPositionAssociation({ ...input, associationId: 'a2', journalTradeId: 'trade-2', existing: [linked] }), /already linked/);
+  assert.throws(() => domain.createPositionAssociation({ ...input, associationId: 'a2', brokerPositionId: 'position-2', existing: [linked] }), /already linked/);
+});
+
+test('snapshot campaigns preserve current position identity without inventing executions or risk history', () => {
+  const campaign = domain.createSnapshotCampaign({
+    campaignId: 'campaign-msft', journalTradeId: 'journal-msft', symbol: 'msft', direction: 'Long',
+    snapshot: { accountId: 'paper-1', instrumentId: 'conid-123', brokerPositionId: 'position-1', positionRevision: 'snapshot-r1', confirmedOpenQuantity: 12, averageEntry: 507.4, observedAt: '2026-09-09T15:00:00Z' },
+  });
+  assert.equal(campaign.symbol, 'MSFT');
+  assert.equal(campaign.executions.length, 0);
+  assert.equal(campaign.positionSnapshot.confirmedOpenQuantity, 12);
+  assert.equal(domain.rollupCampaign(campaign).actualInitialRisk, 0);
+  assert.throws(() => domain.createSnapshotCampaign({ ...campaign, journalTradeId: 'journal-msft', snapshot: { ...campaign.positionSnapshot, confirmedOpenQuantity: 0 } }), /valid identified position snapshot/);
+});
+
+test('amendment drafts reject concurrent revision and confirmed-quantity changes', () => {
+  const definition = { schemaVersion: 1, breakeven: { activationR: 2, favorableOffset: { unit: 'R', value: .25 } }, legs: [
+    { id: 'T1', role: 'Target', allocationPercent: 35, target: { mode: 'R', multipleR: 1 } },
+    { id: 'Runner A', role: 'Runner', allocationPercent: 35, activationR: 1.5, trailing: { mode: 'SMA', period: 20 } },
+    { id: 'Runner B', role: 'Runner', allocationPercent: 30, activationR: 3, trailing: { mode: 'Dollar', distance: 2.5 } },
+  ] };
+  const amendment = domain.createExitPlanAmendment({ amendmentId: 'amend-1', campaignId: 'campaign-1', sourcePlanRevisionId: 'revision-4', confirmedOpenQuantity: 37, requestedDefinition: definition, filledQuantitySnapshot: { T1: 0 }, createdAt: '2026-09-09T15:00:00Z' });
+  assert.deepEqual(amendment.requestedQuantities.map(item => item.quantity), [13, 13, 11]);
+  assert.equal(domain.assertAmendmentMatchesPosition(amendment, { campaignId: 'campaign-1', accountId: 'paper-1', instrumentId: 'conid-123', positionRevision: 'revision-4', confirmedOpenQuantity: 37 }), amendment);
+  assert.throws(() => domain.assertAmendmentMatchesPosition(amendment, { campaignId: 'campaign-1', accountId: 'paper-1', instrumentId: 'conid-123', positionRevision: 'revision-5', confirmedOpenQuantity: 37 }), /position changed/);
+  assert.throws(() => domain.assertAmendmentMatchesPosition(amendment, { campaignId: 'campaign-1', accountId: 'paper-1', instrumentId: 'conid-123', positionRevision: 'revision-4', confirmedOpenQuantity: 36 }), /position changed/);
+});
+
+test('first confirmed execution creates one Journal campaign and later events update that row', () => {
+  const first = execution({ campaignId: 'journal-campaign', quantity: 40, price: 100, protectionStopAtFill: 98 });
+  const sessionPolicy = { mode: 'RegularExtended', duration: 'GTC', route: 'SMART', entryOrderType: 'LMT', outsideRth: true, protectionOrderType: 'STP LMT', protectionOutsideRth: true, protectionLimitPrice: 97.5, effectiveCoverage: '04:00–20:00 America/New_York', expiresAt: null, scheduleSource: 'IBKR contract tradingHours', submissionEligible: true };
+  let result = domain.upsertJournalCampaignFromExecution({ campaigns: [], execution: first, symbol: 'test', direction: 'Long', journalTradeId: 'journal-row', planId: 'plan-1', journalSnapshot: { currency: 'USD', setup: 'EP breakout', provenance: 'Linked plan', sessionPolicy } });
+  assert.equal(result.created, true); assert.equal(result.campaigns.length, 1); assert.equal(result.campaign.journalTradeId, 'journal-row');
+  assert.deepEqual(result.campaign.journalSnapshot.sessionPolicy, sessionPolicy);
+  const partialExit = execution({ campaignId: 'journal-campaign', executionId: 'exit-1', orderId: 'o2', effect: 'exit', role: 'target', quantity: 10, price: 104, fee: 1, occurredAt: '2026-09-09T11:00:00Z', protectionStopAtFill: undefined });
+  result = domain.upsertJournalCampaignFromExecution({ campaigns: result.campaigns, execution: partialExit, symbol: 'TEST', direction: 'Long', journalTradeId: 'ignored' });
+  assert.equal(result.created, false); assert.equal(result.campaigns.length, 1); assert.equal(domain.rollupCampaign(result.campaign).openQuantity, 30);
+  const replay = domain.upsertJournalCampaignFromExecution({ campaigns: result.campaigns, execution: partialExit, symbol: 'TEST', direction: 'Long', journalTradeId: 'ignored' });
+  assert.equal(replay.campaigns.length, 1); assert.equal(replay.ignoredDuplicateCount, 1); assert.equal(domain.rollupCampaign(replay.campaign).executions.length, 2);
 });

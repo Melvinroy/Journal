@@ -7,7 +7,7 @@ export type ChartResponse = {
   instrument: Instrument;
   bars: Array<{ session_date: string; open: number; high: number; low: number; close: number; volume: number }>;
   series: { source: string; adjustment: string; timeframe: string; returned: number; limit: number };
-  status: { freshness: 'fresh' | 'stale' | 'unknown'; last_session: string | null; expected_session: string | null; calendar_covered: boolean };
+  status: { freshness: 'fresh' | 'stale' | 'unknown'; last_session: string | null; expected_session: string | null; calendar_covered: boolean; checked_at?: string };
 };
 
 export async function getLocalJson<T>(path: string, signal: AbortSignal): Promise<T> {

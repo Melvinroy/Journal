@@ -19,3 +19,4 @@ scripts/lean-pilot/obj/
 .playwright-cli/
 playwright-report/
 test-results/
+/artifacts/
