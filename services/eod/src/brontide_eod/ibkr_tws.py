@@ -44,6 +44,22 @@ except ImportError:  # pragma: no cover - exercised through sdk_available()
                 "Install the official IBKR TWS API Python SDK before connected testing."
             )
 
+        def isConnected(self) -> bool:  # noqa: N802 - mirrors the SDK
+            return False
+
+        def disconnect(self) -> None:
+            pass
+
+        def _sdk_required(self, *_args: Any, **_kwargs: Any) -> None:
+            raise RuntimeError(
+                "Install the official IBKR TWS API Python SDK before connected testing."
+            )
+
+        run = reqManagedAccts = reqAccountSummary = cancelAccountSummary = _sdk_required
+        reqPositions = cancelPositions = reqAllOpenOrders = _sdk_required
+        reqContractDetails = reqMarketDataType = reqMktData = _sdk_required
+        serverVersion = placeOrder = _sdk_required
+
     class Contract:  # type: ignore[no-redef]
         pass
 
