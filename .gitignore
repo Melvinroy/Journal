@@ -17,6 +17,8 @@ output/playwright/
 output/lean-pilot/
 scripts/lean-pilot/obj/
 .playwright-cli/
+/tmp/catalyst-*
+/supabase/.temp/
 playwright-report/
 test-results/
 /artifacts/

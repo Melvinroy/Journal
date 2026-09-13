@@ -469,6 +469,7 @@ test("primary detail surfaces support keyboard entry, Escape, focus containment,
   await openDemo(page);
   await navigateTo(page, "Discover");
   await page.getByRole("button", { name: "Catalysts", exact: true }).click();
+  await page.getByRole("button", { name: "Premarket", exact: true }).click();
   const catalystRow = page.locator(
     'tr[aria-label="Open NVDA catalyst detail"]',
   );
