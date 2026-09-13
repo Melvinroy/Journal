@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 
 import pytest
@@ -8,11 +8,12 @@ from brontide_eod.ibkr_tws import PaperSafetyError
 
 
 ACCOUNT = "EXACT-PRIVATE-PAPER-ACCOUNT"
+FIXTURE_NOW = datetime.fromisoformat("2026-09-10T14:00:00+00:00")
 
 
 def instrument(*, executable=True, data_type=1, bid=99.99, ask=100.00):
     return {
-        "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "observedAt": FIXTURE_NOW.isoformat().replace("+00:00", "Z"),
         "contract": {"conId": 42, "symbol": "TEST", "secType": "STK", "exchange": "NYSE", "primaryExchange": "NYSE", "route": "SMART", "currency": "USD", "minimumTick": .01, "orderTypes": ["LMT", "MIDPX", "STP", "STPLMT", "TRAIL", "TRAILLMT"], "validExchanges": ["SMART", "NYSE", "OVERNIGHT"], "tradingHours": "20260910:0400-20260910:2000;20260911:0400-20260911:2000", "liquidHours": "20260910:0930-20260910:1600;20260911:0930-20260911:1600", "timeZoneId": "US/Eastern", "serverVersion": 191},
         "quote": {"bid": bid, "ask": ask, "complete": True, "marketDataType": data_type},
         "executable": executable,
@@ -30,9 +31,13 @@ def payload(**overrides):
     return value
 
 
+def prepare(payload_value, **kwargs):
+    return prepare_paper_intent(payload_value, now=FIXTURE_NOW, **kwargs)
+
+
 def test_prepare_persists_private_exact_account_but_returns_only_safe_metadata(tmp_path):
     store = PaperIntentStore(tmp_path / "private.json")
-    result = prepare_paper_intent(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+    result = prepare(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
     assert result["status"] == "Validated intent"
     assert result["submissionsEnabled"] is False
     assert ACCOUNT not in json.dumps(result)
@@ -43,11 +48,11 @@ def test_prepare_persists_private_exact_account_but_returns_only_safe_metadata(t
 
 def test_prepare_is_idempotent_and_rejects_changed_economic_action(tmp_path):
     store = PaperIntentStore(tmp_path / "private.json")
-    first = prepare_paper_intent(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
-    repeated = prepare_paper_intent(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+    first = prepare(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+    repeated = prepare(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
     assert first["intentId"] == repeated["intentId"]
     with pytest.raises(PaperSafetyError, match="different economic action"):
-        prepare_paper_intent(payload(quantity=3), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+        prepare(payload(quantity=3), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
 
 
 @pytest.mark.parametrize(
@@ -66,16 +71,16 @@ def test_prepare_blocks_non_executable_or_drifted_quotes(tmp_path, observed, mat
 def test_prepare_excludes_existing_position_and_opening_auction(tmp_path):
     store = PaperIntentStore(tmp_path / "private.json")
     with pytest.raises(PaperSafetyError, match="existing broker position"):
-        prepare_paper_intent(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols={"TEST"}, store=store)
+        prepare(payload(), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols={"TEST"}, store=store)
     with pytest.raises(PaperSafetyError, match="Opening-auction"):
-        prepare_paper_intent(payload(method="Opening"), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+        prepare(payload(method="Opening"), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
 
 
 def test_extended_hours_requires_explicit_limit_and_stop_limit(tmp_path):
     store = PaperIntentStore(tmp_path / "private.json")
     with pytest.raises(PaperSafetyError, match="explicit limit entry"):
-        prepare_paper_intent(payload(sessionMode="RegularExtended"), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
-    extended = prepare_paper_intent(payload(intentId="extended", idempotencyKey="extended:v1", method="Limit", sessionMode="RegularExtended", duration="GTC", protectionOrderType="STP LMT", protectionLimitPrice=97.5), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+        prepare(payload(sessionMode="RegularExtended"), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+    extended = prepare(payload(intentId="extended", idempotencyKey="extended:v1", method="Limit", sessionMode="RegularExtended", duration="GTC", protectionOrderType="STP LMT", protectionLimitPrice=97.5), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
     assert extended["sessionPolicy"]["outsideRth"] is True
     assert extended["sessionPolicy"]["protectionOutsideRth"] is True
     raw = json.loads(store.path.read_text(encoding="utf-8"))["records"][-1]
@@ -87,7 +92,7 @@ def test_extended_hours_requires_explicit_limit_and_stop_limit(tmp_path):
 def test_overnight_plans_fail_closed_before_intent_persistence(tmp_path, mode, match):
     store = PaperIntentStore(tmp_path / "private.json")
     with pytest.raises(PaperSafetyError, match=match):
-        prepare_paper_intent(payload(method="Limit", sessionMode=mode, protectionOrderType="STP LMT", protectionLimitPrice=97.5), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
+        prepare(payload(method="Limit", sessionMode=mode, protectionOrderType="STP LMT", protectionLimitPrice=97.5), account_id=ACCOUNT, account_binding="binding", instrument=instrument(), existing_symbols=set(), store=store)
     assert not store.path.exists()
 
 
