@@ -288,6 +288,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .setup-header h2 { margin: 8px 0 7px; font-size: clamp(27px, 3vw, 38px); font-weight: 630; letter-spacing: -.045em; }
 .setup-header p:last-child { margin: 0; color: #76817b; font-size: 11px; }
 .demo-link { height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; color: #126b42; background: #fff; border: 1px solid #d7dfda; border-radius: 7px; font-size: 10px; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.demo-access-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 18px 0; padding: 9px 12px; color: #684a12; background: #fff8e8; border: 1px solid #ead49e; border-radius: 8px; }
+.demo-access-banner div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.demo-access-banner strong { font-size: 11px; }
+.demo-access-banner span { font-size: 10px; }
 .setup-progress { max-width: 940px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 28px auto 18px; }
 .setup-progress span { height: 3px; background: #dce2de; border-radius: 4px; }
 .setup-progress span.active { background: linear-gradient(90deg, #159653 35%, #dce2de 35%); }
@@ -844,6 +848,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 }
 
 @media (max-width: 680px) {
+  .demo-access-banner { margin: 8px 10px 0; align-items: stretch; flex-direction: column; gap: 8px; }
+  .demo-access-banner .secondary-button { width: 100%; }
   .setup-shell, .setup-overlay { display: block; }
   .setup-rail { min-height: auto; padding: 22px 20px 34px; }
   .setup-rail-copy { margin: 44px 0 0; }

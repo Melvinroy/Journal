@@ -423,34 +423,44 @@ function AuthScreen({
     const email = String(data.get("email") || "").trim();
     const password = String(data.get("password") || "");
     const redirectTo = `${window.location.origin}${window.location.pathname}`;
-    let result: { error: { message: string } | null };
+    try {
+      let result: { error: { message: string } | null };
 
-    if (mode === "signup") {
-      result = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: redirectTo },
-      });
-      if (!result.error)
-        setMessage(
-          "If this email is eligible, we’ll send a confirmation link. Please check your inbox and spam folder.",
-        );
-    } else if (mode === "forgot") {
-      result = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-      if (!result.error)
-        setMessage("Password-reset link sent. Please check your email.");
-    } else if (mode === "recovery") {
-      result = await supabase.auth.updateUser({ password });
-      if (!result.error) {
-        setMessage("Password updated securely.");
-        onRecovered();
+      if (mode === "signup") {
+        result = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: redirectTo },
+        });
+        if (!result.error)
+          setMessage(
+            "If this email is eligible, we’ll send a confirmation link. Please check your inbox and spam folder.",
+          );
+      } else if (mode === "forgot") {
+        result = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+        if (!result.error)
+          setMessage("Password-reset link sent. Please check your email.");
+      } else if (mode === "recovery") {
+        result = await supabase.auth.updateUser({ password });
+        if (!result.error) {
+          setMessage("Password updated securely.");
+          onRecovered();
+        }
+      } else {
+        result = await supabase.auth.signInWithPassword({ email, password });
       }
-    } else {
-      result = await supabase.auth.signInWithPassword({ email, password });
-    }
 
-    if (result.error) setError(result.error.message);
-    setBusy(false);
+      if (result.error)
+        setError(
+          /failed to fetch|network request failed/i.test(result.error.message)
+            ? "Unable to reach the authentication service. Check your connection and try again."
+            : result.error.message,
+        );
+    } catch {
+      setError("Unable to reach the authentication service. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const title =
@@ -1772,6 +1782,12 @@ export default function Home() {
               <Icon name="settings" />
               <span>Cloud settings</span>
             </button>
+            {session && (
+              <button className="nav-item" onClick={signOut}>
+                <Icon name="arrow" />
+                <span>Sign out</span>
+              </button>
+            )}
           </div>
         )}
         <div className="profile">
@@ -1788,6 +1804,12 @@ export default function Home() {
         ref={workspaceRef}
         className={`workspace ${active === "Catalyst" ? "catalyst-workspace" : primary === "Trading" ? "trade-workspace" : active === "Charts" ? "chart-workspace" : active === "Scans" || active === "Backtest" ? "research-container" : ""}`}
       >
+        {demoMode && (
+          <aside className="demo-access-banner" aria-label="Demo mode">
+            <div><strong>Demo data</strong><span>Fictional reports and sample records are isolated from your account.</span></div>
+            <button type="button" className="secondary-button" onClick={signOut}>Leave demo and sign in</button>
+          </aside>
+        )}
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {nav.map(([label]) => (
             <button
