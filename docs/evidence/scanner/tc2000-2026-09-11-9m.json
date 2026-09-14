@@ -1,0 +1,1184 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-14T02:48:15.678314+00:00",
+  "evaluation_session": "2026-09-11",
+  "threshold_label": "$9M product",
+  "thresholds": {
+    "min_dollar_volume": 9000000.0,
+    "min_adr_percent": 5.0,
+    "min_growth_rank": 93.77
+  },
+  "baseline_count": 90,
+  "generated_count": 118,
+  "overlap_count": 35,
+  "missing_from_generated": [
+    "AEHR",
+    "AGCO",
+    "AMDL",
+    "ASO",
+    "AXTI",
+    "BDRX",
+    "BITO",
+    "BNO",
+    "CLS",
+    "CLSK",
+    "CNH",
+    "CRM",
+    "DINO",
+    "EPAM",
+    "ETH",
+    "ETHA",
+    "ETHE",
+    "FBTC",
+    "FEIM",
+    "FETH",
+    "FORM",
+    "FRO",
+    "FTFT",
+    "GDXU",
+    "HPE",
+    "HPQ",
+    "HUT",
+    "IBIT",
+    "INSP",
+    "INTW",
+    "IREN",
+    "LABD",
+    "LUMN",
+    "MTDR",
+    "MXL",
+    "NTAP",
+    "OKTA",
+    "PBF",
+    "QRVO",
+    "RBLX",
+    "RIOT",
+    "ROIV",
+    "SEI",
+    "SIG",
+    "SKHY",
+    "SNDQ",
+    "SOXL",
+    "SPCH",
+    "TNON",
+    "TRUG",
+    "UCO",
+    "UMC",
+    "USO",
+    "VLO",
+    "XP"
+  ],
+  "additional_generated": [
+    "AAOZ",
+    "ABTC",
+    "AEON",
+    "AESI",
+    "AMLX",
+    "AMR",
+    "ANGX",
+    "BEG",
+    "BEX",
+    "BHYP",
+    "BITU",
+    "BLSH",
+    "BMNG",
+    "BNC",
+    "BTCT",
+    "BTDR",
+    "BTGO",
+    "CAPR",
+    "CHPT",
+    "CNXC",
+    "COIN",
+    "CORD",
+    "CRCA",
+    "CRCG",
+    "CRMG",
+    "CVI",
+    "CYPH",
+    "DFDV",
+    "EDRY",
+    "ETHT",
+    "ETON",
+    "FBL",
+    "FTH",
+    "FUBO",
+    "FWDI",
+    "GLXY",
+    "GPRO",
+    "HOOG",
+    "HOOW",
+    "HYNX",
+    "IOND",
+    "IRD",
+    "JILL",
+    "KURA",
+    "LIFE",
+    "METU",
+    "MRNX",
+    "MSTY",
+    "NABL",
+    "NMAX",
+    "NVAX",
+    "ODD",
+    "ORBS",
+    "PCLA",
+    "PLSE",
+    "QCML",
+    "ROBN",
+    "SG",
+    "SID",
+    "SION",
+    "SKHL",
+    "SKHU",
+    "SKHX",
+    "SKUU",
+    "SLON",
+    "SMMT",
+    "SNDG",
+    "SOC",
+    "SOLT",
+    "SUNE",
+    "TH",
+    "TJGC",
+    "TRLV",
+    "TSLR",
+    "TSLT",
+    "USDE",
+    "UXRP",
+    "VERA",
+    "VIR",
+    "XHLD",
+    "XRPT",
+    "XXI",
+    "XXRP"
+  ],
+  "unresolved_symbols": [],
+  "publication": {
+    "publication_id": "04fbbdc7-9122-4ad3-aa1c-d3b8ee5c7006",
+    "formula_version": "biggest-one-month-v1",
+    "universe_fingerprint": "5d4c28108d93add9244a8cd0e832216489fa627f268186274d8970527416920a",
+    "calendar_fingerprint": "4f46c4f39b34c768dcde1ef8bc8ee5622283d3fc48d2bfa75d4cd0faa3b77570"
+  },
+  "assumptions": [
+    "TC2000 Rank Against universe is unknown; Brontide ranks the full eligible supported universe.",
+    "Growth uses split-only 21-session return; dividend treatment may differ from TC2000.",
+    "ADR20% uses mean(high/low - 1); TC2000 screenshot does not establish this normalization."
+  ],
+  "baseline_symbols": [
+    {
+      "symbol": "BDRX",
+      "dollar_volume": 185137273.1,
+      "growth_percent": -13.33333333333333,
+      "adr_percent": 16.74873808534182,
+      "growth_rank": 12.1659174499387,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "TRUG",
+      "dollar_volume": 283873259.8381,
+      "growth_percent": -27.30610882385669,
+      "adr_percent": 22.042775720035188,
+      "growth_rank": 4.168369431957499,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "TNON",
+      "dollar_volume": 643774889.68,
+      "growth_percent": 5.141843971631199,
+      "adr_percent": 25.684521226404843,
+      "growth_rank": 87.39681242337556,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "FTFT",
+      "dollar_volume": 153445066.56,
+      "growth_percent": -11.001236093943145,
+      "adr_percent": 26.10782887173706,
+      "growth_rank": 14.809971393543114,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "ACVA",
+      "dollar_volume": 1201942358.01,
+      "growth_percent": 34.14948453608248,
+      "adr_percent": 5.30872054576396,
+      "growth_rank": 97.92398855741725,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "FEIM",
+      "dollar_volume": 137352425.0,
+      "growth_percent": 12.852764653300985,
+      "adr_percent": 6.37173696093115,
+      "growth_rank": 93.43686146301594,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "FETH",
+      "dollar_volume": 167095000.53,
+      "growth_percent": 35.27681198181332,
+      "adr_percent": 3.1506417490945062,
+      "growth_rank": 98.07928075194116,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "ETH",
+      "dollar_volume": 204339448.25,
+      "growth_percent": 35.3236607142857,
+      "adr_percent": 3.1567461128123964,
+      "growth_rank": 98.12014711892112,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "ETHA",
+      "dollar_volume": 1859720009.96,
+      "growth_percent": 35.31073446327684,
+      "adr_percent": 3.2185967565401477,
+      "growth_rank": 98.11197384552513,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "ETHE",
+      "dollar_volume": 138847035.62,
+      "growth_percent": 34.963648380700604,
+      "adr_percent": 3.1475610791013153,
+      "growth_rank": 98.0138945647732,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "ETHU",
+      "dollar_volume": 479768141.29,
+      "growth_percent": 76.72193877551021,
+      "adr_percent": 6.451426629970166,
+      "growth_rank": 99.55046996322027,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "SWKS",
+      "dollar_volume": 982558991.8499999,
+      "growth_percent": 26.79391504018367,
+      "adr_percent": 5.218101722651534,
+      "growth_rank": 97.09848794442173,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "ASO",
+      "dollar_volume": 174963397.76,
+      "growth_percent": 12.42891957757919,
+      "adr_percent": 3.848229955183693,
+      "growth_rank": 93.28156926849204,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent",
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "QRVO",
+      "dollar_volume": 255738210.75,
+      "growth_percent": 18.739820846905552,
+      "adr_percent": 3.4589178700255374,
+      "growth_rank": 95.3412341642828,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "DELL",
+      "dollar_volume": 8213964933.45,
+      "growth_percent": 17.087719298245595,
+      "adr_percent": 6.184096524842913,
+      "growth_rank": 94.95709031467102,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "ASST",
+      "dollar_volume": 246425943.82000002,
+      "growth_percent": 122.9217110573043,
+      "adr_percent": 9.371966694393652,
+      "growth_rank": 99.74662852472416,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "LABD",
+      "dollar_volume": 138720447.88,
+      "growth_percent": 2.060439560439553,
+      "adr_percent": 7.007147893276804,
+      "growth_rank": 81.72456068655497,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "BMNR",
+      "dollar_volume": 1573914258.39,
+      "growth_percent": 39.91056456120739,
+      "adr_percent": 6.806453326446051,
+      "growth_rank": 98.52063751532489,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "HPE",
+      "dollar_volume": 2423417963.61,
+      "growth_percent": 5.61319952372854,
+      "adr_percent": 5.7871503430282365,
+      "growth_rank": 87.96076828769922,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "BWET",
+      "dollar_volume": 208274937.64,
+      "growth_percent": 113.08385024800471,
+      "adr_percent": 6.452504545403576,
+      "growth_rank": 99.73845525132816,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "SNDQ",
+      "dollar_volume": 318976551.8,
+      "growth_percent": -45.07101086048455,
+      "adr_percent": 13.201028447524356,
+      "growth_rank": 1.3240702901512056,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "SBET",
+      "dollar_volume": 118612877.28000002,
+      "growth_percent": 43.68932038834954,
+      "adr_percent": 6.463161720090663,
+      "growth_rank": 98.70862280343277,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "HPQ",
+      "dollar_volume": 938921041.7199999,
+      "growth_percent": 21.174863387978114,
+      "adr_percent": 4.804257052747738,
+      "growth_rank": 95.97057621577441,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "XP",
+      "dollar_volume": 159558139.56,
+      "growth_percent": 28.62694300518134,
+      "adr_percent": 4.2230558599656876,
+      "growth_rank": 97.40089906007356,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "PURR",
+      "dollar_volume": 255695528.51999998,
+      "growth_percent": 72.0,
+      "adr_percent": 11.634486658300698,
+      "growth_rank": 99.46873722926031,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "DLLL",
+      "dollar_volume": 116145956.42,
+      "growth_percent": 28.232833739979068,
+      "adr_percent": 12.57648251018842,
+      "growth_rank": 97.3191663261136,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "INSP",
+      "dollar_volume": 102117364.0,
+      "growth_percent": 25.257378174330825,
+      "adr_percent": 4.6341481260945,
+      "growth_rank": 96.91050265631385,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "FRO",
+      "dollar_volume": 182233487.8,
+      "growth_percent": 24.36189032095022,
+      "adr_percent": 3.07802573471216,
+      "growth_rank": 96.68165100122599,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "MSTX",
+      "dollar_volume": 126417581.82,
+      "growth_percent": 71.06227106227108,
+      "adr_percent": 13.254124181099613,
+      "growth_rank": 99.45239068246833,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "HTFL",
+      "dollar_volume": 110449433.64,
+      "growth_percent": 67.10217755443885,
+      "adr_percent": 6.319082992121176,
+      "growth_rank": 99.36248467511238,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "BITX",
+      "dollar_volume": 219464349.78,
+      "growth_percent": 44.689889549702656,
+      "adr_percent": 5.150277367569216,
+      "growth_rank": 98.79852881078872,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "LUMN",
+      "dollar_volume": 115618283.30000001,
+      "growth_percent": 10.333863275039757,
+      "adr_percent": 5.286133084791546,
+      "growth_rank": 92.06375153248877,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "MRNA",
+      "dollar_volume": 2217261670.23,
+      "growth_percent": 126.11905135856762,
+      "adr_percent": 11.105123348221158,
+      "growth_rank": 99.76297507151614,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "SIG",
+      "dollar_volume": 103451977.62,
+      "growth_percent": 8.354047335999137,
+      "adr_percent": 4.121718709801721,
+      "growth_rank": 90.88680016346547,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent",
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "HUT",
+      "dollar_volume": 560515857.0,
+      "growth_percent": 8.626198083067083,
+      "adr_percent": 8.506417199848567,
+      "growth_rank": 91.00939926440539,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "GDXU",
+      "dollar_volume": 272223766.20000005,
+      "growth_percent": 10.396332446021894,
+      "adr_percent": 8.886593474785625,
+      "growth_rank": 92.09644462607274,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "TSLG",
+      "dollar_volume": 228374429.34,
+      "growth_percent": 20.802005012531332,
+      "adr_percent": 7.138765000601201,
+      "growth_rank": 95.87249693502248,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "BMNU",
+      "dollar_volume": 183491451.0,
+      "growth_percent": 80.55555555555554,
+      "adr_percent": 13.672108438411863,
+      "growth_rank": 99.58316305680425,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "AGCO",
+      "dollar_volume": 119332908.8,
+      "growth_percent": 19.251600196947315,
+      "adr_percent": 3.8231487537596207,
+      "growth_rank": 95.47200653861871,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "SEI",
+      "dollar_volume": 209387440.14000002,
+      "growth_percent": 9.093851132686082,
+      "adr_percent": 6.455156380732431,
+      "growth_rank": 91.3281569268492,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "DINO",
+      "dollar_volume": 302804259.52,
+      "growth_percent": 22.643011486409637,
+      "adr_percent": 3.609462503126788,
+      "growth_rank": 96.37106661217818,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "AEHR",
+      "dollar_volume": 278700887.62,
+      "growth_percent": -26.727540044881216,
+      "adr_percent": 9.374888530360568,
+      "growth_rank": 4.3563547200653865,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "FIGR",
+      "dollar_volume": 152430543.64999998,
+      "growth_percent": 13.657105606258146,
+      "adr_percent": 7.730443332440534,
+      "growth_rank": 93.87004495300368,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "VLO",
+      "dollar_volume": 1194566121.9,
+      "growth_percent": 18.23385118560916,
+      "adr_percent": 2.7845024609469724,
+      "growth_rank": 95.25950143032284,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "CLS",
+      "dollar_volume": 886806201.8000001,
+      "growth_percent": 2.0886113238673287,
+      "adr_percent": 5.177622062331244,
+      "growth_rank": 81.8308132407029,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "CNH",
+      "dollar_volume": 220871149.52,
+      "growth_percent": 26.5610438024231,
+      "adr_percent": 4.626704046188058,
+      "growth_rank": 97.07396812423376,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "IBIT",
+      "dollar_volume": 2087494816.0500002,
+      "growth_percent": 21.95597659515185,
+      "adr_percent": 2.5683175506858427,
+      "growth_rank": 96.18308132407029,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "BE",
+      "dollar_volume": 3759807405.75,
+      "growth_percent": 16.271715297689315,
+      "adr_percent": 7.02268946397006,
+      "growth_rank": 94.68737229260319,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "PBF",
+      "dollar_volume": 232133974.2,
+      "growth_percent": 11.316462894512359,
+      "adr_percent": 5.373679084403625,
+      "growth_rank": 92.59501430322844,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "MARA",
+      "dollar_volume": 542025719.66,
+      "growth_percent": 24.27385892116183,
+      "adr_percent": 7.9596632956678,
+      "growth_rank": 96.65713118103801,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "CLSK",
+      "dollar_volume": 295518429.09,
+      "growth_percent": 12.233169129720856,
+      "adr_percent": 7.421329762258191,
+      "growth_rank": 93.15079689415612,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "UCO",
+      "dollar_volume": 169368515.92000002,
+      "growth_percent": 23.793517406962806,
+      "adr_percent": 3.303897812881208,
+      "growth_rank": 96.57539844707806,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "ROIV",
+      "dollar_volume": 242907206.62,
+      "growth_percent": 12.88716814159294,
+      "adr_percent": 3.637655389829418,
+      "growth_rank": 93.45320800980792,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent",
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "CONL",
+      "dollar_volume": 102003685.0,
+      "growth_percent": 29.44038929440389,
+      "adr_percent": 11.239393161684195,
+      "growth_rank": 97.44993870044954,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "USO",
+      "dollar_volume": 1039599887.4000001,
+      "growth_percent": 21.681068342498033,
+      "adr_percent": 2.3935255989064697,
+      "growth_rank": 96.09317531671435,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "MSTR",
+      "dollar_volume": 2547950757.17,
+      "growth_percent": 38.11030264684172,
+      "adr_percent": 6.589969858428563,
+      "growth_rank": 98.41438496117695,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "ANF",
+      "dollar_volume": 194928141.69,
+      "growth_percent": 29.40390269981288,
+      "adr_percent": 5.093218249174457,
+      "growth_rank": 97.44176542705354,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "NTAP",
+      "dollar_volume": 520229606.88,
+      "growth_percent": -1.3709477852016927,
+      "adr_percent": 4.4922122577273385,
+      "growth_rank": 54.221495709031466,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent",
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "BULL",
+      "dollar_volume": 106488658.12,
+      "growth_percent": 20.208604954367672,
+      "adr_percent": 6.018377984230384,
+      "growth_rank": 95.73355128729057,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "SOXL",
+      "dollar_volume": 6516224282.9,
+      "growth_percent": -14.307822172200336,
+      "adr_percent": 7.142566682176467,
+      "growth_rank": 11.074785451573355,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "SPCH",
+      "dollar_volume": 258965118.9,
+      "growth_percent": 3.8461538461538325,
+      "adr_percent": 9.620607856626938,
+      "growth_rank": 85.38618716796077,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "SNDU",
+      "dollar_volume": 125443308.48,
+      "growth_percent": 35.79676674364896,
+      "adr_percent": 12.819064880736638,
+      "growth_rank": 98.25091949325704,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "MTDR",
+      "dollar_volume": 93146732.25,
+      "growth_percent": 16.263568844029706,
+      "adr_percent": 2.7574374254751275,
+      "growth_rank": 94.67919901920719,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "SMTC",
+      "dollar_volume": 440033860.48,
+      "growth_percent": 19.457142857142863,
+      "adr_percent": 7.604461733989892,
+      "growth_rank": 95.55373927257867,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "IOVA",
+      "dollar_volume": 106213801.2,
+      "growth_percent": 27.59643916913945,
+      "adr_percent": 7.006066332540593,
+      "growth_rank": 97.23743359215366,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "HOOD",
+      "dollar_volume": 2220805387.69,
+      "growth_percent": 18.607101464545362,
+      "adr_percent": 5.816153602888361,
+      "growth_rank": 95.3330608908868,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "OKTA",
+      "dollar_volume": 457066642.5,
+      "growth_percent": 13.034623217922592,
+      "adr_percent": 5.248535469772109,
+      "growth_rank": 93.55946056395587,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "SNXX",
+      "dollar_volume": 863665030.92,
+      "growth_percent": 37.940379403794026,
+      "adr_percent": 12.741544677745173,
+      "growth_rank": 98.39803841438496,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "BNO",
+      "dollar_volume": 122133050.69999999,
+      "growth_percent": 20.99763406940063,
+      "adr_percent": 2.290018983670189,
+      "growth_rank": 95.90519002860646,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "FBTC",
+      "dollar_volume": 195278801.5,
+      "growth_percent": 22.028669932861543,
+      "adr_percent": 2.534262235187349,
+      "growth_rank": 96.24029423784225,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "SIMO",
+      "dollar_volume": 220035607.68,
+      "growth_percent": 17.889851228709965,
+      "adr_percent": 6.180340847403409,
+      "growth_rank": 95.17776869636289,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "CRCL",
+      "dollar_volume": 942569149.8,
+      "growth_percent": 27.104377104377097,
+      "adr_percent": 7.100745995331081,
+      "growth_rank": 97.16387413158971,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "MSTU",
+      "dollar_volume": 158025412.95,
+      "growth_percent": 68.01104972375688,
+      "adr_percent": 13.277514255987857,
+      "growth_rank": 99.39517776869636,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "SNDK",
+      "dollar_volume": 15391628722.5,
+      "growth_percent": 21.50280073496047,
+      "adr_percent": 6.201845094767372,
+      "growth_rank": 96.04413567633837,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "INTW",
+      "dollar_volume": 90078039.45,
+      "growth_percent": -0.08378718056136769,
+      "adr_percent": 8.749509043104,
+      "growth_rank": 68.36125868410298,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "KORU",
+      "dollar_volume": 371932394.49,
+      "growth_percent": 13.533464566929144,
+      "adr_percent": 7.551631358079649,
+      "growth_rank": 93.8210053126277,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "CRM",
+      "dollar_volume": 2413202033.44,
+      "growth_percent": 28.13987171529071,
+      "adr_percent": 3.922532541859531,
+      "growth_rank": 97.30281977932162,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "RIOT",
+      "dollar_volume": 249102089.51,
+      "growth_percent": 5.659448818897639,
+      "adr_percent": 7.358639669242754,
+      "growth_rank": 88.01798120147119,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "AXTI",
+      "dollar_volume": 421868707.95,
+      "growth_percent": -17.458901491015677,
+      "adr_percent": 9.952122066362078,
+      "growth_rank": 8.557417245606866,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "IREN",
+      "dollar_volume": 1260973628.01,
+      "growth_percent": 0.36638424547743575,
+      "adr_percent": 6.910107866328042,
+      "growth_rank": 73.8291785860237,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "TSLL",
+      "dollar_volume": 489960016.62000006,
+      "growth_percent": 20.621118012422368,
+      "adr_percent": 7.255509721182842,
+      "growth_rank": 95.8316305680425,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "TXG",
+      "dollar_volume": 125512772.41000001,
+      "growth_percent": 18.77056277056277,
+      "adr_percent": 5.82961178709308,
+      "growth_rank": 95.34940743767879,
+      "eligible": true,
+      "category": "matched",
+      "rule_failures": []
+    },
+    {
+      "symbol": "MXL",
+      "dollar_volume": 196272266.77999997,
+      "growth_percent": 0.3228844342795467,
+      "adr_percent": 7.144176832294288,
+      "growth_rank": 73.26522272170004,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "RBLX",
+      "dollar_volume": 288444747.5,
+      "growth_percent": 28.02476083286438,
+      "adr_percent": 4.55127007226516,
+      "growth_rank": 97.27829995913363,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "EPAM",
+      "dollar_volume": 108371906.36999999,
+      "growth_percent": 17.569049755708434,
+      "adr_percent": 3.9314461518360324,
+      "growth_rank": 95.09603596240294,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "FORM",
+      "dollar_volume": 100075355.05,
+      "growth_percent": -10.732313427040463,
+      "adr_percent": 5.760430609728261,
+      "growth_rank": 15.243154883530854,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    },
+    {
+      "symbol": "BITO",
+      "dollar_volume": 875035014.3,
+      "growth_percent": 21.28654970760231,
+      "adr_percent": 2.592697043030646,
+      "growth_rank": 96.0032693093584,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "UMC",
+      "dollar_volume": 162657827.12,
+      "growth_percent": 17.244950802692927,
+      "adr_percent": 3.083151747084667,
+      "growth_rank": 95.014303228443,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "SKHY",
+      "dollar_volume": 2840059202.25,
+      "growth_percent": 23.094359173628654,
+      "adr_percent": 4.21847142045541,
+      "growth_rank": 96.46097261953412,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "adr_percent"
+      ]
+    },
+    {
+      "symbol": "AMDL",
+      "dollar_volume": 105726180.32000001,
+      "growth_percent": 10.478927203065137,
+      "adr_percent": 7.17911912797752,
+      "growth_rank": 92.13731099305272,
+      "eligible": false,
+      "category": "actual_rule_failure",
+      "rule_failures": [
+        "growth_rank"
+      ]
+    }
+  ]
+}

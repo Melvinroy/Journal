@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from contextlib import asynccontextmanager
 
 import duckdb
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -17,6 +17,21 @@ from brontide_eod.config import Settings
 from brontide_eod.ibkr_readonly import IbkrReadOnlyService
 from brontide_eod.ibkr_tws import PaperSafetyError
 from brontide_eod.research_api import router as research_router, comparison_jobs, repository as research_repository
+from brontide_eod.providers.alpaca import AlpacaProvider
+from brontide_eod.scanner import (
+    DEFAULT_MIN_ADR_PERCENT,
+    DEFAULT_MIN_DOLLAR_VOLUME,
+    DEFAULT_MIN_GROWTH_RANK,
+    validate_scanner_thresholds,
+)
+from brontide_eod.updater import (
+    LockClaim,
+    UpdateLockedError,
+    acquire_update_lock,
+    lock_is_owned,
+    read_update_status,
+    run_update,
+)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -72,7 +87,9 @@ class PaperIntentRequest(BaseModel):
 def repository():
     store = None
     try:
-        store = DuckDBChartRepository(Settings.from_env().db_path)
+        settings = Settings.from_env()
+        serving_path = settings.serving_db_path if settings.serving_db_path.is_file() else settings.db_path
+        store = DuckDBChartRepository(serving_path)
         yield store
     except (FileNotFoundError, duckdb.Error):
         # Do not send local paths, SQL, or provider configuration to the browser.
@@ -98,6 +115,73 @@ def normalize_symbol(symbol: str) -> str:
 @app.get("/v1/runtime")
 def runtime():
     return {"mode": "local", "api_version": 1}
+
+
+def _background_eod_update(settings: Settings, run_id: str, lock_claim: LockClaim | None = None) -> None:
+    try:
+        with AlpacaProvider(
+            settings.alpaca_api_key,
+            settings.alpaca_api_secret,
+            trading_base_url=settings.alpaca_trading_base_url,
+        ) as provider:
+            run_update(settings, provider, force=True, run_id=run_id, lock_claim=lock_claim)
+    except BaseException:
+        # The updater stores a sanitized failure state; request handlers and logs
+        # must never receive credentials or raw provider response bodies.
+        return
+    finally:
+        if lock_claim is not None:
+            lock_claim.release()
+
+
+def _shared_eod_status() -> dict:
+    settings = Settings.from_env()
+    lock_path = settings.db_path.with_suffix(settings.db_path.suffix + ".update.lock")
+    if lock_is_owned(lock_path):
+        status = read_update_status(settings.serving_db_path)
+        return {**status, "state": "updating", "explanation": "A validated EOD update is in progress."}
+    try:
+        return read_update_status(settings.db_path)
+    except duckdb.Error:
+        return read_update_status(settings.serving_db_path)
+
+
+@app.get("/v1/eod/status")
+def eod_status():
+    return _shared_eod_status()
+
+
+@app.post("/v1/eod/refresh", status_code=202, dependencies=[Depends(require_local_broker_request)])
+def refresh_eod(background_tasks: BackgroundTasks):
+    import uuid
+    settings = Settings.from_env(require_alpaca=True)
+    lock_path = settings.db_path.with_suffix(settings.db_path.suffix + ".update.lock")
+    try:
+        claim = acquire_update_lock(lock_path)
+    except UpdateLockedError:
+        raise HTTPException(409, "Another EOD update is already running.") from None
+    run_id = str(uuid.uuid4())
+    background_tasks.add_task(_background_eod_update, settings, run_id, claim)
+    return {"state": "queued", "run_id": run_id}
+
+
+@app.get("/v1/scanners/biggest-one-month")
+def biggest_one_month(
+    store: Repository,
+    min_dollar_volume: float = Query(DEFAULT_MIN_DOLLAR_VOLUME),
+    min_adr_percent: float = Query(DEFAULT_MIN_ADR_PERCENT),
+    min_growth_rank: float = Query(DEFAULT_MIN_GROWTH_RANK),
+):
+    try:
+        validate_scanner_thresholds(min_dollar_volume, min_adr_percent, min_growth_rank)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
+    try:
+        result = store.biggest_one_month(min_dollar_volume, min_adr_percent, min_growth_rank)
+        result["status"] = _shared_eod_status()
+        return result
+    except duckdb.CatalogException:
+        raise HTTPException(503, "Scanner publication is unavailable. Run the local EOD updater before retrying.") from None
 
 
 @app.get("/v1/ibkr/read-only")

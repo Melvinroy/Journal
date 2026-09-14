@@ -87,6 +87,8 @@ class AlpacaProvider:
         symbols: Sequence[str],
         start: date,
         end: date,
+        *,
+        adjustment: str = "all",
     ) -> list[DailyBar]:
         if not symbols:
             return []
@@ -102,7 +104,7 @@ class AlpacaProvider:
             "start": start_timestamp.isoformat().replace("+00:00", "Z"),
             "end": end_timestamp.isoformat().replace("+00:00", "Z"),
             "feed": "sip",
-            "adjustment": "all",
+            "adjustment": adjustment,
             "asof": "-",
             "limit": 10_000,
             "sort": "asc",
@@ -113,7 +115,7 @@ class AlpacaProvider:
             response.raise_for_status()
             payload = response.json()
             for symbol, bars in payload.get("bars", {}).items():
-                rows.extend(self._parse_bar(symbol, bar) for bar in bars)
+                rows.extend(self._parse_bar(symbol, bar, adjustment=adjustment) for bar in bars)
             token = payload.get("next_page_token")
             if not token:
                 break
@@ -134,7 +136,7 @@ class AlpacaProvider:
         )
 
     @staticmethod
-    def _parse_bar(symbol: str, row: dict[str, Any]) -> DailyBar:
+    def _parse_bar(symbol: str, row: dict[str, Any], *, adjustment: str = "all") -> DailyBar:
         timestamp = datetime.fromisoformat(str(row["t"]).replace("Z", "+00:00"))
         if timestamp.tzinfo is None:
             timestamp = timestamp.replace(tzinfo=timezone.utc)
@@ -149,6 +151,7 @@ class AlpacaProvider:
             trade_count=int(row["n"]) if row.get("n") is not None else None,
             vwap=float(row["vw"]) if row.get("vw") is not None else None,
             source_timestamp=timestamp,
+            adjustment=adjustment,
         )
 
     @staticmethod

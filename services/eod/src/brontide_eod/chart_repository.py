@@ -8,12 +8,16 @@ from zoneinfo import ZoneInfo
 
 import duckdb
 
+from brontide_eod.scanner import BIGGEST_ONE_MONTH_FORMULA_VERSION
+
 
 class ChartRepository(Protocol):
     def search(self, query: str, limit: int) -> list[dict]: ...
     def instrument(self, symbol: str) -> dict | None: ...
     def bars(self, symbol: str, limit: int, adjustment: str, source: str) -> list[dict]: ...
     def freshness(self, latest: object, now: datetime) -> dict: ...
+    def update_status(self) -> dict: ...
+    def biggest_one_month(self, min_dollar_volume: float, min_adr_percent: float, min_growth_rank: float) -> dict: ...
     def close(self) -> None: ...
 
 
@@ -90,5 +94,67 @@ class DuckDBChartRepository:
                     expected = session["session_date"]
                     break
         state = "stale" if latest and expected and latest < expected else "fresh" if latest and covered and expected else "unknown"
-        return {"freshness": state, "last_session": latest, "expected_session": expected,
-                "calendar_covered": covered, "checked_at": now.isoformat()}
+        result = {"freshness": state, "last_session": latest, "expected_session": expected,
+                  "calendar_covered": covered, "checked_at": now.isoformat()}
+        try:
+            status = self.update_status()
+            result["publication"] = {
+                "state": status.get("state"), "publication_id": status.get("publication_id"),
+                "published_session": status.get("published_session"), "last_success_at": status.get("last_success_at"),
+            }
+        except duckdb.CatalogException:
+            pass
+        return result
+
+    def update_status(self) -> dict:
+        rows = self._query("""
+            SELECT state,expected_session,published_session,last_success_at,publication_id,
+              coverage_percent,expected_symbols,loaded_symbols,adjustment_coverage,retry_at,explanation
+            FROM eod_update_state WHERE singleton_id=1
+        """)
+        if not rows:
+            return {"state": "stale", "explanation": "No validated EOD publication is available."}
+        row = rows[0]
+        import json
+        return {
+            "state": row["state"], "expected_session": row["expected_session"],
+            "published_session": row["published_session"], "last_success_at": row["last_success_at"],
+            "publication_id": row["publication_id"], "retry_at": row["retry_at"],
+            "coverage": {"percent": row["coverage_percent"], "expected_symbols": row["expected_symbols"],
+                         "loaded_symbols": row["loaded_symbols"],
+                         "adjustments": json.loads(row["adjustment_coverage"]) if row["adjustment_coverage"] else {}},
+            "explanation": row["explanation"],
+        }
+
+    def biggest_one_month(self, min_dollar_volume: float, min_adr_percent: float, min_growth_rank: float) -> dict:
+        status = self.update_status()
+        publication_id = status.get("publication_id")
+        if publication_id is None:
+            return {"status": status, "data_date": None, "comparison_universe": {"eligible": 0, "ranked": 0}, "results": []}
+        counts = self._query("""
+            SELECT count(*) AS ranked,
+              (SELECT expected_symbols FROM eod_publications WHERE publication_id=?) AS eligible,
+              (SELECT excluded_count FROM eod_publications WHERE publication_id=?) AS excluded
+            FROM scanner_measurements WHERE publication_id=? AND scanner_key='biggest-one-month'
+        """, [publication_id, publication_id, publication_id])[0]
+        results = self._query("""
+            SELECT symbol,dollar_volume,growth_percent,adr_percent,growth_rank
+            FROM scanner_measurements
+            WHERE publication_id=? AND scanner_key='biggest-one-month'
+              AND dollar_volume > ? AND adr_percent > ? AND growth_rank >= ?
+            ORDER BY growth_percent DESC, symbol ASC
+        """, [publication_id, min_dollar_volume, min_adr_percent, min_growth_rank])
+        return {
+            "scanner": "biggest-one-month", "formula_version": BIGGEST_ONE_MONTH_FORMULA_VERSION,
+            "definition": {
+                "dollar_volume": "raw close[t] × raw actual-share volume[t]",
+                "growth": "100 × (split close[t] / split close[t−21 sessions] − 1)",
+                "adr": "100 × mean(split high/low − 1), 20 sessions ending at t",
+                "rank": "average ascending tie rank over the eligible universe before filters",
+                "thresholds": {"min_dollar_volume": min_dollar_volume, "min_adr_percent": min_adr_percent,
+                               "min_growth_rank": min_growth_rank},
+            },
+            "comparison_universe": {"eligible": counts["eligible"], "ranked": counts["ranked"],
+                                    "excluded": counts["excluded"]},
+            "status": status, "data_date": status.get("published_session"), "results": results,
+        }

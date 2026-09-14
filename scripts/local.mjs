@@ -22,7 +22,21 @@ writeFileSync(path.join(root, 'out', PREVIEW_IDENTITY_MANIFEST), JSON.stringify(
 console.log(`[preview] checkout ${identity.checkout}`);
 console.log(`[preview] branch ${identity.branch} · revision ${identity.identifier}`);
 console.log('Open Brontide at http://127.0.0.1:8765/?demo=1; standalone chart: /charts/ (or your configured API port).');
-const child = spawn(python, ['-m', 'brontide_eod.cli', 'serve'], { cwd: service, stdio: 'inherit' });
+if ((process.env.BRONTIDE_EOD_STARTUP_CHECK ?? '1') === '1') {
+  const update = spawnSync(python, ['-m', 'brontide_eod.cli', 'due-update'], {
+    cwd: service,
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (update.status !== 0) {
+    console.warn('[preview] Startup EOD recovery did not complete; serving the last validated snapshot.');
+  }
+}
+const child = spawn(python, ['-m', 'brontide_eod.cli', 'serve'], {
+  cwd: service,
+  stdio: 'inherit',
+  env: process.env,
+});
 child.on('error', (error) => { console.error(error.message); process.exitCode = 1; });
 child.on('exit', (code) => { process.exitCode = code ?? 1; });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal));

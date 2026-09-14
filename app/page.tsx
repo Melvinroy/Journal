@@ -9,6 +9,7 @@ import {
 } from "../lib/local-trade-migration";
 import { CatalystDashboard } from "./CatalystDashboard";
 import { ScansDashboard } from "./ScansDashboard";
+import { ScannerDashboard } from "./ScannerDashboard";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import {
@@ -1151,7 +1152,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 export default function Home() {
   const previewIdentity = process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID;
   type View =
-    "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest";
+    "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Scanner" | "Backtest";
   const [active, setActive] = useState<View>("Charts");
   const navigation = useBrowserStore<{ active: View }>(
     "brontide-navigation-v2",
@@ -1166,6 +1167,7 @@ export default function Home() {
           "Trade",
           "Charts",
           "Scans",
+          "Scanner",
           "Backtest",
         ].includes(item.active ?? "")
       );
@@ -1179,9 +1181,10 @@ export default function Home() {
     navigation.save({ active: next });
   };
   const [chartContext, setChartContext] = useState<MarketContext>();
+  const [chartReturnView, setChartReturnView] = useState<View>("Scans");
   const [planContext, setPlanContext] = useState<MarketContext>();
   const primary =
-    active === "Scans" || active === "Catalyst"
+    active === "Scans" || active === "Scanner" || active === "Catalyst"
       ? "Discover"
       : active === "Backtest"
         ? "Strategies"
@@ -1199,6 +1202,7 @@ export default function Home() {
             : "Charts",
     );
   const openChart = (context: MarketContext) => {
+    setChartReturnView(active);
     setChartContext(context);
     selectView("Charts");
   };
@@ -1830,6 +1834,12 @@ export default function Home() {
               Scans
             </button>
             <button
+              className={active === "Scanner" ? "active" : ""}
+              onClick={() => selectView("Scanner")}
+            >
+              Scanner
+            </button>
+            <button
               className={active === "Catalyst" ? "active" : ""}
               onClick={() => selectView("Catalyst")}
             >
@@ -1886,7 +1896,7 @@ export default function Home() {
                 : []),
             ]}
             context={chartContext}
-            onExit={() => selectView("Scans")}
+            onExit={() => selectView(chartReturnView)}
             onPlan={(context) => {
               setPlanContext({ ...context });
               selectView("Trade");
@@ -1899,6 +1909,12 @@ export default function Home() {
             demo={demoMode}
             kind="scan"
             onChart={openChart}
+          />
+        </div>
+        <div hidden={active !== "Scanner"}>
+          <ScannerDashboard
+            local={localWorkspace}
+            onChart={(symbol) => openChart({ symbol, mode: "local", adjustment: "all" })}
           />
         </div>
         <div hidden={active !== "Backtest"}>

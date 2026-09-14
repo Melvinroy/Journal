@@ -10,7 +10,7 @@ const reportDirectory = process.env.BRONTIDE_VERIFY_REPORT_DIR;
 
 export default defineConfig({
   testDir: "./tests/ui",
-  testMatch: ["chart-regressions.spec.ts", "workspace-quality.spec.ts"],
+  testMatch: ["chart-regressions.spec.ts", "workspace-quality.spec.ts", "scanner-ui.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,
