@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 const rows = Array.from({ length: 120 }, (_, index) => ({
   symbol: `S${String(index).padStart(3, "0")}`,
-  dollar_volume: 10_000_000 + index * 1_000_000,
+  dollar_volume: 90_000_000 + index * 1_000_000,
   growth_percent: 120 - index,
   adr_percent: 6,
   growth_rank: 100 - index / 20,
@@ -11,7 +11,7 @@ const rows = Array.from({ length: 120 }, (_, index) => ({
 async function mockLocalScanner(page: Page, state: "current" | "stale" | "failed" = "current") {
   await page.route("**/v1/scanners/biggest-one-month?*", route => route.fulfill({
     contentType: "application/json",
-    body: JSON.stringify({ data_date: "2026-09-11", formula_version: "biggest-one-month-v1",
+    body: JSON.stringify({ data_date: "2026-09-11", formula_version: "biggest-one-month-tc2000-v2",
       comparison_universe: { eligible: 13154, ranked: 12236, excluded: 918 },
       status: { state, published_session: "2026-09-11", explanation: state === "current" ? null : "Test status." },
       results: rows }),
@@ -61,7 +61,7 @@ test("Scanner preserves the three-column contract, sorting, settings, full scrol
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Minimum dollar volume")).toHaveValue("12000000");
   await page.getByRole("button", { name: "Reset defaults" }).click();
-  await expect(page.getByLabel("Minimum dollar volume")).toHaveValue("9000000");
+  await expect(page.getByLabel("Minimum dollar volume")).toHaveValue("89000000");
 
   await page.locator(".scanner-table tbody tr").first().focus();
   await page.keyboard.press("Enter");

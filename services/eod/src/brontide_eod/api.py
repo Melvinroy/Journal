@@ -19,6 +19,7 @@ from brontide_eod.ibkr_tws import PaperSafetyError
 from brontide_eod.research_api import router as research_router, comparison_jobs, repository as research_repository
 from brontide_eod.providers.alpaca import AlpacaProvider
 from brontide_eod.scanner import (
+    BIGGEST_ONE_MONTH_FORMULA_VERSION,
     DEFAULT_MIN_ADR_PERCENT,
     DEFAULT_MIN_DOLLAR_VOLUME,
     DEFAULT_MIN_GROWTH_RANK,
@@ -178,7 +179,16 @@ def biggest_one_month(
         raise HTTPException(422, str(exc)) from None
     try:
         result = store.biggest_one_month(min_dollar_volume, min_adr_percent, min_growth_rank)
-        result["status"] = _shared_eod_status()
+        status = _shared_eod_status()
+        universe = result.get("comparison_universe") or {}
+        if result.get("formula_version") != BIGGEST_ONE_MONTH_FORMULA_VERSION and status.get("state") == "current":
+            status = {**status, "state": "stale",
+                      "explanation": "Scanner measurements use a superseded formula; showing the last validated results until a TC2000 parity refresh succeeds."}
+        elif universe.get("stale") and status.get("state") == "current":
+            source = universe.get("source") or "unknown"
+            status = {**status, "state": "stale",
+                      "explanation": f"Scanner universe membership is stale ({source}); showing the last validated results."}
+        result["status"] = status
         return result
     except duckdb.CatalogException:
         raise HTTPException(503, "Scanner publication is unavailable. Run the local EOD updater before retrying.") from None

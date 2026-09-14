@@ -23,7 +23,7 @@ type SharedStatus = {
 type ScannerResponse = {
   data_date: string | null;
   formula_version: string;
-  comparison_universe: { eligible: number; ranked: number; excluded: number };
+  comparison_universe: { eligible: number; ranked: number; excluded: number; source?: string; evaluation_session?: string | null; age_sessions?: number | null; stale?: boolean };
   status: SharedStatus;
   results: ScannerRow[];
 };
@@ -33,7 +33,7 @@ type SortKey = "symbol" | "dollar_volume" | "growth_percent";
 type Preferences = Settings & { sort: SortKey; descending: boolean; scrollTop: number };
 
 export const SCANNER_DEFAULTS: Settings = {
-  minDollarVolume: 9_000_000,
+  minDollarVolume: 89_000_000,
   minAdrPercent: 5,
   minGrowthRank: 93.77,
 };
@@ -82,7 +82,7 @@ export function ScannerDashboard({ local, onChart }: {
   onChart: (symbol: string) => void;
 }) {
   const preferences = useBrowserStore<Preferences>(
-    "brontide-scanner-biggest-one-month-v1", DEFAULT_PREFERENCES, validPreferences,
+    "brontide-scanner-biggest-one-month-v2", DEFAULT_PREFERENCES, validPreferences,
   );
   const [draft, setDraft] = useState<Settings>(SCANNER_DEFAULTS);
   const [payload, setPayload] = useState<ScannerResponse | null>(null);
@@ -205,13 +205,13 @@ export function ScannerDashboard({ local, onChart }: {
         <form className="scanner-settings" onSubmit={apply} aria-label="Biggest One Month settings">
           <label>Dollar volume &gt;<span>$</span><input aria-label="Minimum dollar volume" type="number" min="0" step="1000000"
             value={draft.minDollarVolume} onChange={event => setDraft({ ...draft, minDollarVolume: Number(event.target.value) })} /></label>
-          <label>ADR20% &gt;<input aria-label="Minimum ADR percent" type="number" min="0" max="1000" step="0.1"
+          <label>ADR% &gt;<input aria-label="Minimum ADR percent" type="number" min="0" max="1000" step="0.1"
             value={draft.minAdrPercent} onChange={event => setDraft({ ...draft, minAdrPercent: Number(event.target.value) })} /></label>
           <label>Growth rank ≥<input aria-label="Minimum growth rank" type="number" min="0" max="100" step="0.01"
             value={draft.minGrowthRank} onChange={event => setDraft({ ...draft, minGrowthRank: Number(event.target.value) })} /></label>
           <div className="scanner-settings-actions"><button className="primary-button" type="submit">Apply</button>
             <button className="secondary-button" type="button" onClick={reset}>Reset defaults</button></div>
-          <small>Growth: split-adjusted close versus 21 sessions earlier. ADR20%: mean high/low−1 over 20 sessions. Rank is calculated before filters.</small>
+          <small>TC2000 parity: growth is close versus the lowest low in 22 sessions. ADR% uses the captured 21-term ÷20 formula. Rank is calculated against US Stocks before Universal filters.</small>
         </form>
       )}
 

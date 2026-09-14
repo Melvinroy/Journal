@@ -20,6 +20,8 @@ from brontide_eod.ingest import (
 from brontide_eod.providers.alpaca import AlpacaProvider
 from brontide_eod.store import DuckDBStore
 from brontide_eod.reconcile import reconcile_fixture
+from brontide_eod.scanner import DEFAULT_MIN_DOLLAR_VOLUME
+from brontide_eod.tc2000 import write_tc2000_universe_export
 from brontide_eod.updater import read_update_status, run_update
 
 
@@ -53,9 +55,19 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile = subcommands.add_parser("reconcile", help="Reconcile the dated TC2000 reference fixture")
     reconcile.add_argument("--env-file", type=Path, default=None)
     reconcile.add_argument("--session", required=True, type=date.fromisoformat)
-    reconcile.add_argument("--dollar-volume", required=True, type=float)
-    reconcile.add_argument("--fixture", type=Path, default=Path("fixtures/tc2000-biggest-one-month-2026-09-11.json"))
+    reconcile.add_argument("--dollar-volume", type=float, default=DEFAULT_MIN_DOLLAR_VOLUME)
+    reconcile.add_argument("--fixture", type=Path, default=None,
+                           help="Reference JSON; defaults to configured TC2000 export, then the historical 90-symbol fixture")
     reconcile.add_argument("--output", type=Path, default=None)
+    tc2000 = subcommands.add_parser("import-tc2000-universes", help="Build a validated role-specific TC2000 universe export")
+    tc2000.add_argument("--session", required=True, type=date.fromisoformat)
+    tc2000.add_argument("--tc2000-version", required=True)
+    tc2000.add_argument("--common-stocks", required=True, type=Path)
+    tc2000.add_argument("--adrs", required=True, type=Path)
+    tc2000.add_argument("--etfs", required=True, type=Path)
+    tc2000.add_argument("--rank-universe", required=True, type=Path)
+    tc2000.add_argument("--result-list", required=True, type=Path)
+    tc2000.add_argument("--output", required=True, type=Path)
     return parser
 
 
@@ -72,15 +84,24 @@ def main() -> None:
         "due-update",
         "force-update",
     })
+    if args.command == "import-tc2000-universes":
+        result = write_tc2000_universe_export(
+            args.output, evaluation_session=args.session, tc2000_version=args.tc2000_version,
+            common_stocks=args.common_stocks, adrs=args.adrs, etfs=args.etfs,
+            rank_universe=args.rank_universe, result_list=args.result_list,
+        )
+        print(json.dumps(result, separators=(",", ":")))
+        return
     if args.command == "status":
         print(json.dumps(read_update_status(settings.db_path), default=str, separators=(",", ":")))
         return
     if args.command == "reconcile":
-        fixture_payload = json.loads(args.fixture.read_text(encoding="utf-8"))
+        reference = args.fixture or settings.tc2000_universe_path or Path("fixtures/tc2000-biggest-one-month-2026-09-11.json")
+        fixture_payload = json.loads(reference.read_text(encoding="utf-8"))
         if date.fromisoformat(fixture_payload["evaluation_session"]) != args.session:
             raise SystemExit("Fixture evaluation session does not match --session")
         database = settings.serving_db_path if settings.serving_db_path.is_file() else settings.db_path
-        result = reconcile_fixture(database, args.fixture, dollar_threshold=args.dollar_volume, output=args.output)
+        result = reconcile_fixture(database, reference, dollar_threshold=args.dollar_volume, output=args.output)
         print(json.dumps(result, default=str, separators=(",", ":")))
         return
     if args.command == "init-db":

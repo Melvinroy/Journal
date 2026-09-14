@@ -20,6 +20,8 @@ class Settings:
     eod_close_delay_minutes: int = 30
     eod_correction_overlap_sessions: int = 5
     eod_minimum_coverage_percent: float = 99.0
+    tc2000_universe_path: Path | None = None
+    tc2000_universe_stale_sessions: int = 5
 
     @property
     def serving_db_path(self) -> Path:
@@ -59,12 +61,16 @@ class Settings:
         close_delay = int(os.getenv("BRONTIDE_EOD_CLOSE_DELAY_MINUTES", "30"))
         overlap = int(os.getenv("BRONTIDE_EOD_CORRECTION_OVERLAP_SESSIONS", "5"))
         coverage = float(os.getenv("BRONTIDE_EOD_MINIMUM_COVERAGE_PERCENT", "99"))
+        tc2000_value = os.getenv("BRONTIDE_TC2000_UNIVERSE_PATH", "").strip()
+        tc2000_stale_sessions = int(os.getenv("BRONTIDE_TC2000_UNIVERSE_STALE_SESSIONS", "5"))
         if not 0 <= close_delay <= 360:
             raise ValueError("BRONTIDE_EOD_CLOSE_DELAY_MINUTES must be between 0 and 360")
         if not 0 <= overlap <= 22:
             raise ValueError("BRONTIDE_EOD_CORRECTION_OVERLAP_SESSIONS must be between 0 and 22")
         if not 0 < coverage <= 100:
             raise ValueError("BRONTIDE_EOD_MINIMUM_COVERAGE_PERCENT must be greater than 0 and at most 100")
+        if not 0 <= tc2000_stale_sessions <= 252:
+            raise ValueError("BRONTIDE_TC2000_UNIVERSE_STALE_SESSIONS must be between 0 and 252")
         return cls(
             alpaca_api_key=key,
             alpaca_api_secret=secret,
@@ -77,4 +83,6 @@ class Settings:
             eod_close_delay_minutes=close_delay,
             eod_correction_overlap_sessions=overlap,
             eod_minimum_coverage_percent=coverage,
+            tc2000_universe_path=(resolve_path("BRONTIDE_TC2000_UNIVERSE_PATH", tc2000_value) if tc2000_value else None),
+            tc2000_universe_stale_sessions=tc2000_stale_sessions,
         )

@@ -134,9 +134,14 @@ class DuckDBChartRepository:
         counts = self._query("""
             SELECT count(*) AS ranked,
               (SELECT expected_symbols FROM eod_publications WHERE publication_id=?) AS eligible,
-              (SELECT excluded_count FROM eod_publications WHERE publication_id=?) AS excluded
+              (SELECT excluded_count FROM eod_publications WHERE publication_id=?) AS excluded,
+              (SELECT manifest_json FROM eod_publications WHERE publication_id=?) AS manifest_json,
+              (SELECT formula_version FROM eod_publications WHERE publication_id=?) AS formula_version
             FROM scanner_measurements WHERE publication_id=? AND scanner_key='biggest-one-month'
-        """, [publication_id, publication_id, publication_id])[0]
+        """, [publication_id, publication_id, publication_id, publication_id, publication_id])[0]
+        import json
+        manifest = json.loads(counts["manifest_json"]) if counts["manifest_json"] else {}
+        scanner_universe = manifest.get("scanner_universe") or {}
         results = self._query("""
             SELECT symbol,dollar_volume,growth_percent,adr_percent,growth_rank
             FROM scanner_measurements
@@ -144,17 +149,41 @@ class DuckDBChartRepository:
               AND dollar_volume > ? AND adr_percent > ? AND growth_rank >= ?
             ORDER BY growth_percent DESC, symbol ASC
         """, [publication_id, min_dollar_volume, min_adr_percent, min_growth_rank])
-        return {
-            "scanner": "biggest-one-month", "formula_version": BIGGEST_ONE_MONTH_FORMULA_VERSION,
-            "definition": {
+        formula_version = counts["formula_version"] or "unknown"
+        definition = (
+            {
                 "dollar_volume": "raw close[t] × raw actual-share volume[t]",
-                "growth": "100 × (split close[t] / split close[t−21 sessions] − 1)",
-                "adr": "100 × mean(split high/low − 1), 20 sessions ending at t",
-                "rank": "average ascending tie rank over the eligible universe before filters",
+                "growth": "100 × (split close[t] / minimum split low[t…t−21] − 1)",
+                "adr": "100 × (sum of 21 split high/low ratios ending at t ÷ 20 − 1)",
+                "rank": "average ascending tie rank against TC2000 US Stocks before Universal filters",
                 "thresholds": {"min_dollar_volume": min_dollar_volume, "min_adr_percent": min_adr_percent,
                                "min_growth_rank": min_growth_rank},
+            }
+            if formula_version == BIGGEST_ONE_MONTH_FORMULA_VERSION else
+            {
+                "dollar_volume": "raw close[t] × raw actual-share volume[t]",
+                "growth": "legacy published Scanner formula; refresh required for TC2000 parity",
+                "adr": "legacy published Scanner formula; refresh required for TC2000 parity",
+                "rank": "legacy published Scanner universe; refresh required for TC2000 parity",
+                "thresholds": {"min_dollar_volume": min_dollar_volume, "min_adr_percent": min_adr_percent,
+                               "min_growth_rank": min_growth_rank},
+            }
+        )
+        return {
+            "scanner": "biggest-one-month", "formula_version": formula_version,
+            "definition": definition,
+            "comparison_universe": {
+                "eligible": scanner_universe.get("candidate_measured", counts["eligible"]),
+                "ranked": scanner_universe.get("rank_measured", counts["ranked"]),
+                "excluded": scanner_universe.get("candidate_excluded", counts["excluded"]),
+                "source": scanner_universe.get("source", "unknown"),
+                "evaluation_session": scanner_universe.get("evaluation_session"),
+                "candidate_fingerprint": scanner_universe.get("candidate_fingerprint"),
+                "rank_fingerprint": scanner_universe.get("rank_fingerprint"),
+                "age_sessions": scanner_universe.get("age_sessions"),
+                "stale": scanner_universe.get("stale", True),
+                "missing_candidate_symbols": scanner_universe.get("missing_candidate_symbols", []),
+                "missing_rank_symbols": scanner_universe.get("missing_rank_symbols", []),
             },
-            "comparison_universe": {"eligible": counts["eligible"], "ranked": counts["ranked"],
-                                    "excluded": counts["excluded"]},
             "status": status, "data_date": status.get("published_session"), "results": results,
         }

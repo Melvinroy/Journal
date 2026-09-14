@@ -25,6 +25,7 @@ from brontide_eod.scanner import (
     apply_average_growth_ranks,
     calculate_symbol_measurement,
 )
+from brontide_eod.tc2000 import fingerprint as tc2000_fingerprint, load_tc2000_universes
 from brontide_eod.store import DuckDBStore, is_sip_symbol
 
 
@@ -244,25 +245,28 @@ def _known_non_sip_queryable(path: Path) -> set[str]:
 
 
 def _measurements(
-    symbols: Sequence[str],
+    candidate_symbols: Sequence[str],
+    rank_symbols: Sequence[str],
     sessions: Sequence[date],
     bars: Sequence[DailyBar],
-) -> tuple[list[ScannerMeasurement], list[ScannerExclusion]]:
+) -> tuple[list[ScannerMeasurement], list[ScannerExclusion], int]:
     raw: dict[str, dict[date, dict[str, object]]] = {}
     split: dict[str, dict[date, dict[str, object]]] = {}
     for bar in bars:
         destination = raw if bar.adjustment == "raw" else split if bar.adjustment == "split" else None
         if destination is not None:
             destination.setdefault(bar.symbol, {})[bar.session_date] = asdict(bar)
-    measurements: list[ScannerMeasurement] = []
+    measurements: dict[str, ScannerMeasurement] = {}
     exclusions: list[ScannerExclusion] = []
-    for symbol in symbols:
+    for symbol in sorted(set(candidate_symbols) | set(rank_symbols)):
         row, exclusion = calculate_symbol_measurement(symbol, sessions, raw.get(symbol, {}), split.get(symbol, {}))
         if row:
-            measurements.append(row)
+            measurements[symbol] = row
         if exclusion:
             exclusions.append(exclusion)
-    return apply_average_growth_ranks(measurements), exclusions
+    population = [measurements[symbol] for symbol in rank_symbols if symbol in measurements]
+    candidates = [measurements[symbol] for symbol in candidate_symbols if symbol in measurements]
+    return apply_average_growth_ranks(candidates, population), exclusions, len(population)
 
 
 def _existing_sessions(path: Path, adjustment: str, sessions: Sequence[date]) -> set[date]:
@@ -473,10 +477,68 @@ def run_update(
             bar for bar in existing_scanner
             if (bar.symbol, bar.session_date, bar.adjustment) not in staged_keys
         ] + bars
-        measurements, exclusions = _measurements(eligible, sessions, measurement_input)
+        scanner_candidate_symbols = list(eligible)
+        scanner_rank_symbols = list(eligible)
+        scanner_universe = {
+            "source": "alpaca-fallback",
+            "evaluation_session": expected.isoformat(),
+            "captured_at": None,
+            "tc2000_version": None,
+            "candidate_fingerprint": universe_fingerprint(scanner_candidate_symbols),
+            "rank_fingerprint": universe_fingerprint(scanner_rank_symbols),
+            "candidate_exported": len(scanner_candidate_symbols),
+            "rank_exported": len(scanner_rank_symbols),
+            "candidate_eligible": len(scanner_candidate_symbols),
+            "rank_eligible": len(scanner_rank_symbols),
+            "missing_candidate_symbols": [],
+            "missing_rank_symbols": [],
+            "age_sessions": 0,
+            "stale": True,
+        }
+        if settings.tc2000_universe_path is not None:
+            if not settings.tc2000_universe_path.is_file():
+                raise ValueError("Configured TC2000 universe export is unavailable")
+            exported = load_tc2000_universes(settings.tc2000_universe_path)
+            if exported.evaluation_session > expected:
+                raise ValueError("TC2000 universe export is dated after the target EOD session")
+            eligible_set = set(eligible)
+            scanner_candidate_symbols = [symbol for symbol in exported.candidate_symbols if symbol in eligible_set]
+            scanner_rank_symbols = [symbol for symbol in exported.rank_symbols if symbol in eligible_set]
+            age_sessions = exported.age_in_sessions((row.session_date for row in calendar), expected)
+            scanner_universe = {
+                "source": "tc2000-export",
+                "evaluation_session": exported.evaluation_session.isoformat(),
+                "captured_at": exported.captured_at.isoformat(),
+                "tc2000_version": exported.tc2000_version,
+                "source_categories": list(exported.source_categories),
+                "source_memberships": [
+                    {"name": name, "count": len(symbols), "fingerprint": tc2000_fingerprint(symbols)}
+                    for name, symbols in exported.source_memberships
+                ],
+                "candidate_fingerprint": exported.candidate_fingerprint,
+                "rank_fingerprint": exported.rank_fingerprint,
+                "result_fingerprint": exported.result_fingerprint,
+                "candidate_exported": len(exported.candidate_symbols),
+                "rank_exported": len(exported.rank_symbols),
+                "result_exported": len(exported.result_symbols),
+                "candidate_eligible": len(scanner_candidate_symbols),
+                "rank_eligible": len(scanner_rank_symbols),
+                "missing_candidate_symbols": sorted(set(exported.candidate_symbols) - eligible_set),
+                "missing_rank_symbols": sorted(set(exported.rank_symbols) - eligible_set),
+                "age_sessions": age_sessions,
+                "stale": age_sessions > settings.tc2000_universe_stale_sessions,
+            }
+            if len(scanner_rank_symbols) < 2:
+                raise ValueError("TC2000 rank universe has fewer than two eligible symbols")
+        measurements, exclusions, rank_measured = _measurements(
+            scanner_candidate_symbols, scanner_rank_symbols, sessions, measurement_input
+        )
+        scanner_universe["candidate_measured"] = len(measurements)
+        scanner_universe["rank_measured"] = rank_measured
+        scanner_universe["candidate_excluded"] = len(scanner_candidate_symbols) - len(measurements)
         publication_id = str(uuid.uuid4())
         completed = datetime.now(timezone.utc)
-        universe_hash = universe_fingerprint(eligible)
+        universe_hash = str(scanner_universe["candidate_fingerprint"])
         calendar_hash = calendar_fingerprint(calendar)
         adjustment_coverage = {key: len(value & set(eligible)) for key, value in target_by_adjustment.items()}
         manifest = {
@@ -486,6 +548,7 @@ def run_update(
             "feed": "sip",
             "adjustments": adjustment_coverage,
             "universe_fingerprint": universe_hash,
+            "scanner_universe": scanner_universe,
             "calendar_fingerprint": calendar_hash,
             "formula_version": BIGGEST_ONE_MONTH_FORMULA_VERSION,
             "coverage_percent": round(coverage, 6),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+from dataclasses import replace
+import json
 
 import duckdb
 import httpx
@@ -8,6 +10,7 @@ import pytest
 
 from brontide_eod.config import Settings
 from brontide_eod.models import DailyBar, Instrument, MarketSession
+from brontide_eod.tc2000 import TC2000_SCANNER_DEFINITION, TC2000_SOURCE_CATEGORIES
 from brontide_eod.updater import (
     UpdateLockedError,
     _request_with_retries,
@@ -134,6 +137,35 @@ def test_partial_failure_rolls_back_and_preserves_published_snapshot(tmp_path):
     assert configured.serving_db_path.read_bytes() == before
     assert read_update_status(configured.db_path)["state"] == "failed"
     assert read_update_status(configured.serving_db_path)["publication_id"] == good["publication_id"]
+
+
+def test_update_records_separate_tc2000_candidate_and_rank_universes(tmp_path):
+    target = date(2026, 9, 11)
+    export = tmp_path / "tc2000.json"
+    export.write_text(json.dumps({
+        "schema_version": 1, "evaluation_session": target.isoformat(),
+        "captured_at": "2026-09-12T00:00:00Z", "tc2000_version": "25",
+        "scanner_definition": TC2000_SCANNER_DEFINITION,
+        "candidate_universe": {"symbols": ["ETF"], "source_categories": list(TC2000_SOURCE_CATEGORIES)},
+        "rank_universe": {"symbols": ["AAA", "ETF"]},
+        "result_list": {"symbols": ["ETF"]},
+    }), encoding="utf-8")
+    configured = replace(settings(tmp_path), tc2000_universe_path=export)
+    result = run_update(configured, FakeProvider(target), force=True,
+                        now=datetime(2026, 9, 11, 21, tzinfo=timezone.utc), sleep=lambda _: None)
+    connection = duckdb.connect(str(configured.serving_db_path), read_only=True)
+    try:
+        manifest = json.loads(connection.execute(
+            "SELECT manifest_json FROM eod_publications WHERE publication_id=?", [result["publication_id"]]
+        ).fetchone()[0])
+        assert manifest["scanner_universe"]["source"] == "tc2000-export"
+        assert manifest["scanner_universe"]["candidate_eligible"] == 1
+        assert manifest["scanner_universe"]["rank_eligible"] == 2
+        assert connection.execute(
+            "SELECT symbol FROM scanner_measurements WHERE publication_id=?", [result["publication_id"]]
+        ).fetchall() == [("ETF",)]
+    finally:
+        connection.close()
 
 
 def test_snapshot_replacement_rejects_wrong_publication(tmp_path):
