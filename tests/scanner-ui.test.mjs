@@ -19,6 +19,11 @@ test("Biggest One Month renders exactly the requested result columns", () => {
   assert.match(header, /1M gain %/);
 });
 
+test("Scanner labels its published session as the EOD date", () => {
+  assert.match(source, /EOD date \$\{payload\.data_date\}/);
+  assert.doesNotMatch(source, /Data through \$\{payload\.data_date\}/);
+});
+
 test("Scanner never substitutes sample results when the local service is absent", () => {
   assert.match(source, /No demo results are substituted/);
   assert.doesNotMatch(source, /demoRows|sampleRows|fixtureRows/);

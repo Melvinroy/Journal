@@ -191,7 +191,7 @@ export function ScannerDashboard({ local, onChart }: {
             <h1 id="scanner-title">Biggest One Month</h1>
             <span className="scanner-count" aria-label={`${sorted.length} results`}>{sorted.length}</span>
           </div>
-          <p>{payload?.data_date ? `Data through ${payload.data_date}` : "Completed-session EOD data"}</p>
+          <p>{payload?.data_date ? `EOD date ${payload.data_date}` : "Completed-session EOD data"}</p>
         </div>
         <div className="scanner-actions">
           <button type="button" className="secondary-button" aria-expanded={settingsOpen}

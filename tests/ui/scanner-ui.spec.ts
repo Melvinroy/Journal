@@ -40,6 +40,7 @@ async function openScanner(page: Page) {
 test("Scanner preserves the three-column contract, sorting, settings, full scrolling, and chart return", async ({ page }) => {
   await mockLocalScanner(page);
   await openScanner(page);
+  await expect(page.getByText("EOD date 2026-09-11")).toBeVisible();
   await expect(page.locator(".scanner-table th")).toHaveCount(3);
   await expect(page.getByLabel("120 results")).toBeVisible();
   await expect(page.locator(".scanner-table tbody tr").first()).toContainText("S000");
