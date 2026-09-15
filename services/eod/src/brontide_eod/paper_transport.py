@@ -1,0 +1,139 @@
+"""Owned-client TWS callbacks and command transport for the durable paper service."""
+from collections import deque
+from datetime import datetime, timezone
+import threading
+import uuid
+
+from .ibkr_tws import (TwsPaperClient, PaperSafetyError, authorize_connection,
+                       validate_order_fields, PaperGatewayConfig, OperatorVerification)
+
+
+class PaperTransport(TwsPaperClient):
+    def __init__(self, config, verification):
+        super().__init__(config, verification)
+        self.events = deque()
+        self.event_lock = threading.Lock()
+        self.execution_end = threading.Event()
+        self.execution_ids = set()
+        self.history_end = threading.Event()
+        self.daily_bars = []
+
+    def emit(self, kind, **fields):
+        with self.event_lock:
+            self.events.append({"eventId": str(uuid.uuid4()), "kind": kind,
+                                "observedAt": datetime.now(timezone.utc).isoformat(), **fields})
+
+    def drain(self):
+        with self.event_lock:
+            result = list(self.events)
+            self.events.clear()
+            return result
+
+    def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId,
+                    parentId, lastFillPrice, clientId, whyHeld, mktCapPrice=0):
+        self.emit("order-status", orderId=orderId, status=status, filled=float(filled),
+                  remaining=float(remaining), clientId=clientId, whyHeld=whyHeld)
+
+    def openOrder(self, order_id, contract, order, order_state):
+        super().openOrder(order_id, contract, order, order_state)
+        fields = {key: getattr(order, key, None) for key in
+                  ("account", "action", "orderType", "lmtPrice", "auxPrice", "parentId",
+                   "ocaGroup", "ocaType", "orderRef", "clientId", "outsideRth", "tif")}
+        fields["totalQuantity"] = float(order.totalQuantity)
+        self.emit("open-order", orderId=order_id, conId=int(contract.conId),
+                  status=order_state.status, fields=fields)
+        if self._open_orders:
+            self._open_orders[-1].update(orderRef=getattr(order, "orderRef", ""),
+                                         clientId=getattr(order, "clientId", -1))
+
+    def execDetails(self, reqId, contract, execution):
+        self.execution_ids.add(execution.execId)
+        self.emit("execution", executionId=execution.execId, orderId=execution.orderId,
+                  clientId=execution.clientId, account=execution.acctNumber,
+                  conId=int(contract.conId), side=execution.side,
+                  quantity=float(execution.shares), price=float(execution.price),
+                  executedAt=execution.time, orderRef=execution.orderRef)
+
+    def execDetailsEnd(self, reqId):
+        if reqId == 9301: self.execution_end.set()
+
+    def commissionReport(self, report):
+        self.emit("commission", executionId=report.execId, commission=float(report.commission),
+                  currency=report.currency)
+
+    def historicalData(self, reqId, bar):
+        if reqId == 9401:
+            self.daily_bars.append({"date": bar.date, "high": float(bar.high), "low": float(bar.low), "close": float(bar.close)})
+
+    def historicalDataEnd(self, reqId, start, end):
+        if reqId == 9401: self.history_end.set()
+
+    def daily_references(self, contract, timeout=10):
+        from zoneinfo import ZoneInfo
+        self.history_end.clear()
+        self.daily_bars.clear()
+        self.reqHistoricalData(9401, self._contract(contract), "", "6 M", "1 day", "TRADES", 1, 1, False, [])
+        try:
+            if not self.history_end.wait(timeout): raise PaperSafetyError("Daily trailing reference request timed out.")
+            bars = sorted(self.daily_bars, key=lambda b: b["date"])
+            today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
+            if not bars or bars[-1]["date"] != today:
+                raise PaperSafetyError("Current-session daily trailing references are unavailable.")
+            return {"low": bars[-1]["low"], "high": bars[-1]["high"],
+                    **{f"SMA{n}": sum(b["close"] for b in bars[-n:]) / n for n in (10, 20, 50) if len(bars) >= n}}
+        finally:
+            self.cancelHistoricalData(9401)
+
+    def error(self, req_id, error_code, error_string, advanced=""):
+        super().error(req_id, error_code, error_string, advanced)
+        # Do not persist arbitrary broker text or account-bearing advanced JSON.
+        self.emit("broker-error", orderId=req_id, code=error_code)
+
+    def connectionClosed(self):
+        super().connectionClosed()
+        self.emit("disconnected")
+
+    def reserve(self, count):
+        if self._next_order_id is None: raise PaperSafetyError("Broker order IDs are unavailable.")
+        start = self._next_order_id
+        self._next_order_id += count
+        return list(range(start, start + count))
+
+    def write(self, order_id, contract, fields):
+        account = authorize_connection(self.config, self.verification, self._managed_accounts)
+        if not self.isConnected() or account != self.authorized_account:
+            raise PaperSafetyError("The verified paper connection is unavailable.")
+        order = self._order(validate_order_fields(account, fields))
+        for key in ("parentId", "ocaGroup", "ocaType", "goodTillDate"):
+            if key in fields: setattr(order, key, fields[key])
+        self.placeOrder(order_id, self._contract(contract), order)
+
+    def cancel_owned(self, order_id):
+        authorize_connection(self.config, self.verification, self._managed_accounts)
+        if not self.isConnected(): raise PaperSafetyError("Disconnected: cancellation is not confirmed.")
+        from ibapi.order_cancel import OrderCancel
+        self.cancelOrder(order_id, OrderCancel())
+
+    def execution_snapshot(self, timeout=10):
+        from ibapi.execution import ExecutionFilter
+        request = ExecutionFilter()
+        request.acctCode = self.authorized_account
+        self.execution_end.clear()
+        self.execution_ids.clear()
+        self.reqExecutions(9301, request)
+        if not self.execution_end.wait(timeout):
+            raise PaperSafetyError("Execution reconciliation did not complete.")
+        return set(self.execution_ids)
+
+
+def transport_from_environment():
+    import os
+    from pathlib import Path
+    config = PaperGatewayConfig.from_environment()
+    if config.host not in {"127.0.0.1", "localhost", "::1"}:
+        raise PaperSafetyError("Paper execution requires a loopback TWS endpoint.")
+    path = os.environ.get("BRONTIDE_IBKR_VERIFICATION_FILE")
+    if not path: raise PaperSafetyError("Operator paper verification is required.")
+    verification = OperatorVerification.load(Path(path))
+    verification.validate_for(config)
+    return PaperTransport(config, verification)

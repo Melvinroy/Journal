@@ -1,0 +1,12 @@
+{
+  "allocations": [
+    {"quantity": 37, "percentages": [35,35,30], "expected": [13,13,11]},
+    {"quantity": 3, "percentages": [35,35,30], "expected": [1,1,1]},
+    {"quantity": 2, "percentages": [35,35,30], "expected": [1,1,0]},
+    {"quantity": 3, "percentages": [25,25,25,25], "expected": [1,1,1,0]}
+  ],
+  "risk": [
+    {"direction":"Long", "entry":100, "stop":98, "expected":2},
+    {"direction":"Short", "entry":100, "stop":102, "expected":2}
+  ]
+}

@@ -16,6 +16,7 @@ from brontide_eod.chart_repository import ChartRepository, DuckDBChartRepository
 from brontide_eod.config import Settings
 from brontide_eod.ibkr_readonly import IbkrReadOnlyService
 from brontide_eod.ibkr_tws import PaperSafetyError
+from brontide_eod.paper_api import router as paper_router, service as paper_service
 from brontide_eod.research_api import router as research_router, comparison_jobs, repository as research_repository
 from brontide_eod.providers.alpaca import AlpacaProvider
 from brontide_eod.scanner import (
@@ -40,6 +41,7 @@ async def lifespan(app):
     research_repository().initialize_index()
     comparison_jobs()  # Recover persisted interrupted jobs before serving requests.
     yield
+    paper_service.shutdown()
 
 
 app = FastAPI(title="Brontide EOD API", version="0.2.0", lifespan=lifespan)
@@ -47,6 +49,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
                    allow_credentials=False, allow_methods=["GET","POST"], allow_headers=["*"])
 app.include_router(research_router)
+app.include_router(paper_router)
 
 _ibkr_read_only_service = IbkrReadOnlyService()
 

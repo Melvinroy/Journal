@@ -10,6 +10,7 @@ import {
 import { CatalystDashboard } from "./CatalystDashboard";
 import { ScansDashboard } from "./ScansDashboard";
 import { ScannerDashboard } from "./ScannerDashboard";
+import { PaperWorkspace } from "./PaperWorkspace";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import {
@@ -1232,6 +1233,7 @@ export default function Home() {
   const [reportingTimezone, setReportingTimezone] = useState("Local timezone");
   const [greeting, setGreeting] = useState("Welcome back, Melvin");
   const [demoMode, setDemoMode] = useState(false);
+  const [paperMode, setPaperMode] = useState(false);
   const positionCampaignStore = useBrowserStore<TradeCampaign[]>(
     demoStorageKey("brontide-position-campaigns-v1", demoMode),
     EMPTY_POSITION_CAMPAIGNS,
@@ -1355,6 +1357,7 @@ export default function Home() {
   useEffect(() => {
     const isDemo =
       new URLSearchParams(window.location.search).get("demo") === "1";
+    setPaperMode(localWorkspace && !isDemo && new URLSearchParams(window.location.search).get("paper") === "1");
     setSetupPreview(
       new URLSearchParams(window.location.search).get("setup") === "1",
     );
@@ -1869,7 +1872,8 @@ export default function Home() {
         <div hidden={active !== "Catalyst"}>
           <CatalystDashboard demo={demoMode} onChart={openChart} />
         </div>
-        <div hidden={active !== "Trade"}>
+        {paperMode && (active === "Trade" || active === "Journal") && <PaperWorkspace view={active === "Journal" ? "journal" : "positions"} />}
+        {!paperMode && <div hidden={active !== "Trade"}>
           <TradingWorkspace
             demo={demoMode}
             context={planContext}
@@ -1878,7 +1882,8 @@ export default function Home() {
             onCreateJournalTrade={createJournalTrade}
             positionCampaigns={positionCampaignStore.value}
           />
-        </div>
+          {localWorkspace && <p className="workspace-notice"><a href="?paper=1">Open the separate TWS paper workspace</a></p>}
+        </div>}
         {active === "Charts" && (
           <ChartDashboard
             navigation={[
@@ -1925,7 +1930,7 @@ export default function Home() {
             onChart={openChart}
           />
         </div>
-        <div className="journal-content" hidden={active !== "Journal"}>
+        <div className="journal-content" hidden={active !== "Journal" || paperMode}>
           {localWorkspace && !session && !demoMode && (
             <p className="workspace-notice">
               Cloud Journal is not connected in local mode. Local plans and

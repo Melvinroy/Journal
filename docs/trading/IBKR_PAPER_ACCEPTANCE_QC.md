@@ -1,5 +1,7 @@
 # Consolidated paper-acceptance QC coverage
 
+September 16 implementation continuation: [Connected paper lifecycle](PAPER_LIFECYCLE.md) adds the server ledger, paper UI, owned command transport and deterministic integration tests. It does not change any historical actual-paper result below into a pass. Fresh exact-batch execution evidence remains a separate gate.
+
 This matrix separates actual paper observations from deterministic evidence. Construction, acknowledgement and simulation never prove a fill, protection trigger, protection fill or exit. PL long 100 and AMD short 100 are excluded throughout.
 
 | ID | Scenario | Classification | Evidence / remaining requirement |
