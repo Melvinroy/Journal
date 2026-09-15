@@ -15,6 +15,7 @@ def reconcile_fixture(
     fixture: Path,
     *,
     dollar_threshold: float,
+    growth_rank_threshold: float = DEFAULT_MIN_GROWTH_RANK,
     output: Path | None = None,
 ) -> dict[str, object]:
     reference = json.loads(fixture.read_text(encoding="utf-8"))
@@ -73,7 +74,7 @@ def reconcile_fixture(
         if row["dollar_volume"] > dollar_threshold
         and row["adr_percent"] > DEFAULT_MIN_ADR_PERCENT
         and row["growth_rank"] is not None
-        and row["growth_rank"] >= DEFAULT_MIN_GROWTH_RANK
+        and row["growth_rank"] >= growth_rank_threshold
     )
     generated_set, baseline_set = set(generated), set(baseline)
     detail: list[dict[str, object]] = []
@@ -85,7 +86,7 @@ def reconcile_fixture(
                 failures.append("dollar_volume")
             if row["adr_percent"] <= DEFAULT_MIN_ADR_PERCENT:
                 failures.append("adr_percent")
-            if row["growth_rank"] is None or row["growth_rank"] < DEFAULT_MIN_GROWTH_RANK:
+            if row["growth_rank"] is None or row["growth_rank"] < growth_rank_threshold:
                 failures.append("growth_rank")
             category = "matched" if not failures else "actual_rule_failure"
             detail.append({"symbol": symbol, **row, "eligible": not failures, "category": category, "rule_failures": failures})
@@ -122,23 +123,23 @@ def reconcile_fixture(
                 reasons.append("adr")
             if row["growth_rank"] is None:
                 reasons.append("ranking_membership")
-            elif row["growth_rank"] < DEFAULT_MIN_GROWTH_RANK:
+            elif row["growth_rank"] < growth_rank_threshold:
                 reasons.append("rank")
             if reasons:
-                reasons.append("provider_data_difference")
+                reasons.append("population_or_formula_difference")
         differences.append({"symbol": symbol, "side": "missing_from_brontide", "reasons": reasons,
                             "metrics": row, "exclusion": exclusions.get(symbol)})
     for symbol in sorted(generated_set - baseline_set):
         differences.append({"symbol": symbol, "side": "additional_in_brontide",
-                            "reasons": ["provider_data_difference"], "metrics": metrics.get(symbol)})
+                            "reasons": ["population_or_formula_difference"], "metrics": metrics.get(symbol)})
 
     result = {
         "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "evaluation_session": session.isoformat(),
-        "threshold_label": "$89M TC2000 parity" if dollar_threshold == 89_000_000 else f"${dollar_threshold:,.0f}",
+        "threshold_label": f"${dollar_threshold:,.0f} comparison",
         "thresholds": {"min_dollar_volume": dollar_threshold, "min_adr_percent": DEFAULT_MIN_ADR_PERCENT,
-                       "min_growth_rank": DEFAULT_MIN_GROWTH_RANK},
+                       "min_growth_rank": growth_rank_threshold},
         "baseline": {"kind": baseline_kind, "path": str(fixture), "count": len(baseline),
                      "fingerprint": fingerprint(baseline)},
         "baseline_count": len(baseline), "full_list_count": len(baseline), "generated_count": len(generated),

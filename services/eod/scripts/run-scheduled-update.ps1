@@ -17,6 +17,13 @@ if (-not (Test-Path -LiteralPath $logDirectory -PathType Container)) {
 }
 
 $started = [DateTimeOffset]::UtcNow.ToString('o')
-"{`"event`":`"scheduled-attempt`",`"started_at`":`"$started`"}" | Out-File -LiteralPath $LogPath -Append -Encoding utf8
-& $python -m brontide_eod.cli due-update --env-file $resolvedEnv 2>&1 | Out-File -LiteralPath $LogPath -Append -Encoding utf8
-exit $LASTEXITCODE
+"{`"event`":`"scheduled-run-started`",`"started_at`":`"$started`"}" | Out-File -LiteralPath $LogPath -Append -Encoding utf8
+$exitCode = 1
+try {
+  & $python -m brontide_eod.cli scheduled-update --env-file $resolvedEnv 2>&1 | Out-File -LiteralPath $LogPath -Append -Encoding utf8
+  $exitCode = $LASTEXITCODE
+} finally {
+  $completed = [DateTimeOffset]::UtcNow.ToString('o')
+  "{`"event`":`"scheduled-run-finished`",`"completed_at`":`"$completed`",`"exit_code`":$exitCode}" | Out-File -LiteralPath $LogPath -Append -Encoding utf8
+}
+exit $exitCode

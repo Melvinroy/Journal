@@ -142,8 +142,12 @@ class DuckDBChartRepository:
         import json
         manifest = json.loads(counts["manifest_json"]) if counts["manifest_json"] else {}
         scanner_universe = manifest.get("scanner_universe") or {}
-        results = self._query("""
-            SELECT symbol,dollar_volume,growth_percent,adr_percent,growth_rank
+        scanner_columns = {
+            row["column_name"] for row in self._query("DESCRIBE scanner_measurements")
+        }
+        day_percent = "day_percent" if "day_percent" in scanner_columns else "NULL AS day_percent"
+        results = self._query(f"""
+            SELECT symbol,dollar_volume,growth_percent,adr_percent,growth_rank,{day_percent}
             FROM scanner_measurements
             WHERE publication_id=? AND scanner_key='biggest-one-month'
               AND dollar_volume > ? AND adr_percent > ? AND growth_rank >= ?
@@ -182,6 +186,8 @@ class DuckDBChartRepository:
                 "rank_fingerprint": scanner_universe.get("rank_fingerprint"),
                 "age_sessions": scanner_universe.get("age_sessions"),
                 "stale": scanner_universe.get("stale", True),
+                "ranking_mode": scanner_universe.get("ranking_mode", "unknown"),
+                "effective_rank_cutoff": scanner_universe.get("effective_rank_cutoff"),
                 "missing_candidate_symbols": scanner_universe.get("missing_candidate_symbols", []),
                 "missing_rank_symbols": scanner_universe.get("missing_rank_symbols", []),
             },

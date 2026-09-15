@@ -22,7 +22,7 @@ from brontide_eod.store import DuckDBStore
 from brontide_eod.reconcile import reconcile_fixture
 from brontide_eod.scanner import DEFAULT_MIN_DOLLAR_VOLUME
 from brontide_eod.tc2000 import write_tc2000_universe_export
-from brontide_eod.updater import read_update_status, run_update
+from brontide_eod.updater import read_update_status, run_scheduled_update, run_update
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     for command, help_text in (
         ("due-update", "Update only when a completed session or retry is due"),
         ("force-update", "Run the shared EOD update immediately"),
+        ("scheduled-update", "Run one scheduled EOD cycle with bounded full-attempt retries"),
     ):
         update = subcommands.add_parser(command, help=help_text)
         update.add_argument("--env-file", type=Path, default=None)
@@ -56,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile.add_argument("--env-file", type=Path, default=None)
     reconcile.add_argument("--session", required=True, type=date.fromisoformat)
     reconcile.add_argument("--dollar-volume", type=float, default=DEFAULT_MIN_DOLLAR_VOLUME)
+    reconcile.add_argument("--growth-rank", type=float, default=None)
     reconcile.add_argument("--fixture", type=Path, default=None,
                            help="Reference JSON; defaults to configured TC2000 export, then the historical 90-symbol fixture")
     reconcile.add_argument("--output", type=Path, default=None)
@@ -83,6 +85,7 @@ def main() -> None:
         "backfill",
         "due-update",
         "force-update",
+        "scheduled-update",
     })
     if args.command == "import-tc2000-universes":
         result = write_tc2000_universe_export(
@@ -101,7 +104,11 @@ def main() -> None:
         if date.fromisoformat(fixture_payload["evaluation_session"]) != args.session:
             raise SystemExit("Fixture evaluation session does not match --session")
         database = settings.serving_db_path if settings.serving_db_path.is_file() else settings.db_path
-        result = reconcile_fixture(database, reference, dollar_threshold=args.dollar_volume, output=args.output)
+        result = reconcile_fixture(
+            database, reference, dollar_threshold=args.dollar_volume,
+            growth_rank_threshold=(settings.scanner_min_growth_rank if args.growth_rank is None else args.growth_rank),
+            output=args.output,
+        )
         print(json.dumps(result, default=str, separators=(",", ":")))
         return
     if args.command == "init-db":
@@ -125,9 +132,15 @@ def main() -> None:
         if args.command == "health":
             print(json.dumps(provider.health()))
             return
-        if args.command in {"due-update", "force-update"}:
+        if args.command in {"due-update", "force-update", "scheduled-update"}:
             try:
-                print(json.dumps(run_update(settings, provider, force=args.command == "force-update"), default=str, separators=(",", ":")))
+                if args.command == "scheduled-update":
+                    run_scheduled_update(
+                        settings, provider,
+                        emit=lambda event: print(json.dumps(event, default=str, separators=(",", ":")), flush=True),
+                    )
+                else:
+                    print(json.dumps(run_update(settings, provider, force=args.command == "force-update"), default=str, separators=(",", ":")))
             except BaseException as exc:
                 print(json.dumps({"status": "failed", "error": type(exc).__name__,
                                   "state": read_update_status(settings.db_path)}, default=str, separators=(",", ":")))

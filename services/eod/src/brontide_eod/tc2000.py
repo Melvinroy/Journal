@@ -135,7 +135,8 @@ def read_symbol_export(path: Path) -> tuple[str, ...]:
         raise ValueError(f"TC2000 export is empty: {path.name}")
     header = [cell.strip().lower() for cell in rows[0]]
     symbol_index = header.index("symbol") if "symbol" in header else 0
-    start = 1 if "symbol" in header else 0
+    native_clipboard_header = len(header) == 1 and header[0] == "symbols from tc2000"
+    start = 1 if "symbol" in header or native_clipboard_header else 0
     return _symbols(row[symbol_index] for row in rows[start:] if len(row) > symbol_index)
 
 

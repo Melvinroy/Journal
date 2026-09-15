@@ -54,9 +54,37 @@ class UpdateLockedError(RuntimeError):
     pass
 
 
+class CoverageValidationError(ValueError):
+    def __init__(self, message: str, diagnostics: dict[str, object]) -> None:
+        super().__init__(message)
+        self.diagnostics = diagnostics
+
+
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
+    if os.name == "nt":
+        # os.kill(pid, 0) terminates a process on Windows. A zero-time wait on
+        # a synchronization-only handle observes its state without signalling it.
+        import ctypes
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            # Only an invalid PID proves absence; access/inspection errors
+            # must retain the lock rather than risk concurrent writers.
+            return ctypes.get_last_error() != 87  # ERROR_INVALID_PARAMETER
+        try:
+            return kernel.WaitForSingleObject(handle, 0) != 0  # WAIT_OBJECT_0
+        finally:
+            kernel.CloseHandle(handle)
     try:
         os.kill(pid, 0)
         return True
@@ -93,17 +121,29 @@ def acquire_update_lock(path: Path, *, now: datetime | None = None) -> LockClaim
     raise UpdateLockedError("Another EOD update owns the lock")
 
 
-def lock_is_owned(path: Path) -> bool:
+def inspect_update_lock(path: Path, *, now: datetime | None = None) -> dict[str, object]:
+    now = now or datetime.now(timezone.utc)
     if not path.exists():
-        return False
+        return {"present": False, "owner_alive": False, "recoverable": False, "recoverable_at": None}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         created = datetime.fromisoformat(str(payload.get("created_at")))
         if created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
-        return _pid_alive(int(payload.get("pid", -1))) or datetime.now(timezone.utc) - created < LOCK_STALE_AFTER
+        owner_alive = _pid_alive(int(payload.get("pid", -1)))
+        recoverable_at = created.astimezone(timezone.utc) + LOCK_STALE_AFTER
+        return {
+            "present": True,
+            "owner_alive": owner_alive,
+            "recoverable": not owner_alive and now >= recoverable_at,
+            "recoverable_at": recoverable_at,
+        }
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return True
+        return {"present": True, "owner_alive": False, "recoverable": False, "recoverable_at": None}
+
+
+def lock_is_owned(path: Path) -> bool:
+    return bool(inspect_update_lock(path)["owner_alive"])
 
 
 def expected_completed_session(
@@ -244,6 +284,34 @@ def _known_non_sip_queryable(path: Path) -> set[str]:
         connection.close()
 
 
+def _target_coverage(
+    eligible: Sequence[str],
+    target_by_adjustment: dict[str, set[str]],
+) -> tuple[set[str], list[str], dict[str, object]]:
+    eligible_set = set(eligible)
+    observed = set().union(*(target_by_adjustment[key] for key in ADJUSTMENTS))
+    complete = set.intersection(*(target_by_adjustment[key] for key in ADJUSTMENTS))
+    observed_eligible = eligible_set & observed
+    complete_eligible = eligible_set & complete
+    no_target_symbols = sorted(eligible_set - observed)
+    adjustment_percent = 100.0 * len(complete_eligible) / len(observed_eligible) if observed_eligible else 0.0
+    continuity_percent = 100.0 * len(observed_eligible) / len(eligible_set) if eligible_set else 0.0
+    diagnostics = {
+        "prior_active_symbols": len(eligible_set),
+        "observed_symbols": len(observed_eligible),
+        "complete_symbols": len(complete_eligible),
+        "no_target_bar_count": len(no_target_symbols),
+        "no_target_bar_sample": no_target_symbols[:25],
+        "session_continuity_percent": round(continuity_percent, 6),
+        "adjustment_coverage_percent": round(adjustment_percent, 6),
+        "adjustments": {
+            key: len(target_by_adjustment[key] & eligible_set)
+            for key in ADJUSTMENTS
+        },
+    }
+    return complete_eligible, no_target_symbols, diagnostics
+
+
 def _measurements(
     candidate_symbols: Sequence[str],
     rank_symbols: Sequence[str],
@@ -318,8 +386,47 @@ def _existing_publication(connection: duckdb.DuckDBPyConnection) -> dict[str, ob
     return {"publication_id": row[0], "published_session": row[1], "last_success_at": row[2], "retry_attempt": row[3]}
 
 
+def _scanner_publication_matches_configuration(settings: Settings, publication_id: object | None) -> bool:
+    """A current bar date is not enough when Scanner formulas or membership changed."""
+    if publication_id is None or not settings.db_path.is_file():
+        return False
+    connection = duckdb.connect(str(settings.db_path), read_only=True)
+    try:
+        row = connection.execute(
+            "SELECT formula_version,manifest_json FROM eod_publications WHERE publication_id=?",
+            [publication_id],
+        ).fetchone()
+    except duckdb.Error:
+        return False
+    finally:
+        connection.close()
+    if not row or row[0] != BIGGEST_ONE_MONTH_FORMULA_VERSION:
+        return False
+    try:
+        scanner_universe = (json.loads(row[1]) if row[1] else {}).get("scanner_universe") or {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if settings.tc2000_universe_path is None:
+        return scanner_universe.get("source") == "alpaca-fallback"
+    if not settings.tc2000_universe_path.is_file():
+        return False
+    exported = load_tc2000_universes(settings.tc2000_universe_path)
+    expected_source = (
+        "tc2000-derived-approximate"
+        if settings.tc2000_rank_mode == "approximate"
+        else "tc2000-export"
+    )
+    return (
+        scanner_universe.get("source") == expected_source
+        and scanner_universe.get("candidate_fingerprint") == exported.candidate_fingerprint
+        and scanner_universe.get("rank_fingerprint") == exported.rank_fingerprint
+        and scanner_universe.get("effective_rank_cutoff") == settings.scanner_min_growth_rank
+    )
+
+
 def _record_failure(settings: Settings, run_id: str, expected: date | None, mode: str, exc: BaseException) -> None:
     explanation = _sanitize_error(exc)
+    diagnostics = getattr(exc, "diagnostics", {})
     now = datetime.now(timezone.utc)
     with DuckDBStore(settings.db_path) as store:
         previous = _existing_publication(store.connection) or {}
@@ -327,9 +434,13 @@ def _record_failure(settings: Settings, run_id: str, expected: date | None, mode
         retry_at = now + timedelta(minutes=UPDATE_RETRY_MINUTES[max(0, attempt - 1)])
         store.connection.execute(
             """
-            INSERT OR REPLACE INTO eod_update_runs VALUES (?, ?, ?, ?, 'failed', ?, '[]', ?, ?)
+            INSERT OR REPLACE INTO eod_update_runs
+              (run_id,mode,started_at,completed_at,status,expected_session,candidate_sessions,
+               retry_attempt,explanation,diagnostics_json)
+            VALUES (?, ?, ?, ?, 'failed', ?, '[]', ?, ?, ?)
             """,
-            [run_id, mode, now, now, expected, attempt, explanation],
+            [run_id, mode, now, now, expected, attempt, explanation,
+             json.dumps(diagnostics, separators=(",", ":"))],
         )
         store.connection.execute(
             """
@@ -337,10 +448,13 @@ def _record_failure(settings: Settings, run_id: str, expected: date | None, mode
               singleton_id,state,expected_session,published_session,publication_id,last_success_at,
               retry_at,retry_attempt,coverage_percent,expected_symbols,loaded_symbols,
               adjustment_coverage,explanation,updated_at
-            ) VALUES (1,'failed',?,?,?,?,?,?,NULL,NULL,NULL,NULL,?,?)
+            ) VALUES (1,'failed',?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             [expected, previous.get("published_session"), previous.get("publication_id"),
-             previous.get("last_success_at"), retry_at, attempt, explanation, now],
+             previous.get("last_success_at"), retry_at, attempt,
+             diagnostics.get("adjustment_coverage_percent"), diagnostics.get("observed_symbols"),
+             diagnostics.get("complete_symbols"), json.dumps(diagnostics.get("adjustments", {})),
+             explanation, now],
         )
 
 
@@ -406,6 +520,36 @@ def read_update_status(path: Path) -> dict[str, object]:
         connection.close()
 
 
+def read_update_history(path: Path, limit: int = 8) -> list[dict[str, object]]:
+    if not path.is_file():
+        return []
+    connection = duckdb.connect(str(path), read_only=True)
+    try:
+        columns = {row[0] for row in connection.execute("DESCRIBE eod_update_runs").fetchall()}
+        diagnostics_column = "diagnostics_json" if "diagnostics_json" in columns else "NULL"
+        rows = connection.execute(
+            f"""
+            SELECT run_id,mode,started_at,completed_at,status,expected_session,retry_attempt,
+                   explanation,{diagnostics_column}
+            FROM eod_update_runs ORDER BY started_at DESC LIMIT ?
+            """,
+            [max(1, min(limit, 20))],
+        ).fetchall()
+        return [
+            {
+                "run_id": str(row[0]), "mode": row[1], "started_at": row[2],
+                "completed_at": row[3], "status": row[4], "expected_session": row[5],
+                "retry_attempt": row[6], "explanation": row[7],
+                "diagnostics": json.loads(row[8]) if row[8] else {},
+            }
+            for row in rows
+        ]
+    except duckdb.CatalogException:
+        return []
+    finally:
+        connection.close()
+
+
 def run_update(
     settings: Settings,
     provider: MarketDataProvider,
@@ -437,7 +581,12 @@ def run_update(
         sessions = authoritative_lookback(calendar, expected, 22)
         existing = read_update_status(settings.db_path)
         retry_at = existing.get("retry_at")
-        if not force and existing.get("published_session") == expected and existing.get("state") == "current":
+        if (
+            not force
+            and existing.get("published_session") == expected
+            and existing.get("state") == "current"
+            and _scanner_publication_matches_configuration(settings, existing.get("publication_id"))
+        ):
             return {"run_id": run_id, "status": "noop", "reason": "The published dataset is current.", "session": expected}
         if not force and retry_at and retry_at > started:
             return {"run_id": run_id, "status": "noop", "reason": "The next full-attempt retry is not due.", "retry_at": retry_at}
@@ -464,12 +613,25 @@ def run_update(
         }
         target_symbols = set().union(*target_by_adjustment.values())
         eligible = _eligible_symbols(settings.db_path, instruments, sessions[-6:-1], target_symbols, blocked_symbols)
-        loaded_all = set.intersection(*(target_by_adjustment[adjustment] for adjustment in ADJUSTMENTS))
-        loaded = len(set(eligible) & loaded_all)
-        coverage = 100.0 * loaded / len(eligible) if eligible else 0.0
+        complete_eligible, no_target_symbols, coverage_diagnostics = _target_coverage(
+            eligible, target_by_adjustment
+        )
+        loaded = len(complete_eligible)
+        coverage = float(coverage_diagnostics["adjustment_coverage_percent"])
+        continuity = float(coverage_diagnostics["session_continuity_percent"])
+        observed_symbols = int(coverage_diagnostics["observed_symbols"])
+        adjustment_coverage = dict(coverage_diagnostics["adjustments"])
+        if continuity < settings.eod_minimum_session_continuity_percent:
+            raise CoverageValidationError(
+                f"Candidate session continuity {continuity:.2f}% is below the configured "
+                f"{settings.eod_minimum_session_continuity_percent:.2f}% minimum",
+                coverage_diagnostics,
+            )
         if coverage < settings.eod_minimum_coverage_percent:
-            raise ValueError(
-                f"Candidate session coverage {coverage:.2f}% is below the configured {settings.eod_minimum_coverage_percent:.2f}% minimum"
+            raise CoverageValidationError(
+                f"Candidate adjustment coverage {coverage:.2f}% is below the configured "
+                f"{settings.eod_minimum_coverage_percent:.2f}% minimum",
+                coverage_diagnostics,
             )
         existing_scanner = _existing_scanner_bars(settings.db_path, sessions)
         staged_keys = {(bar.symbol, bar.session_date, bar.adjustment) for bar in bars}
@@ -477,8 +639,9 @@ def run_update(
             bar for bar in existing_scanner
             if (bar.symbol, bar.session_date, bar.adjustment) not in staged_keys
         ] + bars
-        scanner_candidate_symbols = list(eligible)
-        scanner_rank_symbols = list(eligible)
+        data_eligible = sorted(complete_eligible)
+        scanner_candidate_symbols = list(data_eligible)
+        scanner_rank_symbols = list(data_eligible)
         scanner_universe = {
             "source": "alpaca-fallback",
             "evaluation_session": expected.isoformat(),
@@ -501,12 +664,18 @@ def run_update(
             exported = load_tc2000_universes(settings.tc2000_universe_path)
             if exported.evaluation_session > expected:
                 raise ValueError("TC2000 universe export is dated after the target EOD session")
-            eligible_set = set(eligible)
+            eligible_set = set(data_eligible)
             scanner_candidate_symbols = [symbol for symbol in exported.candidate_symbols if symbol in eligible_set]
             scanner_rank_symbols = [symbol for symbol in exported.rank_symbols if symbol in eligible_set]
             age_sessions = exported.age_in_sessions((row.session_date for row in calendar), expected)
             scanner_universe = {
-                "source": "tc2000-export",
+                "source": (
+                    "tc2000-derived-approximate"
+                    if settings.tc2000_rank_mode == "approximate"
+                    else "tc2000-export"
+                ),
+                "ranking_mode": settings.tc2000_rank_mode,
+                "effective_rank_cutoff": settings.scanner_min_growth_rank,
                 "evaluation_session": exported.evaluation_session.isoformat(),
                 "captured_at": exported.captured_at.isoformat(),
                 "tc2000_version": exported.tc2000_version,
@@ -533,6 +702,10 @@ def run_update(
         measurements, exclusions, rank_measured = _measurements(
             scanner_candidate_symbols, scanner_rank_symbols, sessions, measurement_input
         )
+        exclusions.extend(
+            ScannerExclusion(symbol, "no_target_bar", "No bar was returned by any target-session adjustment")
+            for symbol in no_target_symbols
+        )
         scanner_universe["candidate_measured"] = len(measurements)
         scanner_universe["rank_measured"] = rank_measured
         scanner_universe["candidate_excluded"] = len(scanner_candidate_symbols) - len(measurements)
@@ -540,7 +713,6 @@ def run_update(
         completed = datetime.now(timezone.utc)
         universe_hash = str(scanner_universe["candidate_fingerprint"])
         calendar_hash = calendar_fingerprint(calendar)
-        adjustment_coverage = {key: len(value & set(eligible)) for key, value in target_by_adjustment.items()}
         manifest = {
             "publication_id": publication_id,
             "run_id": run_id,
@@ -552,8 +724,9 @@ def run_update(
             "calendar_fingerprint": calendar_hash,
             "formula_version": BIGGEST_ONE_MONTH_FORMULA_VERSION,
             "coverage_percent": round(coverage, 6),
-            "expected_symbols": len(eligible),
+            "expected_symbols": observed_symbols,
             "loaded_symbols": loaded,
+            "coverage_diagnostics": coverage_diagnostics,
             "excluded_symbols": [{"symbol": row.symbol, "reason": row.reason} for row in exclusions],
         }
 
@@ -568,21 +741,29 @@ def run_update(
                 for chunk in batched(bars, 5_000):
                     store.upsert_bars(chunk)
                 store.connection.execute(
-                    "INSERT INTO eod_update_runs VALUES (?, ?, ?, ?, 'succeeded', ?, ?, 0, NULL)",
-                    [run_id, mode, started, completed, expected, json.dumps([day.isoformat() for day in sessions])],
+                    """INSERT INTO eod_update_runs
+                    (run_id,mode,started_at,completed_at,status,expected_session,candidate_sessions,
+                     retry_attempt,explanation,diagnostics_json)
+                    VALUES (?, ?, ?, ?, 'succeeded', ?, ?, 0, NULL, ?)""",
+                    [run_id, mode, started, completed, expected,
+                     json.dumps([day.isoformat() for day in sessions]),
+                     json.dumps(coverage_diagnostics, separators=(",", ":"))],
                 )
                 store.connection.execute(
                     """INSERT INTO eod_publications VALUES (?, ?, ?, ?, ?, 'sip', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     [publication_id, run_id, completed, expected, expected, json.dumps(adjustment_coverage),
-                     universe_hash, calendar_hash, BIGGEST_ONE_MONTH_FORMULA_VERSION, len(eligible), loaded,
+                     universe_hash, calendar_hash, BIGGEST_ONE_MONTH_FORMULA_VERSION, observed_symbols, loaded,
                      coverage, len(exclusions), json.dumps(manifest, separators=(",", ":"))],
                 )
                 if measurements:
                     store.connection.executemany(
-                        """INSERT INTO scanner_measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        """INSERT INTO scanner_measurements
+                        (publication_id,scanner_key,formula_version,symbol,session_date,dollar_volume,
+                         growth_percent,adr_percent,growth_rank,day_percent)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         [(publication_id, SCANNER_KEY, BIGGEST_ONE_MONTH_FORMULA_VERSION, row.symbol,
                           row.session_date, row.dollar_volume, row.growth_percent, row.adr_percent,
-                          row.growth_rank) for row in measurements],
+                          row.growth_rank, row.day_percent) for row in measurements],
                     )
                 if exclusions:
                     store.connection.executemany(
@@ -594,7 +775,7 @@ def run_update(
                     INSERT OR REPLACE INTO eod_update_state VALUES
                     (1,'current',?,?,?,?,NULL,0,?,?,?,?,NULL,?)
                     """,
-                    [expected, expected, publication_id, completed, coverage, len(eligible), loaded,
+                    [expected, expected, publication_id, completed, coverage, observed_symbols, loaded,
                      json.dumps(adjustment_coverage), completed],
                 )
                 store.commit()
@@ -606,9 +787,10 @@ def run_update(
         return {
             "run_id": run_id, "status": "published", "publication_id": publication_id,
             "data_through_session": expected, "coverage_percent": round(coverage, 4),
-            "expected_symbols": len(eligible), "loaded_symbols": loaded,
+            "expected_symbols": observed_symbols, "loaded_symbols": loaded,
             "measurements": len(measurements), "excluded_symbols": len(exclusions),
             "adjustment_coverage": adjustment_coverage,
+            "coverage_diagnostics": coverage_diagnostics,
             "duration_seconds": round((datetime.now(timezone.utc) - started).total_seconds(), 3),
         }
     except BaseException as exc:
@@ -619,3 +801,35 @@ def run_update(
         raise
     finally:
         claim.release()
+
+
+def run_scheduled_update(
+    settings: Settings,
+    provider: MarketDataProvider,
+    *,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    emit: Callable[[dict[str, object]], None] | None = None,
+) -> dict[str, object]:
+    """Run one due update with only the persisted bounded full-attempt retries."""
+    emit = emit or (lambda _event: None)
+    for attempt_index in range(len(UPDATE_RETRY_MINUTES) + 1):
+        started = clock()
+        emit({"event": "scheduled-attempt", "started_at": started.isoformat(), "attempt": attempt_index + 1})
+        try:
+            result = run_update(settings, provider, now=started, sleep=sleep)
+        except BaseException:
+            status = read_update_status(settings.db_path)
+            emit({"event": "scheduled-attempt-failed", "attempt": attempt_index + 1,
+                  "state": status.get("state"), "explanation": status.get("explanation")})
+            if attempt_index >= len(UPDATE_RETRY_MINUTES):
+                raise
+            retry_at = status.get("retry_at")
+            delay = max(0.0, (retry_at - clock()).total_seconds()) if isinstance(retry_at, datetime) else 0.0
+            emit({"event": "scheduled-retry", "attempt": attempt_index + 2,
+                  "retry_at": retry_at, "delay_seconds": round(delay, 3)})
+            sleep(delay)
+            continue
+        emit({"event": "scheduled-complete", **result})
+        return result
+    raise AssertionError("unreachable")

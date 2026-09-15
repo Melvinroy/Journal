@@ -20,6 +20,7 @@ class ScannerMeasurement:
     growth_percent: float
     adr_percent: float
     growth_rank: float | None = None
+    day_percent: float | None = None
 
     def as_record(self) -> dict[str, object]:
         return asdict(self)
@@ -78,6 +79,12 @@ def calculate_symbol_measurement(
         adr_ratios.append(float(high) / float(low))
 
     minimum_low = min(lows)
+    previous_close = split_bars[sessions[-2]].get("close")
+    day_percent = (
+        100.0 * (float(end["close"]) / float(previous_close) - 1.0)
+        if _finite_positive(previous_close)
+        else None
+    )
 
     return ScannerMeasurement(
         symbol=symbol,
@@ -87,6 +94,10 @@ def calculate_symbol_measurement(
         # Compatibility is intentional: the captured TC2000 expression contains
         # 21 H/L terms but divides by 20 before subtracting one.
         adr_percent=100.0 * (sum(adr_ratios) / 20.0 - 1.0),
+        # Split-adjusted adjacent completed-session closes prevent a split from
+        # appearing as a one-day move. This is display-only and never selects a
+        # candidate.
+        day_percent=day_percent,
     ), None
 
 

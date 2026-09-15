@@ -9,6 +9,7 @@ from brontide_eod.tc2000 import (
     TC2000_SCANNER_DEFINITION,
     fingerprint,
     load_tc2000_universes,
+    read_symbol_export,
     write_tc2000_universe_export,
 )
 
@@ -72,6 +73,13 @@ def test_builds_candidate_union_from_role_exports(tmp_path):
     assert [name for name, _ in loaded.source_memberships] == [
         "US Common Stocks", "American Depositary Receipts - ADR", "Exchange Traded Funds",
     ]
+
+
+def test_reads_native_tc2000_clipboard_export(tmp_path):
+    export = tmp_path / "clipboard.txt"
+    export.write_text("Symbols from TC2000\nAAA\nBRK.B\nAAA\n", encoding="utf-8")
+
+    assert read_symbol_export(export) == ("AAA", "BRK.B")
 
 
 def test_rejects_a_different_scanner_definition(tmp_path):

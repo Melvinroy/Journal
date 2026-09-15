@@ -3,21 +3,30 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta, timezone
 from dataclasses import replace
 import json
+import subprocess
+import sys
 
 import duckdb
 import httpx
 import pytest
+import brontide_eod.updater as updater_module
 
 from brontide_eod.config import Settings
 from brontide_eod.models import DailyBar, Instrument, MarketSession
 from brontide_eod.tc2000 import TC2000_SCANNER_DEFINITION, TC2000_SOURCE_CATEGORIES
 from brontide_eod.updater import (
     UpdateLockedError,
+    CoverageValidationError,
+    _record_failure,
+    _target_coverage,
     _request_with_retries,
     acquire_update_lock,
     expected_completed_session,
+    inspect_update_lock,
     publish_snapshot,
+    read_update_history,
     read_update_status,
+    run_scheduled_update,
     run_update,
 )
 
@@ -88,6 +97,30 @@ def test_lock_contention_and_dead_stale_recovery(tmp_path):
     recovered.release()
 
 
+def test_dead_young_lock_is_not_reported_as_an_active_update(tmp_path, monkeypatch):
+    path = tmp_path / "update.lock"
+    path.write_text('{"pid":999999,"token":"old","created_at":"2026-09-11T12:00:00+00:00"}')
+    status = inspect_update_lock(path, now=datetime(2026, 9, 11, 13, tzinfo=timezone.utc))
+    assert status["present"] is True
+    assert status["owner_alive"] is False
+    assert status["recoverable"] is False
+    assert status["recoverable_at"] == datetime(2026, 9, 11, 18, tzinfo=timezone.utc)
+
+
+def test_process_probe_does_not_signal_live_owner():
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    try:
+        assert updater_module._pid_alive(child.pid) is True
+        assert child.poll() is None
+        child.terminate()
+        child.wait(timeout=10)
+        assert updater_module._pid_alive(child.pid) is False
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=10)
+
+
 def test_transport_retries_timeout_and_rate_limit_without_leaking_body():
     calls = 0
     sleeps = []
@@ -101,6 +134,66 @@ def test_transport_retries_timeout_and_rate_limit_without_leaking_body():
         return []
     assert _request_with_retries(operation, sleep=sleeps.append) == []
     assert calls == 2 and sleeps == [1.0]
+
+
+def test_target_coverage_separates_no_trade_adjustment_loss_and_continuity():
+    eligible = [f"S{index}" for index in range(10)]
+    symmetric = {key: set(eligible[:9]) for key in ("all", "raw", "split")}
+    complete, absent, diagnostics = _target_coverage(eligible, symmetric)
+    assert complete == set(eligible[:9]) and absent == ["S9"]
+    assert diagnostics["adjustment_coverage_percent"] == 100
+    assert diagnostics["session_continuity_percent"] == 90
+
+    asymmetric = {**symmetric, "split": set(eligible[:8])}
+    _, _, diagnostics = _target_coverage(eligible, asymmetric)
+    assert diagnostics["adjustment_coverage_percent"] < 99
+    assert diagnostics["session_continuity_percent"] == 90
+
+    catastrophic = {key: set(eligible[:2]) for key in ("all", "raw", "split")}
+    _, _, diagnostics = _target_coverage(eligible, catastrophic)
+    assert diagnostics["adjustment_coverage_percent"] == 100
+    assert diagnostics["session_continuity_percent"] == 20
+
+
+def test_failure_persists_sanitized_coverage_diagnostics_and_history(tmp_path):
+    configured = settings(tmp_path)
+    diagnostics = {"observed_symbols": 95, "complete_symbols": 94,
+                   "adjustment_coverage_percent": 98.947368,
+                   "session_continuity_percent": 95.0,
+                   "adjustments": {"all": 95, "raw": 95, "split": 94}}
+    _record_failure(configured, str(__import__("uuid").uuid4()), date(2026, 9, 14), "due",
+                    CoverageValidationError("coverage failed", diagnostics))
+    status = read_update_status(configured.db_path)
+    assert status["coverage"]["expected_symbols"] == 95
+    assert status["coverage"]["loaded_symbols"] == 94
+    history = read_update_history(configured.db_path)
+    assert history[0]["diagnostics"]["session_continuity_percent"] == 95
+    assert history[0]["explanation"] == "coverage failed"
+
+
+def test_scheduled_update_uses_only_bounded_persisted_retries(tmp_path, monkeypatch):
+    configured = settings(tmp_path)
+    base = datetime(2026, 9, 15, tzinfo=timezone.utc)
+    calls = []
+    sleeps = []
+    events = []
+
+    def fake_update(*_args, **_kwargs):
+        calls.append(True)
+        if len(calls) < 3:
+            raise ValueError("temporary")
+        return {"status": "published", "publication_id": "publication"}
+
+    retry_times = iter((base + timedelta(minutes=15), base + timedelta(minutes=30)))
+    monkeypatch.setattr(updater_module, "run_update", fake_update)
+    monkeypatch.setattr(updater_module, "read_update_status",
+                        lambda _path: {"state": "failed", "retry_at": next(retry_times),
+                                       "explanation": "Temporary provider failure."})
+    result = run_scheduled_update(configured, FakeProvider(date(2026, 9, 14)),
+                                  sleep=sleeps.append, clock=lambda: base, emit=events.append)
+    assert result["status"] == "published" and len(calls) == 3
+    assert sleeps == [900, 1800]
+    assert [event["event"] for event in events].count("scheduled-retry") == 2
 
 
 def test_atomic_update_snapshot_idempotence_overlap_and_cache_recompute(tmp_path):

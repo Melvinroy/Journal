@@ -29,7 +29,8 @@ from brontide_eod.updater import (
     LockClaim,
     UpdateLockedError,
     acquire_update_lock,
-    lock_is_owned,
+    inspect_update_lock,
+    read_update_history,
     read_update_status,
     run_update,
 )
@@ -138,13 +139,29 @@ def _background_eod_update(settings: Settings, run_id: str, lock_claim: LockClai
 def _shared_eod_status() -> dict:
     settings = Settings.from_env()
     lock_path = settings.db_path.with_suffix(settings.db_path.suffix + ".update.lock")
-    if lock_is_owned(lock_path):
+    lock = inspect_update_lock(lock_path)
+    if lock["owner_alive"]:
         status = read_update_status(settings.serving_db_path)
-        return {**status, "state": "updating", "explanation": "A validated EOD update is in progress."}
+        return {**status, "state": "updating", "explanation": "A validated EOD update is in progress.",
+                "recent_runs": read_update_history(settings.serving_db_path)}
+    if lock["present"]:
+        status = read_update_status(settings.serving_db_path)
+        recoverable_at = lock.get("recoverable_at")
+        explanation = (
+            "The previous EOD update stopped unexpectedly. The last validated results are retained; "
+            + (f"automatic recovery is available after {recoverable_at.isoformat()}." if recoverable_at else "the update lock needs inspection.")
+        )
+        try:
+            recent_runs = read_update_history(settings.db_path)
+        except duckdb.Error:
+            recent_runs = read_update_history(settings.serving_db_path)
+        return {**status, "state": "failed", "retry_at": recoverable_at, "explanation": explanation,
+                "recent_runs": recent_runs}
     try:
-        return read_update_status(settings.db_path)
+        return {**read_update_status(settings.db_path), "recent_runs": read_update_history(settings.db_path)}
     except duckdb.Error:
-        return read_update_status(settings.serving_db_path)
+        return {**read_update_status(settings.serving_db_path),
+                "recent_runs": read_update_history(settings.serving_db_path)}
 
 
 @app.get("/v1/eod/status")
@@ -171,14 +188,16 @@ def biggest_one_month(
     store: Repository,
     min_dollar_volume: float = Query(DEFAULT_MIN_DOLLAR_VOLUME),
     min_adr_percent: float = Query(DEFAULT_MIN_ADR_PERCENT),
-    min_growth_rank: float = Query(DEFAULT_MIN_GROWTH_RANK),
+    min_growth_rank: float | None = Query(None),
 ):
+    settings = Settings.from_env()
+    applied_growth_rank = settings.scanner_min_growth_rank if min_growth_rank is None else min_growth_rank
     try:
-        validate_scanner_thresholds(min_dollar_volume, min_adr_percent, min_growth_rank)
+        validate_scanner_thresholds(min_dollar_volume, min_adr_percent, applied_growth_rank)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
     try:
-        result = store.biggest_one_month(min_dollar_volume, min_adr_percent, min_growth_rank)
+        result = store.biggest_one_month(min_dollar_volume, min_adr_percent, applied_growth_rank)
         status = _shared_eod_status()
         universe = result.get("comparison_universe") or {}
         if result.get("formula_version") != BIGGEST_ONE_MONTH_FORMULA_VERSION and status.get("state") == "current":

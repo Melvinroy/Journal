@@ -35,6 +35,29 @@ def test_growth_uses_minimum_low_and_captured_tc2000_adr_expression():
     assert row.growth_percent == pytest.approx(21.0)
     assert row.adr_percent == pytest.approx(11.3)
     assert row.dollar_volume == 12_100_000
+    assert row.day_percent == pytest.approx(100 * (121 / 120 - 1))
+
+
+def test_daily_change_uses_adjacent_split_adjusted_closes_without_changing_selection():
+    days = sessions()
+    split = bars(days)
+    raw = bars(days, volume=1_000_000)
+    split[days[-2]]["close"] = 110
+    split[days[-1]]["close"] = 121
+    row, exclusion = calculate_symbol_measurement("AAA", days, raw, split)
+    assert exclusion is None
+    assert row and row.day_percent == pytest.approx(10.0)
+    ranked = apply_average_growth_ranks([row, measurement("OTHER", 1)])
+    assert [item.symbol for item in filter_biggest_one_month(ranked, min_growth_rank=0)] == ["AAA", "OTHER"]
+
+
+def test_missing_comparable_close_keeps_measurement_and_marks_daily_change_unavailable():
+    days = sessions()
+    split = bars(days)
+    split[days[-2]]["close"] = float("nan")
+    row, exclusion = calculate_symbol_measurement("AAA", days, bars(days), split)
+    assert exclusion is None
+    assert row is not None and row.day_percent is None
 
 
 def test_missing_authoritative_session_is_not_compressed():

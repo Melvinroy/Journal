@@ -132,7 +132,8 @@ CREATE TABLE IF NOT EXISTS eod_update_runs (
   expected_session DATE,
   candidate_sessions VARCHAR,
   retry_attempt INTEGER NOT NULL DEFAULT 0,
-  explanation VARCHAR
+  explanation VARCHAR,
+  diagnostics_json VARCHAR
 );
 CREATE TABLE IF NOT EXISTS eod_publications (
   publication_id UUID PRIMARY KEY,
@@ -161,6 +162,7 @@ CREATE TABLE IF NOT EXISTS scanner_measurements (
   growth_percent DOUBLE NOT NULL,
   adr_percent DOUBLE NOT NULL,
   growth_rank DOUBLE,
+  day_percent DOUBLE,
   PRIMARY KEY (publication_id, scanner_key, symbol)
 );
 CREATE TABLE IF NOT EXISTS scanner_exclusions (
@@ -230,6 +232,18 @@ class DuckDBStore:
             self.connection.execute("UPDATE instruments SET sip_queryable = true WHERE sip_queryable IS NULL")
         if "sip_queryable_reason" not in instrument_columns:
             self.connection.execute("ALTER TABLE instruments ADD COLUMN sip_queryable_reason VARCHAR")
+        scanner_columns = {
+            row[0]
+            for row in self.connection.execute("DESCRIBE scanner_measurements").fetchall()
+        }
+        if "day_percent" not in scanner_columns:
+            self.connection.execute("ALTER TABLE scanner_measurements ADD COLUMN day_percent DOUBLE")
+        update_run_columns = {
+            row[0]
+            for row in self.connection.execute("DESCRIBE eod_update_runs").fetchall()
+        }
+        if "diagnostics_json" not in update_run_columns:
+            self.connection.execute("ALTER TABLE eod_update_runs ADD COLUMN diagnostics_json VARCHAR")
 
     def begin(self) -> None:
         self.connection.execute("BEGIN TRANSACTION")

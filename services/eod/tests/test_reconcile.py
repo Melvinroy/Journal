@@ -23,7 +23,9 @@ def test_reconcile_complete_export_reports_precision_recall_and_reasons(tmp_path
             for symbol in ("AAA", "BBB", "CCC")
         ])
         store.connection.execute(
-            "INSERT INTO eod_update_runs VALUES (?, 'forced', ?, ?, 'succeeded', ?, '[]', 0, NULL)",
+            """INSERT INTO eod_update_runs
+            (run_id,mode,started_at,completed_at,status,expected_session,candidate_sessions,retry_attempt,explanation)
+            VALUES (?, 'forced', ?, ?, 'succeeded', ?, '[]', 0, NULL)""",
             [run_id, now, now, session],
         )
         manifest = json.dumps({"scanner_universe": {"source": "tc2000-export", "stale": False}})
@@ -32,7 +34,10 @@ def test_reconcile_complete_export_reports_precision_recall_and_reasons(tmp_path
             [publication_id, run_id, now, session, session, BIGGEST_ONE_MONTH_FORMULA_VERSION, manifest],
         )
         store.connection.executemany(
-            "INSERT INTO scanner_measurements VALUES (?, 'biggest-one-month', ?, ?, ?, ?, ?, ?, ?)",
+            """INSERT INTO scanner_measurements
+            (publication_id,scanner_key,formula_version,symbol,session_date,dollar_volume,
+             growth_percent,adr_percent,growth_rank)
+            VALUES (?, 'biggest-one-month', ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (publication_id, BIGGEST_ONE_MONTH_FORMULA_VERSION, "AAA", session, 100_000_000, 20, 6, 99),
                 (publication_id, BIGGEST_ONE_MONTH_FORMULA_VERSION, "BBB", session, 80_000_000, 30, 7, 99),
@@ -61,5 +66,5 @@ def test_reconcile_complete_export_reports_precision_recall_and_reasons(tmp_path
     assert result["missing_from_generated"] == ["BBB"]
     assert result["additional_generated"] == ["CCC"]
     reasons = {item["symbol"]: item["reasons"] for item in result["differences"]}
-    assert reasons["BBB"] == ["dollar_volume", "provider_data_difference"]
-    assert reasons["CCC"] == ["provider_data_difference"]
+    assert reasons["BBB"] == ["dollar_volume", "population_or_formula_difference"]
+    assert reasons["CCC"] == ["population_or_formula_difference"]
