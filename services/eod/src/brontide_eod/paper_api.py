@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .ibkr_tws import PaperSafetyError
 from .paper_service import PaperService
+from .paper_auth import verified_user, require_owner, owner_path
 
 service = PaperService()
 
@@ -22,10 +23,25 @@ def local_request(request: Request):
         raise HTTPException(403, "Cross-origin paper requests are not permitted.")
 
 
+def current_operator(user=Depends(verified_user)):
+    owner = require_owner(user)
+    service.authenticated(owner["id"])
+    return owner
+
+
 router = APIRouter(prefix="/v1/ibkr/paper", dependencies=[Depends(local_request)])
 
 
-def execution_service(): return service
+def execution_service(user=Depends(current_operator)): return service
+
+
+@router.get("/identity")
+def identity(user=Depends(verified_user)):
+    try:
+        require_owner(user)
+        return {"userId": user["id"], "email": user["email"], "linked": True}
+    except HTTPException as exc:
+        return {"userId": user["id"], "email": user["email"], "linked": False, "linkState": "mismatch" if owner_path().exists() else "unlinked", "message": exc.detail}
 
 
 def call(operation, *args):
@@ -50,10 +66,21 @@ class SubmitRequest(StrictBody):
 
 
 class CampaignRequest(StrictBody):
+    connectionId: str | None = None
     revision: int = Field(ge=1)
     commandId: str = Field(min_length=1, max_length=128)
     action: Literal["save-amendment", "apply-amendment", "cancel-entry", "cancel-exits", "cleanup", "resume"]
     payload: dict | None = None
+
+
+class ApprovalRequest(StrictBody):
+    digest: str = Field(min_length=64, max_length=64)
+    commandId: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/batches/{batch_id}/approve")
+def approve(batch_id: str, body: ApprovalRequest, s: PaperService = Depends(execution_service)):
+    return call(s.approve, batch_id, body.digest, body.commandId)
 
 
 @router.get("/status")
@@ -88,6 +115,14 @@ def arm(batch_id: str, s: PaperService = Depends(execution_service)): return cal
 def disarm(s: PaperService = Depends(execution_service)): return call(s.disarm)
 
 
+@router.post("/signout")
+def signout(s: PaperService = Depends(execution_service)):
+    from .paper_service import utcnow
+    result = call(s.disarm)
+    s.operator_deadline = utcnow()
+    return result
+
+
 @router.post("/submit")
 def submit(body: SubmitRequest, s: PaperService = Depends(execution_service)):
     return call(s.submit, body.batchId, body.ticketIndex, body.commandId)
@@ -95,4 +130,7 @@ def submit(body: SubmitRequest, s: PaperService = Depends(execution_service)):
 
 @router.post("/campaigns/{campaign_id}/actions")
 def action(campaign_id: str, body: CampaignRequest, s: PaperService = Depends(execution_service)):
-    return call(s.action, campaign_id, body.revision, body.commandId, body.action, body.payload)
+    if body.action != "save-amendment" and (not body.connectionId or body.connectionId != s.connection_id):
+        raise HTTPException(409, "Connection changed. Review the current position before applying an action.")
+    operation = s.action if body.action == "save-amendment" else s.review_action
+    return call(operation, campaign_id, body.revision, body.commandId, body.action, body.payload)

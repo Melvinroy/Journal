@@ -216,47 +216,16 @@ def biggest_one_month(
         raise HTTPException(503, "Scanner publication is unavailable. Run the local EOD updater before retrying.") from None
 
 
-@app.get("/v1/ibkr/read-only")
-def ibkr_read_only_status(
-    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
-):
-    return service.status()
+# Retired paths cannot create a competing connection or bypass identity checks.
+from .paper_api import current_operator, local_request
 
-
-@app.post("/v1/ibkr/read-only/refresh", dependencies=[Depends(require_local_broker_request)])
-def refresh_ibkr_read_only(
-    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
-):
-    return service.refresh()
-
-
-@app.post("/v1/ibkr/read-only/disconnect", dependencies=[Depends(require_local_broker_request)])
-def disconnect_ibkr_read_only(
-    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
-):
-    return service.disconnect()
-
-
-@app.post("/v1/ibkr/read-only/instrument", dependencies=[Depends(require_local_broker_request)])
-def ibkr_read_only_instrument(
-    payload: IbkrInstrumentRequest,
-    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
-):
-    try:
-        return service.instrument(payload.symbol, payload.route)
-    except (PaperSafetyError, RuntimeError, OSError, ValueError) as exc:
-        raise HTTPException(409, str(exc)) from None
-
-
-@app.post("/v1/ibkr/paper/intents", dependencies=[Depends(require_local_broker_request)])
-def prepare_ibkr_paper_intent(
-    payload: PaperIntentRequest,
-    service: Annotated[IbkrReadOnlyService, Depends(ibkr_read_only_service)],
-):
-    try:
-        return service.prepare_intent(payload.model_dump())
-    except (PaperSafetyError, RuntimeError, OSError, ValueError) as exc:
-        raise HTTPException(409, str(exc)) from None
+@app.get("/v1/ibkr/read-only", dependencies=[Depends(local_request), Depends(current_operator)])
+@app.post("/v1/ibkr/read-only/refresh", dependencies=[Depends(local_request), Depends(current_operator)])
+@app.post("/v1/ibkr/read-only/disconnect", dependencies=[Depends(local_request), Depends(current_operator)])
+@app.post("/v1/ibkr/read-only/instrument", dependencies=[Depends(local_request), Depends(current_operator)])
+@app.post("/v1/ibkr/paper/intents", dependencies=[Depends(local_request), Depends(current_operator)])
+def retired_broker_endpoint():
+    raise HTTPException(410, "Use the authenticated unified paper execution service.")
 
 
 @app.get("/health")

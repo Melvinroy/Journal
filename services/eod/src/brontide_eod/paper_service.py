@@ -32,6 +32,19 @@ def parsed(value):
     return result
 
 
+def execution_time(value):
+    """Preserve economic fills; ambiguous broker clock values remain unavailable."""
+    from zoneinfo import ZoneInfo
+    try:
+        return parsed(value).astimezone(timezone.utc).isoformat()
+    except (ValueError, PaperSafetyError):
+        try:
+            date, clock, zone = value.split()
+            return datetime.strptime(date + " " + clock, "%Y%m%d %H:%M:%S").replace(tzinfo=ZoneInfo(zone)).astimezone(timezone.utc).isoformat()
+        except (ValueError, KeyError):
+            return ""
+
+
 def source_identity():
     root = Path(__file__).resolve().parents[4]
     result = subprocess.run(["node", "--input-type=module", "-e",
@@ -67,6 +80,36 @@ class PaperService:
         self.last_reconciled = None
         self.daily_cache = {}
         self.pending_events = []
+        self.operator_id = None
+        self.operator_deadline = None
+        self.broker_view = None
+        self.last_quote = None
+        self.management_only = False
+        self.reviewed_campaigns = set()
+        self.authorized_batches = set()
+
+    def authenticated(self, user_id):
+        with self.lock:
+            if self.operator_id and (self.operator_id != user_id or not self.operator_deadline or utcnow() >= self.operator_deadline):
+                self.disarm()
+            self.operator_id = user_id
+            self.operator_deadline = utcnow() + timedelta(seconds=60)
+
+    def readiness(self, connected, campaigns):
+        if any(c["state"] in {"Unprotected", "Needs reconciliation"} for c in campaigns):
+            return {"state": "error", "message": "Position or protection needs review."}
+        if not connected: return {"state": "disconnected", "message": "Open and sign into the linked paper TWS on this computer."}
+        if self.error: return {"state": "blocked", "message": self.error}
+        if not self.last_reconciled or (utcnow() - parsed(self.last_reconciled)).total_seconds() > 20:
+            return {"state": "blocked", "message": "Broker reconciliation is stale."}
+        if not self.last_quote or not self.last_quote["executable"] or self.last_quote["quote"].get("marketDataType") != 1 or (utcnow() - parsed(self.last_quote["observedAt"])).total_seconds() > 15:
+            codes = getattr(self.client, "_api_error_codes", [])
+            return {"state": "blocked", "message": "Paper quotes blocked by a competing live session (IBKR 10197)." if 10197 in codes else "A fresh live executable quote is required for the selected instrument."}
+        if not self.client.config.submissions_enabled:
+            return {"state": "blocked", "message": "Connected; server paper submissions are locked."}
+        if any(c["state"] not in {"Closed", "Cancelled"} and (c["id"] not in self.reviewed_campaigns if self.operator_id else not self.armed) for c in campaigns):
+            return {"state": "blocked", "message": "Reconnected. Review the position before resuming managed exits."}
+        return {"state": "ready", "message": "Paper connection and data ready. Each order still requires exact review."}
 
     def status(self):
         with self.lock:
@@ -77,7 +120,9 @@ class PaperService:
                     "accountBinding": self.client.config.binding() if connected else None,
                     "account": mask_account_id(self.client.authorized_account) if connected else None,
                     "connectionId": self.connection_id, "lastReconciled": self.last_reconciled,
-                    "error": self.error, "campaigns": [self.public_campaign(c) for c in campaigns],
+                    "error": self.error, "readiness": self.readiness(connected, campaigns),
+                    "broker": self.broker_view, "quote": self.last_quote,
+                    "campaigns": [self.public_campaign(c) for c in campaigns],
                     "batches": [self.public_batch(b) for b in self.store.all("batch")],
                     "blocked": ["Short entry fill bounds", "Opening auction", "Overnight sessions"],
                     "limits": {"sharesPerCampaign": 3, "campaigns": 2, "entryNotional": 500, "plannedRiskPerCampaign": 10, "totalPlannedRisk": 20}}
@@ -91,11 +136,15 @@ class PaperService:
         return {"id": c["id"], "batchId": c["batchId"], "revision": c["revision"],
                 "symbol": c["ticket"]["symbol"], "direction": c["ticket"]["direction"],
                 "state": c["state"], "message": c.get("message"), "ticket": c["ticket"],
+                "contract": c["contract"], "accountBinding": c["accountBinding"],
+                "createdAt": c["createdAt"], "activeExitPlan": c.get("activeExitPlan", c["ticket"]["exitPlan"]),
                 "summary": summarize(c), "automation": c.get("automation", "Paused"),
                 "executions": [{k: v for k, v in e.items() if k not in {"account", "clientId"}} for e in c["executions"]],
                 "slots": [{"id": s["id"], "entryStatus": s["entry"]["status"],
                            "stopStatus": s["stop"]["status"], "confirmedStop": s["stop"].get("confirmed", {}).get("auxPrice"),
                            "exitStatus": s.get("exit", {}).get("status"), "leg": s.get("leg"),
+                           "open": s.get("open", 0), "whyHeld": s["stop"].get("whyHeld", ""),
+                           "exitPrice": s.get("exit", {}).get("confirmed", {}).get("lmtPrice"),
                            "protectionAttempts": s.get("protectionAttempts", 0)} for s in c["slots"]],
                 "draft": c.get("draft"), "amendments": c.get("amendments", [])}
 
@@ -109,6 +158,8 @@ class PaperService:
         with self.lock:
             if self.client and self.client.isConnected(): return self.status()
             self.armed = None
+            self.reviewed_campaigns.clear()
+            self.authorized_batches.clear()
             self.client = self.factory()
             try:
                 self.client.connect_verified()
@@ -149,7 +200,57 @@ class PaperService:
 
     def _instrument(self, symbol):
         self._connected()
-        return IbkrReadOnlyService._instrument_view(self.client.read_only_instrument_snapshot(symbol))
+        self.last_quote = IbkrReadOnlyService._instrument_view(self.client.read_only_instrument_snapshot(symbol))
+        return self.last_quote
+
+    def approve(self, batch_id, digest, command_id):
+        with self.lock:
+            batch = self._batch(batch_id)
+            self._connected()
+            if not self.operator_id or self.operator_deadline <= utcnow():
+                raise PaperSafetyError("Sign in again before approving this exact order.")
+            if batch["digest"] != digest or batch["sourceIdentity"] != self.source() or utcnow() >= parsed(batch["validUntil"]):
+                raise PaperSafetyError("The order review is stale; prepare a new review.")
+            if batch.get("connectionId") != self.connection_id or batch["accountBinding"] != self.client.config.binding():
+                raise PaperSafetyError("Connection changed after order review.")
+            receipt = {"batchId": batch_id, "ticketDigest": digest, "sourceIdentity": batch["sourceIdentity"],
+                       "accountBinding": batch["accountBinding"], "connectionId": self.connection_id,
+                       "userId": self.operator_id, "approvedAt": stamp(), "approvedAmendmentDigests": []}
+            with self.store.transaction() as db:
+                if self.store.command(db, command_id, batch_id, {"action": "approve", "digest": digest}):
+                    self.store.put(db, "approval", batch_id, receipt)
+            return self.arm(batch_id)
+
+    def review_action(self, campaign_id, revision, command_id, action, payload=None):
+        with self.lock:
+            with self.store.transaction() as db:
+                prior = db.execute("SELECT request, campaign FROM commands WHERE id=?", (command_id,)).fetchone()
+            if prior:
+                return self.action(campaign_id, revision, command_id, action, payload)
+            self._connected()
+            self.reconcile()
+            with self.store.transaction() as db: c = self.store.get(db, "campaign", campaign_id)
+            if c["revision"] != revision: raise PaperSafetyError("Position changed. Review the current revision.")
+            if c["state"] == "Needs reconciliation": raise PaperSafetyError("Resolve reconciliation before a broker action.")
+            batch = self._batch(c["batchId"])
+            if self.source() != batch["sourceIdentity"]: raise PaperSafetyError("The reviewed execution source changed; operator reconciliation is required.")
+            if not self.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are locked.")
+            if not self.operator_id or self.operator_deadline <= utcnow(): raise PaperSafetyError("Sign in to review the position.")
+            if action == "apply-amendment":
+                if not c.get("draft") or payload != {"digest": c["draft"]["digest"]}: raise PaperSafetyError("Review the exact saved amendment.")
+                with self.store.transaction() as db:
+                    self.store.put(db, "amendment-approval", c["draft"]["digest"], {"userId": self.operator_id, "connectionId": self.connection_id})
+            self.armed = c["batchId"]
+            self.authorized_batches.add(c["batchId"])
+            self.management_only = True
+            try:
+                result = self.action(campaign_id, revision, command_id, action, payload)
+                if action in {"resume", "apply-amendment", "cleanup"}:
+                    self.reviewed_campaigns.add(campaign_id)
+                return result
+            except Exception:
+                self.disarm()
+                raise
 
     def quote(self, symbol):
         with self.lock: return self._instrument(symbol)
@@ -157,6 +258,10 @@ class PaperService:
     def _validate_ticket(self, ticket):
         account = self._connected()
         ticket = deepcopy(ticket)
+        if self.operator_id and ticket.get("planningSource") not in {"Manual", "Local EOD close"}:
+            raise PaperSafetyError("Simulation and legacy pricing cannot enter paper execution; capture a new plan.")
+        if self.operator_id and any(not isinstance(ticket.get(k), str) or not ticket[k].strip() or len(ticket[k]) > 128 for k in ("planId", "planRevision")):
+            raise PaperSafetyError("Save the planner revision before reviewing an order.")
         ticket["symbol"] = str(ticket.get("symbol", "")).strip().upper()
         if ticket["symbol"] in {"PL", "AMD"}: raise PaperSafetyError("PL and AMD are excluded from paper QC.")
         if ticket.get("direction") != "Long": raise PaperSafetyError("Short entry remains blocked: both fill bounds cannot be enforced.")
@@ -202,7 +307,7 @@ class PaperService:
             if len({t["symbol"] for t in frozen}) != len(frozen): raise PaperSafetyError("Batch symbols must be distinct.")
             if sum(t["quantity"] * t["hardCap"] for t in frozen) > 500 or sum(t["quantity"] * (t["hardCap"] - t["stopPrice"]) for t in frozen) > 20:
                 raise PaperSafetyError("Combined paper limits exceeded.")
-            batch = {"id": str(uuid.uuid4()), "sourceIdentity": identity,
+            batch = {"id": str(uuid.uuid4()), "sourceIdentity": identity, "connectionId": self.connection_id,
                      "accountBinding": self.client.config.binding(), "createdAt": stamp(),
                      "validUntil": min(v[3]["windowEnd"] for v in validated), "tickets": frozen,
                      "contracts": [v[1]["contract"] for v in validated]}
@@ -218,10 +323,14 @@ class PaperService:
             batch = self._batch(batch_id)
             self._connected()
             if not self.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are disabled.")
-            path = os.environ.get("BRONTIDE_PAPER_APPROVAL_FILE")
-            if not path: raise PaperSafetyError("An exact-ticket approval receipt is required; preparing a batch does not approve it.")
-            try: receipt = json.loads(Path(path).read_text(encoding="utf-8"))
-            except (OSError, ValueError) as exc: raise PaperSafetyError("Paper approval receipt is unavailable.") from exc
+            if self.operator_id:
+                with self.store.transaction() as db: receipt = self.store.get(db, "approval", batch_id)
+                if receipt.get("userId") != self.operator_id: raise PaperSafetyError("Approval belongs to another user.")
+            else:
+                path = os.environ.get("BRONTIDE_PAPER_APPROVAL_FILE")
+                if not path: raise PaperSafetyError("An exact-ticket approval receipt is required; preparing a batch does not approve it.")
+                try: receipt = json.loads(Path(path).read_text(encoding="utf-8"))
+                except (OSError, ValueError) as exc: raise PaperSafetyError("Paper approval receipt is unavailable.") from exc
             expected = {"batchId": batch_id, "ticketDigest": batch["digest"], "sourceIdentity": self.source(),
                         "accountBinding": self.client.config.binding(), "connectionId": self.connection_id}
             if any(receipt.get(k) != v for k, v in expected.items()) or batch["sourceIdentity"] != expected["sourceIdentity"]:
@@ -232,12 +341,17 @@ class PaperService:
             if any(c["state"] == "Needs reconciliation" for c in self.store.all("campaign")):
                 raise PaperSafetyError("Resolve outstanding campaign reconciliation before arming.")
             self.armed = batch_id
+            self.authorized_batches.add(batch_id)
+            self.management_only = False
             self.error = None
             return self.status()
 
     def disarm(self):
         with self.lock:
             self.armed = None
+            self.reviewed_campaigns.clear()
+            self.authorized_batches.clear()
+            if self.operator_id: self.connection_id = str(uuid.uuid4())
             for c in self.store.all("campaign"):
                 if c["state"] not in {"Closed", "Cancelled"}:
                     c["automation"] = "Paused — submissions locked"
@@ -246,7 +360,11 @@ class PaperService:
 
     def _authority(self, batch, entry=False):
         self._connected()
-        if self.armed != batch["id"] or batch["accountBinding"] != self.client.config.binding():
+        if self.operator_id and (not self.operator_deadline or utcnow() >= self.operator_deadline):
+            self.disarm()
+            raise PaperSafetyError("Brontide sign-in lease expired; review before resuming.")
+        if entry and self.management_only: raise PaperSafetyError("Position review cannot approve a new entry.")
+        if (batch["id"] not in self.authorized_batches if self.operator_id else self.armed != batch["id"]) or batch["accountBinding"] != self.client.config.binding():
             raise PaperSafetyError("This exact paper batch is not armed for this connection.")
         if not self.client.config.submissions_enabled or self.source() != batch["sourceIdentity"]:
             self.armed = None
@@ -303,6 +421,7 @@ class PaperService:
                 c["message"] = "Bracket transmission outcome unknown; reconcile before any further entry."
                 self._save(c)
                 raise
+            self.reviewed_campaigns.add(campaign_id)
             return self.public_campaign(c)
 
     def _write(self, c, order, role, command_id, cancel=False):
@@ -361,8 +480,8 @@ class PaperService:
                     economic = {k: v for k, v in e.items() if k not in {"eventId", "observedAt"}}
                     if not self.store.event(db, "exec:" + e["executionId"], economic): continue
                     c["executions"].append({"executionId": e["executionId"], "orderId": order["orderId"],
-                        "slotId": slot["id"], "effect": "entry" if role == "entry" else "exit", "role": role,
-                        "quantity": 1, "price": price, "occurredAt": e["executedAt"], "commission": None})
+                        "slotId": slot["id"], "effect": "entry" if role == "entry" else "exit", "role": order.get("role", role),
+                        "quantity": 1, "price": price, "occurredAt": execution_time(e["executedAt"]), "commission": None})
                     order["status"] = "Filled"
                     order["filled"] = 1
                 elif e["kind"] == "open-order":
@@ -447,6 +566,10 @@ class PaperService:
         with self.lock:
             self._connected()
             self.snapshot = self.client.read_only_snapshot()
+            if hasattr(self.snapshot, "observed_at"):
+                view_builder = IbkrReadOnlyService()
+                view_builder._last_success = self.broker_view
+                self.broker_view = view_builder._build_success(self.client.authorized_account, self.snapshot)
             self.client.execution_snapshot()
             self._events()
             positions = {p["conId"]: p["quantity"] for p in self.snapshot.position_rows}
@@ -471,10 +594,10 @@ class PaperService:
         with self.lock:
             with self.store.transaction() as db:
                 c = self.store.get(db, "campaign", campaign_id)
-                prior = db.execute("SELECT request FROM commands WHERE id=?", (command_id,)).fetchone()
+                prior = db.execute("SELECT request, campaign FROM commands WHERE id=?", (command_id,)).fetchone()
                 request = {"action": action, "revision": revision, "payload": payload}
                 if prior:
-                    if prior[0] != canonical(request): raise PaperSafetyError("Command key was reused for a different action.")
+                    if prior[0] != canonical(request) or prior[1] != campaign_id: raise PaperSafetyError("Command key was reused for a different action.")
                     return self.public_campaign(c)
                 if c["revision"] != revision: raise PaperSafetyError("Campaign changed; refresh before applying the action.")
             if action == "save-amendment":
@@ -508,10 +631,14 @@ class PaperService:
                 draft = c.get("draft")
                 if not draft or draft["quantity"] != summarize(c)["openQuantity"] or c["revision"] != draft["basedOn"] + 1:
                     raise PaperSafetyError("The saved amendment is stale; save a new draft against current state.")
-                approval_path = os.environ.get("BRONTIDE_PAPER_APPROVAL_FILE")
-                receipt = json.loads(Path(approval_path).read_text()) if approval_path else {}
-                if draft["digest"] not in receipt.get("approvedAmendmentDigests", []):
-                    raise PaperSafetyError("This exact saved amendment needs approval of its digest before application.")
+                if self.operator_id:
+                    with self.store.transaction() as db: receipt = self.store.get(db, "amendment-approval", draft["digest"])
+                    approved = receipt.get("userId") == self.operator_id and receipt.get("connectionId") == self.connection_id
+                else:
+                    approval_path = os.environ.get("BRONTIDE_PAPER_APPROVAL_FILE")
+                    receipt = json.loads(Path(approval_path).read_text()) if approval_path else {}
+                    approved = draft["digest"] in receipt.get("approvedAmendmentDigests", [])
+                if not approved: raise PaperSafetyError("This exact saved amendment needs approval before application.")
                 if any(s.get("exit") and s["exit"]["status"] not in TERMINAL for s in c["slots"]):
                     raise PaperSafetyError("Cancel and reconcile working target/cleanup orders before reallocating exits.")
                 c["activeExitPlan"] = draft["exitPlan"]
@@ -535,6 +662,7 @@ class PaperService:
             return self.public_campaign(c)
 
     def _automate(self, c):
+        if self.operator_id and c["id"] not in self.reviewed_campaigns: return
         if c["state"] in {"Needs reconciliation", "Closed", "Cancelled", "Closing", "Sync pending"}: return
         self._authority(self._batch(c["batchId"]))
         instrument = self._instrument(c["ticket"]["symbol"])
@@ -630,6 +758,8 @@ class PaperService:
     def _worker(self):
         while not self.stop_event.wait(2):
             with self.lock:
+                if self.operator_id and self.operator_deadline and utcnow() >= self.operator_deadline:
+                    if self.armed: self.disarm()
                 if not self.client or not self.client.isConnected():
                     if self.armed: self.disarm()
                     continue
@@ -639,10 +769,10 @@ class PaperService:
                         self.reconcile()
                     if self.armed:
                         for c in self.store.all("campaign"):
-                            if c["batchId"] == self.armed: self._automate(c)
+                            if (c["id"] in self.reviewed_campaigns if self.operator_id else c["batchId"] == self.armed): self._automate(c)
                 except Exception as exc:
                     self.error = str(exc) if isinstance(exc, PaperSafetyError) else "Paper service failed; reconcile before resuming."
-                    self.armed = None
+                    self.disarm()
 
     def shutdown(self):
         self.stop_event.set()

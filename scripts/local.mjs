@@ -2,9 +2,12 @@ import { spawnSync, spawn } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { getPreviewIdentity, PREVIEW_IDENTITY_MANIFEST } from './preview-identity.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+// Use the same configured application project for the browser and local identity verification.
+createRequire(import.meta.url)('@next/env').loadEnvConfig(root);
 const service = path.join(root, 'services', 'eod');
 const executable = process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python';
 const python = [path.join(service, '.venv', executable), path.join(root, '.venv', executable)].find(existsSync);

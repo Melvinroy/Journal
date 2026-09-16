@@ -1,0 +1,19 @@
+.broker-connection {position:relative; font-size:12px; max-width:100%;}
+.broker-connection summary {cursor:pointer; display:flex; align-items:center; gap:8px; min-height:40px; padding:8px 10px; border:1px solid var(--border); border-radius:8px;}
+.broker-dot {width:9px;height:9px;flex-shrink:0;border-radius:50%;background:#7b8580;}
+.broker-dot.ready {background:#158447;}.broker-dot.blocked,.broker-dot.connecting {background:#af7100;}.broker-dot.error {background:#c63535;}
+.broker-connection-detail {position:absolute;z-index:60;left:0;top:100%;width:min(420px,calc(100vw - 40px));padding:16px;border:1px solid var(--border);border-radius:10px;background:var(--surface,#fff);box-shadow:0 8px 24px #0002;overflow-wrap:anywhere;}
+.broker-connection-detail p {line-height:1.5;}.broker-connection-detail button {min-height:40px;}
+.broker-order-review {width:min(580px,calc(100vw - 32px));max-height:85vh;overflow:auto;}
+.broker-order-review li {margin:8px 0;overflow-wrap:anywhere;}.broker-order-review code {overflow-wrap:anywhere;}
+.broker-execution-fields {display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;}
+.broker-execution-fields label {display:flex;flex-direction:column;gap:6px;min-width:120px;flex:1;}
+.broker-execution-fields input,.broker-execution-fields select {width:100%;min-width:0;}
+.broker-connection :focus-visible,.broker-order-review :focus-visible {outline:3px solid #13875b;outline-offset:3px;}
+.broker-campaign-actions {padding-top:12px;}.broker-campaign-actions button {min-height:40px;}
+@media(max-width:600px){.broker-connection-detail{position:static;width:auto;margin-top:8px;}.broker-connection{width:100%;}.broker-execution-fields{flex-direction:column;}.broker-campaign-actions button{display:inline-flex;min-height:44px;}}
+
+.broker-connection {width:fit-content;margin:8px 0;}
+.broker-connection-detail .editor-actions {display:flex;flex-wrap:wrap;gap:8px;}
+.broker-connection-detail button {white-space:normal;min-width:90px;}
+@media(max-width:600px){.trade-commandbar:has(.broker-connection){flex-direction:column;align-items:stretch;}.broker-connection{width:100%;}.broker-connection-detail{width:100%;box-sizing:border-box;}}

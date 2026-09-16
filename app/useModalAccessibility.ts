@@ -4,7 +4,7 @@ import { type RefObject, useEffect, useRef } from "react";
 
 const FOCUSABLE = "[data-modal-initial-focus],[autofocus],button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex='-1'])";
 
-export function useModalAccessibility(open: boolean, container: RefObject<HTMLElement | null>, onClose: () => void) {
+export function useModalAccessibility(open: boolean, container: RefObject<HTMLElement | null>, onClose: () => void, returnFocus?: RefObject<HTMLElement | null>) {
   const closeRef = useRef(onClose);
   const triggerRef = useRef<HTMLElement | null>(null);
   const previousOpen = useRef(open);
@@ -54,7 +54,7 @@ export function useModalAccessibility(open: boolean, container: RefObject<HTMLEl
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
-      triggerRef.current?.focus();
+      (returnFocus?.current ?? triggerRef.current)?.focus();
     };
-  }, [open, container]);
+  }, [open, container, returnFocus]);
 }

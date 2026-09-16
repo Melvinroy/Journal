@@ -246,7 +246,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .loading-shell p { margin: 0; font-size: 11px; font-weight: 650; }
 .loading-mark { width: 42px; height: 42px; display: grid; place-items: center; color: #19a75b; background: #10211b; border-radius: 11px; box-shadow: 0 12px 30px rgba(11,36,26,.16); }
 
-.auth-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(360px, .85fr) minmax(480px, 1.15fr); background: #f4f6f4; }
+.auth-shell { min-height: 100vh; display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); background: #f4f6f4; }
 .auth-brand-panel { min-height: 100vh; display: flex; flex-direction: column; padding: clamp(28px, 4vw, 58px); color: #f4faf7; background: radial-gradient(circle at 12% 86%, rgba(27,157,88,.24), transparent 34%), linear-gradient(145deg, #12251e 0%, #0d1916 100%); }
 .auth-brand { display: flex; align-items: center; gap: 11px; font-size: 17px; font-weight: 750; letter-spacing: -.02em; }
 .auth-brand-copy { margin: auto 0; }

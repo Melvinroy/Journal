@@ -143,6 +143,7 @@ export type Execution = {
   price: number;
   fee: number;
   occurredAt: string;
+  feeAvailable?: boolean;
   /** Broker trade date is preserved separately from the immutable execution timestamp. */
   brokerTradeDate?: string;
   protectionStopAtFill?: number;

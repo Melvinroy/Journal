@@ -10,7 +10,8 @@ import {
 import { CatalystDashboard } from "./CatalystDashboard";
 import { ScansDashboard } from "./ScansDashboard";
 import { ScannerDashboard } from "./ScannerDashboard";
-import { PaperWorkspace } from "./PaperWorkspace";
+import { usePaperExecution } from "./usePaperExecution";
+import { paperJournalRow } from "../lib/paper-execution";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import {
@@ -326,6 +327,7 @@ function formatR(value: number) {
 }
 
 function shortDate(value: string) {
+  if (!value || !Number.isFinite(Date.parse(value))) return "Date unavailable";
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -514,6 +516,7 @@ function AuthScreen({
           <p className="eyebrow">Brontide</p>
           <h2>{title}</h2>
           <p className="auth-subtitle">{subtitle}</p>
+          {process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID && <p className="preview-identity" data-preview-identifier={process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID} aria-label={`Preview revision ${process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID}`}>Preview {process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID}</p>}
           <form onSubmit={submit}>
             {mode !== "recovery" && (
               <label>
@@ -1175,7 +1178,10 @@ export default function Home() {
     },
   );
   useEffect(() => {
-    if (navigation.ready) setActive(navigation.value.active);
+    if (navigation.ready) {
+      const query = new URLSearchParams(window.location.search);
+      setActive(query.get("paper") === "1" && query.get("demo") !== "1" ? "Trade" : navigation.value.active);
+    }
   }, [navigation.ready]);
   const selectView = (next: View) => {
     setActive(next);
@@ -1233,7 +1239,7 @@ export default function Home() {
   const [reportingTimezone, setReportingTimezone] = useState("Local timezone");
   const [greeting, setGreeting] = useState("Welcome back, Melvin");
   const [demoMode, setDemoMode] = useState(false);
-  const [paperMode, setPaperMode] = useState(false);
+  const paper = usePaperExecution(session?.access_token, localWorkspace && !demoMode);
   const positionCampaignStore = useBrowserStore<TradeCampaign[]>(
     demoStorageKey("brontide-position-campaigns-v1", demoMode),
     EMPTY_POSITION_CAMPAIGNS,
@@ -1357,7 +1363,6 @@ export default function Home() {
   useEffect(() => {
     const isDemo =
       new URLSearchParams(window.location.search).get("demo") === "1";
-    setPaperMode(localWorkspace && !isDemo && new URLSearchParams(window.location.search).get("paper") === "1");
     setSetupPreview(
       new URLSearchParams(window.location.search).get("setup") === "1",
     );
@@ -1391,7 +1396,7 @@ export default function Home() {
       `${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Trader`,
     );
     setReportingTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Local timezone");
-    if (isDemo || localWorkspace || !supabase) {
+    if (isDemo || !supabase) {
       setAuthReady(true);
       return;
     }
@@ -1457,18 +1462,18 @@ export default function Home() {
       ...positionCampaignStore.value.map(journalRowFromCampaign),
     ];
     const keyed = new Map<string, Trade>();
-    [...campaignRows, ...trades].forEach((trade) =>
+    [...campaignRows, ...trades, ...(paper.status?.campaigns ?? []).filter(c => c.summary.entered > 0).map(paperJournalRow)].forEach((trade) =>
       keyed.set(trade.campaignId ?? trade.id, trade),
     );
     return [...keyed.values()];
-  }, [journalCampaignStore.value, positionCampaignStore.value, trades]);
+  }, [journalCampaignStore.value, positionCampaignStore.value, trades, paper.status]);
 
   const filteredTrades = useMemo(() => {
     const cutoff = getCutoff(range);
     return journalTrades.filter((trade) => {
       const reportingDate = trade.closedAt ?? `${trade.date}T23:59:59`;
       return (
-        (!cutoff || new Date(reportingDate) >= cutoff) &&
+        (!cutoff || !trade.date || new Date(reportingDate) >= cutoff) &&
         (setupFilter === "all" || trade.setup === setupFilter) &&
         (directionFilter === "all" || trade.side === directionFilter)
       );
@@ -1650,6 +1655,9 @@ export default function Home() {
       return;
     }
     if (!supabase) return;
+    if (paper.enabled && session) {
+      try { await paper.request("signout", {}); } catch { /* Server lease expires within 60 seconds when unreachable. */ }
+    }
     await supabase.auth.signOut();
     setSession(null);
     setAuthMode("signin");
@@ -1736,9 +1744,9 @@ export default function Home() {
       </main>
     );
   if (setupPreview) return <SetupScreen forceUnconfigured />;
-  if (!localWorkspace && !demoMode && !supabaseConfig.isConfigured)
+  if ((!localWorkspace || active === "Trade" || active === "Journal") && !demoMode && !supabaseConfig.isConfigured)
     return <SetupScreen />;
-  if (!localWorkspace && !demoMode && (!session || recovering))
+  if ((!localWorkspace || active === "Trade" || active === "Journal") && !demoMode && (!session || recovering))
     return (
       <AuthScreen
         mode={authMode}
@@ -1872,18 +1880,17 @@ export default function Home() {
         <div hidden={active !== "Catalyst"}>
           <CatalystDashboard demo={demoMode} onChart={openChart} />
         </div>
-        {paperMode && (active === "Trade" || active === "Journal") && <PaperWorkspace view={active === "Journal" ? "journal" : "positions"} />}
-        {!paperMode && <div hidden={active !== "Trade"}>
+        <div hidden={active !== "Trade"}>
           <TradingWorkspace
             demo={demoMode}
+            paper={localWorkspace && !demoMode ? paper : undefined}
             context={planContext}
             onChart={openChart}
             onOpenJournalTrade={openJournalTrade}
             onCreateJournalTrade={createJournalTrade}
             positionCampaigns={positionCampaignStore.value}
           />
-          {localWorkspace && <p className="workspace-notice"><a href="?paper=1">Open the separate TWS paper workspace</a></p>}
-        </div>}
+        </div>
         {active === "Charts" && (
           <ChartDashboard
             navigation={[
@@ -1930,7 +1937,7 @@ export default function Home() {
             onChart={openChart}
           />
         </div>
-        <div className="journal-content" hidden={active !== "Journal" || paperMode}>
+        <div className="journal-content" hidden={active !== "Journal"}>
           {localWorkspace && !session && !demoMode && (
             <p className="workspace-notice">
               Cloud Journal is not connected in local mode. Local plans and
@@ -2257,10 +2264,10 @@ export default function Home() {
                               {formatMoney(execution.price, false)}
                             </span>
                             <span data-label="Fee">
-                              {formatMoney(execution.fee, false)}
+                              {execution.feeAvailable === false ? "Unavailable" : formatMoney(execution.fee, false)}
                             </span>
                             <span data-label="Time">
-                              {new Date(execution.occurredAt).toLocaleString()}
+                              {execution.occurredAt ? new Date(execution.occurredAt).toLocaleString() : "Broker time unavailable"}
                             </span>
                             <span data-label="Source">
                               {execution.provenance === "manual-import"

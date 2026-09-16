@@ -599,85 +599,52 @@ test("read-only paper snapshots stay isolated, duplicate-free, and recover after
     openOrders: [],
     error: null,
   };
-  let failNextRefresh = false;
+  let disconnected = false;
+  let outage = false;
   let brokerRequests = 0;
-  await page.route("**/v1/ibkr/read-only**", async (route) => {
-    brokerRequests += 1;
-    const request = route.request();
-    if (request.url().endsWith("/disconnect")) {
-      await route.fulfill({
-        json: {
-          ...connected,
-          connectionStatus: "disconnected",
-          dataStatus: "stale",
-          positions: positions.map((item) => ({ ...item, stale: true })),
-        },
-      });
-      return;
-    }
-    if (request.url().endsWith("/refresh") && failNextRefresh) {
-      failNextRefresh = false;
-      await route.fulfill({ status: 503, json: { detail: "simulated outage" } });
-      return;
-    }
-    await route.fulfill({ json: connected });
+  await page.route("https://brontide-test.supabase.co/**", r => r.fulfill({ json: r.request().url().includes("/token") ? {
+    access_token: "test-access-token", refresh_token: "test-refresh-token", expires_in: 3600, token_type: "bearer",
+    user: { id: "00000000-0000-0000-0000-000000000001", email: "test@example.com", email_confirmed_at: observedAt, aud: "authenticated" }
+  } : [] }));
+  await page.route("**/v1/ibkr/paper/**", async route => {
+    brokerRequests++;
+    const url = route.request().url();
+    if (url.endsWith("/identity")) { await route.fulfill({ json: { userId: "test-user", email: "test@example.com", linked: true } }); return; }
+    if (url.endsWith("/disconnect")) disconnected = true;
+    if (url.endsWith("/connect")) disconnected = false;
+    if (outage) { await route.fulfill({ status: 503, json: { detail: "Local service unavailable" } }); return; }
+    await route.fulfill({ json: { connected: !disconnected, connectionId: "connection", account: "DU••1234", submissionsEnabled: false,
+      armedBatch: null, lastReconciled: observedAt, campaigns: [], batches: [], broker: connected,
+      readiness: { state: disconnected ? "disconnected" : "blocked", message: disconnected ? "TWS disconnected" : "Connected; server paper submissions are locked." } } });
   });
-
-  await page.goto("/");
-  await navigateTo(page, "Trading");
+  await page.goto("/"); await navigateTo(page, "Trading");
+  await page.getByLabel("Email address").fill("test@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   const unlinked = page.locator(".unlinked-positions > article");
   await expect(unlinked).toHaveCount(2);
-  await expect(page.getByText("Open orders: 0 · completed empty")).toBeVisible();
-  await expect(page.getByText("$30,000.00")).toBeVisible();
-  await expect(page.getByText(/IBKR accountSummary · USD/)).toBeVisible();
   await expect(page.getByText(/Never auto-linked by ticker/)).toHaveCount(2);
-  expect(
-    await page.evaluate(() => ({
-      campaigns: localStorage.getItem("brontide-position-campaigns-v1"),
-      associations: localStorage.getItem("brontide-position-associations-v1"),
-    })),
-  ).toEqual({ campaigns: null, associations: null });
-
-  await page.getByRole("button", { name: "Refresh paper data" }).click();
+  await expect(unlinked.first().getByRole("button", { name: /Link|Create/ })).toBeDisabled();
+  await page.locator(".broker-connection > summary").click();
+  await page.getByRole("button", { name: "Refresh broker state" }).click();
   await expect(unlinked).toHaveCount(2);
-
-  failNextRefresh = true;
-  await page.getByRole("button", { name: "Refresh paper data" }).click();
-  await expect(page.locator(".broker-refresh-alert")).toContainText(
-    "Last completed positions were retained and marked stale",
-  );
+  outage = true;
+  await expect(page.locator(".broker-connection-detail")).toContainText("Local service unavailable", { timeout: 10000 });
   await expect(unlinked).toHaveCount(2);
-
-  await page.getByRole("button", { name: "Disconnect Brontide" }).click();
-  await expect(page.getByText("disconnected", { exact: true })).toBeVisible();
+  outage = false;
+  await page.getByRole("button", { name: "Retry connection" }).click();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(page.locator(".broker-connection > summary")).toContainText("TWS disconnected");
   await expect(unlinked).toHaveCount(2);
-  await page.getByRole("button", { name: "Refresh paper data" }).click();
-  await expect(page.getByText("connected", { exact: true })).toBeVisible();
-  await expect(unlinked).toHaveCount(2);
-  expect(brokerRequests).toBeGreaterThanOrEqual(5);
-
-  for (const viewport of [
-    { width: 1280, height: 720 },
-    { width: 390, height: 844 },
-    { width: 1280, height: 720 },
-  ]) {
-    await page.setViewportSize(viewport);
-    await expectContained(page, ".broker-readonly-status", true);
-    for (let index = 0; index < 2; index += 1) {
-      await expectContained(
-        page,
-        `.unlinked-positions > article:nth-of-type(${index + 1})`,
-        true,
-      );
-    }
+  await page.getByRole("button", { name: "Retry connection" }).click();
+  for (const width of [1280, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (let i=1;i<=2;i++) await expectContained(page, `.unlinked-positions > article:nth-of-type(${i})`, true);
   }
+  expect(brokerRequests).toBeGreaterThanOrEqual(5);
+  expect(await page.evaluate(() => ({ campaigns: localStorage.getItem("brontide-position-campaigns-v1"), associations: localStorage.getItem("brontide-position-associations-v1") }))).toEqual({ campaigns: null, associations: null });
 
-  expect(
-    await page.evaluate(() => ({
-      campaigns: localStorage.getItem("brontide-position-campaigns-v1"),
-      associations: localStorage.getItem("brontide-position-associations-v1"),
-    })),
-  ).toEqual({ campaigns: null, associations: null });
 });
 
 test("demo preview never requests paper-account data", async ({ page }) => {
@@ -702,6 +669,7 @@ test("position detail reports accounting, protection and price-data limitations 
     .getByRole("button", { name: "Open AAPL position details" })
     .click();
   let dialog = page.getByRole("dialog", { name: "AAPL position details" });
+  await expect(dialog.getByText("IBKR paper execution", { exact: true })).toHaveCount(0);
   await expect(dialog).toContainText("Filled entry");
   await expect(dialog).toContainText("40 sh");
   await expect(dialog).toContainText("Exited");

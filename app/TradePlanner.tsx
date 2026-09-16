@@ -37,6 +37,10 @@ import {
 } from "../lib/ibkr-paper-adapter";
 import type { MarketContext } from "../lib/workspace-state";
 import { useModalAccessibility } from "./useModalAccessibility";
+import { BrokerConnection } from "./BrokerConnection";
+import { PaperOrderReview } from "./PaperOrderReview";
+import type { PaperExecution } from "./usePaperExecution";
+import type { PaperTicket } from "../lib/paper-execution";
 
 const RISK_OPTIONS = [.25, .5, .75, 1] as const;
 const ALLOCATION_OPTIONS = [3, 5, 10, 15, 20, 25] as const;
@@ -65,6 +69,11 @@ type CapturedEntrySource = {
 };
 
 type PlannerDraft = Partial<SavedSettings> & {
+  executionMethod?: PaperTicket["method"];
+  executionQuantity?: number;
+  hardCap?: number;
+  triggerPrice?: number;
+  planRevision?: string;
   atrMultiplier?: number;
   capturedEntrySource?: CapturedEntrySource;
   entryPrice?: number;
@@ -146,8 +155,8 @@ function trailingFromMode(mode: string): TrailingRule {
   return { mode: "Manual", stopPrice: 1 };
 }
 
-export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void}) {
-  const initialSnapshot = demoPlanningMarketSnapshot("NVDA");
+export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution}) {
+  const initialSnapshot = demo ? demoPlanningMarketSnapshot("NVDA") : null;
   const [symbol, setSymbol] = useState("NVDA");
   const [side, setSide] = useState<TradeSide>("Long");
   const [entryPrice, setEntryPrice] = useState(initialSnapshot?.close ?? 0);
@@ -185,6 +194,11 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
   const [duration, setDuration] = useState<OrderDuration>("DAY");
   const [protectionOrderType, setProtectionOrderType] = useState<ProtectionOrderType>("STP");
   const [protectionLimitPrice, setProtectionLimitPrice] = useState(0);
+  const [executionMethod, setExecutionMethod] = useState<PaperTicket["method"]>("Limit");
+  const [executionQuantity, setExecutionQuantity] = useState(0);
+  const [hardCap, setHardCap] = useState(0);
+  const [triggerPrice, setTriggerPrice] = useState(0);
+  const [planRevision, setPlanRevision] = useState("");
 
   useEffect(() => setContextImportPending(false), [context]);
   useModalAccessibility(settingsOpen, settingsRef, () => setSettingsOpen(false));
@@ -225,6 +239,9 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
         if (["STP", "STP LMT"].includes(String(draft.protectionOrderType))) setProtectionOrderType(draft.protectionOrderType!);
         if (Number(draft.protectionLimitPrice) > 0) setProtectionLimitPrice(Number(draft.protectionLimitPrice));
         if (draft.symbol) setSymbol(draft.symbol);
+        if (["Limit", "Normal", "Breakout"].includes(draft.executionMethod ?? "")) setExecutionMethod(draft.executionMethod!);
+        setExecutionQuantity(draft.executionQuantity ?? 0); setHardCap(draft.hardCap ?? 0); setTriggerPrice(draft.triggerPrice ?? 0);
+        setPlanRevision(draft.planRevision ?? "legacy");
         if (draft.side === "Long" || draft.side === "Short") setSide(draft.side);
         if (Number(draft.entryPrice) > 0) setEntryPrice(Number(draft.entryPrice));
         if (Number(draft.stopPrice) > 0) setStopPrice(Number(draft.stopPrice));
@@ -397,9 +414,11 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
   function stageEntry() {
     if (!result.valid) return;
     if (!planIdentity.current) planIdentity.current = crypto.randomUUID();
+    const revision = crypto.randomUUID();
     window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify({
       schemaVersion: 2,
       planId: planIdentity.current,
+      planRevision: revision, executionMethod, executionQuantity, hardCap, triggerPrice,
       symbol: symbol.trim().toUpperCase(), side, entryPrice, stopPrice: effectiveStopPrice, stopSource,
       atrMultiplier, capturedEntrySource, marketSnapshot: marketLoad.snapshot,
       accountEquity, riskPercent, maxAllocationPercent, result,
@@ -408,6 +427,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
       savedAt: new Date().toISOString(),
     }));
     setStageState("staged");
+    setPlanRevision(revision);
     setBrokerIntentCheck({ state: "unchecked", message: "Saved locally. Broker validation has not run and no order was submitted." });
   }
 
@@ -436,23 +456,11 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
     setBrokerIntentCheck({ state: "checking", message: "Checking the qualified contract, minimum tick and executable-side quote…" });
     try {
       const now = new Date();
-      const payload = demo ? {
+      if (!demo) throw new Error("Use the local authenticated planner to review a paper order.");
+      const payload = {
         observedAt: now.toISOString(), contract: { conId: 265598, symbol: symbol.trim().toUpperCase(), secType: "STK" as const, exchange: "SMART", currency: "USD", minimumTick: .01 },
         quote: { bid: entryPrice - .01, ask: entryPrice + .01, complete: true }, executable: true, source: "Simulated fixture", sessionPolicy: sessionSelection.policy,
-      } : await fetch("/v1/ibkr/paper/intents", { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json", "X-Brontide-Local": "1" }, body: JSON.stringify({
-        intentId: crypto.randomUUID(), idempotencyKey: `${planIdentity.current}:entry:v1`, planId: planIdentity.current,
-        campaignId: `${planIdentity.current}:campaign`, symbol: symbol.trim().toUpperCase(), direction: side, method: sessionSelection.policy.entryOrderType === "LMT" ? "Limit" : "Normal",
-        quantity: result.shares, planningPrice: entryPrice, hardCap: side === "Long" ? entryPrice : entryPrice,
-        stopPrice: effectiveStopPrice, maximumPriceDriftPercent: .5, exitPlan,
-        sessionMode, duration, protectionOrderType,
-        ...(protectionOrderType === "STP LMT" ? { protectionLimitPrice } : {}),
-      }) }).then(async response => {
-        const value = await response.json() as { detail?: string; quoteObservedAt?: string; executableQuote?: number; quoteSide?: "ask"|"bid"; contract?: { conId: number; symbol: string; secType: "STK"; exchange: string; currency: string; minimumTick: number }; status?: string; message?: string; sessionPolicy?: ExecutionSessionPolicy };
-        if (!response.ok) throw new Error(value.detail ?? `Paper prerequisite check failed (${response.status}).`);
-        if (!value.quoteObservedAt || !value.contract || value.executableQuote == null || !value.quoteSide) throw new Error("The persisted intent response is incomplete.");
-        const spread = value.contract.minimumTick;
-        return { observedAt: value.quoteObservedAt, contract: value.contract, quote: value.quoteSide === "ask" ? { bid: value.executableQuote-spread, ask:value.executableQuote, complete:true } : { bid:value.executableQuote, ask:value.executableQuote+spread, complete:true }, executable:true, source:"IBKR TWS", sessionPolicy: value.sessionPolicy };
-      });
+      };
       const checked = validateBrokerReadiness({
         contract: payload.contract, expectedSymbol: symbol, direction: side, planningPrice: entryPrice,
         quote: { bid: payload.quote.bid, ask: payload.quote.ask, observedAt: payload.observedAt }, now: now.toISOString(),
@@ -486,7 +494,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
     if (exitState.error) { setExitMessage(exitState.error); return; }
     try {
       window.localStorage.setItem(demoStorageKey(AFTER_FILL_KEY,demo), JSON.stringify({ schemaVersion: EXIT_PLAN_SCHEMA_VERSION, definition: exitPlan, savedAt: new Date().toISOString() }));
-      setAfterFillStaged(true); setExitPlanDirty(false); setExitMessage("Exit-plan draft saved locally. No broker action was applied.");
+      setPlanRevision(crypto.randomUUID()); setAfterFillStaged(true); setExitPlanDirty(false); setExitMessage("Exit-plan draft saved locally. No broker action was applied.");
     } catch { setExitMessage("Exit-plan save failed. Your edits remain on screen and the saved plan was not replaced."); }
   }
 
@@ -539,6 +547,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
         <div>
           <p className="eyebrow">Plan &amp; Position</p>
           <h1>Trade planner</h1>
+          {paper && !demo && <BrokerConnection paper={paper} />}
           <p>Calculate position size and save your intended entry and exit settings.</p>
         </div>
         <div className="trade-risk-banner" aria-label="Risk controls">
@@ -548,7 +557,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
           <button type="button" onClick={openSettings}>Change</button>
         </div>
       </header>
-      {context && <p className="workspace-notice">Chart context: {context.symbol} · {context.mode} · {context.adjustment}{context.asOf?` · ${context.asOf}`:""}{context.tradeDraft?` · long ${price(context.tradeDraft.entry)} / stop ${price(context.tradeDraft.stop)} / ${context.tradeDraft.targets.length} target${context.tradeDraft.targets.length===1?"":"s"}`:""}. Existing saved plan was not changed. {!contextImportPending?<button onClick={()=>setContextImportPending(true)}>{context.tradeDraft?"Load drawing":"Use instrument"}</button>:<span role="alert"> Load into the current draft? <button onClick={()=>{editPlan();restoredDraft.current=false;entryEdited.current=Boolean(context.tradeDraft);setSymbol(context.symbol);setSide(context.tradeDraft?.side??"Long");setEntryPrice(context.tradeDraft?.entry??0);setStopPrice(context.tradeDraft?.stop??0);setStopSource(context.tradeDraft?"Manual":"ATR");setCapturedEntrySource({source:context.tradeDraft?"Manual":context.mode==="sample"?"Simulated fixture":"Local EOD close",observedAt:new Date().toISOString(),sessionDate:context.asOf});if(context.tradeDraft?.targets.length){const count=Math.min(2,context.tradeDraft.targets.length) as TargetCount;const imported=makeExitPlan(count,runnerCount);editExitPlan({...imported,legs:imported.legs.map((leg,index)=>leg.role==="Target"&&context.tradeDraft?.targets[index]?{...leg,target:{mode:"Price",price:context.tradeDraft.targets[index]}}:leg)});}setContextImportPending(false);}}>Confirm import</button> <button onClick={()=>setContextImportPending(false)}>Cancel</button></span>} <button onClick={()=>onChart?.(context)}>Open chart</button></p>}
+      {context && <p className="workspace-notice">Chart context: {context.symbol} · {context.mode} · {context.adjustment}{context.asOf?` · ${context.asOf}`:""}{context.tradeDraft?` · long ${price(context.tradeDraft.entry)} / stop ${price(context.tradeDraft.stop)} / ${context.tradeDraft.targets.length} target${context.tradeDraft.targets.length===1?"":"s"}`:""}. Existing saved plan was not changed. {!contextImportPending?<button onClick={()=>setContextImportPending(true)}>{context.tradeDraft?"Load drawing":"Use instrument"}</button>:<span role="alert"> Load into the current draft? <button disabled={Boolean(paper && context.mode === "sample")} title={paper && context.mode === "sample" ? "Sample chart data cannot enter paper execution" : undefined} onClick={()=>{editPlan();restoredDraft.current=false;entryEdited.current=Boolean(context.tradeDraft);setSymbol(context.symbol);setSide(context.tradeDraft?.side??"Long");setEntryPrice(context.tradeDraft?.entry??0);setStopPrice(context.tradeDraft?.stop??0);setStopSource(context.tradeDraft?"Manual":"ATR");setCapturedEntrySource({source:context.tradeDraft?"Manual":context.mode==="sample"?"Simulated fixture":"Local EOD close",observedAt:new Date().toISOString(),sessionDate:context.asOf});if(context.tradeDraft?.targets.length){const count=Math.min(2,context.tradeDraft.targets.length) as TargetCount;const imported=makeExitPlan(count,runnerCount);editExitPlan({...imported,legs:imported.legs.map((leg,index)=>leg.role==="Target"&&context.tradeDraft?.targets[index]?{...leg,target:{mode:"Price",price:context.tradeDraft.targets[index]}}:leg)});}setContextImportPending(false);}}>Confirm import</button> <button onClick={()=>setContextImportPending(false)}>Cancel</button></span>} <button onClick={()=>onChart?.(context)}>Open chart</button></p>}
 
       <section className="trade-actionbar" aria-label="Quick trade actions">
         <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={stageState === "draft" && (!result.valid || !symbol.trim())} onClick={stageState === "staged" ? cancelStage : stageEntry}>
@@ -557,7 +566,7 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
         <button type="button" className={`trade-action-button exits ${afterFillStaged && !exitPlanDirty ? "active" : ""}`} disabled={!result.valid} onClick={afterFillStaged && !exitPlanDirty ? cancelAfterFill : stageAfterFill}>
           {afterFillStaged && !exitPlanDirty ? "Unsave exits" : "Save exits"}
         </button>
-        <span className="trade-execution-state">Planning only · simulated states are never broker confirmation</span>
+        <span className="trade-execution-state">{paper ? "Save drafts, then review the exact paper order" : "Planning only · simulated states are never broker confirmation"}</span>
       </section>
 
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
@@ -674,7 +683,22 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
         </div>
       </section>
 
-      <section className="paper-intent-readiness" aria-labelledby="paper-intent-title">
+      {paper && !demo ? <>
+        <div className="broker-execution-fields">
+          <label>Order method<select aria-label="Order method" value={executionMethod} onChange={e => { editPlan(); setExecutionMethod(e.target.value as PaperTicket["method"]); }}><option value="Limit">Limit</option><option value="Normal">Capped midpoint</option><option value="Breakout">Stop-limit breakout</option></select></label>
+          <label>Requested shares<input aria-label="Requested shares" type="number" min="1" step="1" placeholder={`Calculated: ${result.shares}`} value={executionQuantity || ""} onChange={e => { editPlan(); setExecutionQuantity(safeNumber(e.target.value)); }} /></label>
+          <label>Entry price cap<input aria-label="Entry price cap" type="number" min="0.0001" step="any" value={hardCap || entryPrice || ""} onChange={e => { editPlan(); setHardCap(safeNumber(e.target.value)); }} /></label>
+          {executionMethod === "Breakout" && <label>Entry trigger<input aria-label="Entry trigger" type="number" min="0.0001" step="any" value={triggerPrice || ""} onChange={e => { editPlan(); setTriggerPrice(safeNumber(e.target.value)); }} /></label>}
+        </div>
+        <p className="trade-exit-help">Calculated size {result.shares} shares · requested {executionQuantity || result.shares}. Quantity is never reduced automatically. Cleanup uses the fixed initial stop as its minimum price. Short fill-bound, auction and overnight submissions remain blocked.</p>
+        {executionQuantity > result.shares && <p role="alert">Requested paper quantity must not exceed calculated sizing.</p>}
+        <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
+          planId: planIdentity.current, planRevision, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
+          method: executionMethod, quantity: executionQuantity || result.shares, planningPrice: entryPrice, hardCap: hardCap || entryPrice,
+          ...(executionMethod === "Breakout" ? { triggerPrice } : {}), stopPrice: effectiveStopPrice, cleanupFloor: effectiveStopPrice,
+          sessionMode, duration, protectionOrderType, ...(protectionOrderType === "STP LMT" ? { protectionLimitPrice } : {}), exitPlan,
+        }} />
+      </> : <section className="paper-intent-readiness" aria-labelledby="paper-intent-title">
         <div>
           <p className="eyebrow">Paper execution · approval locked</p>
           <h2 id="paper-intent-title">Intent readiness</h2>
@@ -687,9 +711,9 @@ export function TradePlanner({ context, onChart, demo=false }: {demo?:boolean;co
           <button type="button" disabled aria-describedby="paper-submission-lock">Submit paper order</button>
         </div>
         <p id="paper-submission-lock" className="paper-intent-lock">TWS Read-Only and Brontide submission lock must remain enabled until the reviewed test batch receives explicit approval.</p>
-      </section>
+      </section>}
 
-      <p className="trade-safety-note"><span>i</span> Plans and exit settings are stored in this browser. Nothing is sent to a broker.</p>
+      <p className="trade-safety-note"><span>i</span> {paper && !demo ? "Saving keeps a draft. Only exact paper-order confirmation can send an order." : "Plans and exit settings are stored in this browser. Nothing is sent to a broker."}</p>
 
       {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
         <section ref={settingsRef} tabIndex={-1} className="modal trade-settings-modal" role="dialog" aria-modal="true" aria-labelledby="risk-settings-title" onMouseDown={(event) => event.stopPropagation()}>
