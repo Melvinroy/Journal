@@ -10,6 +10,7 @@ from .paper_domain import summarize
 SYMBOLS = ("F", "SOFI", "INTC", "BAC", "XLF", "T", "PFE", "C", "UBER")
 LIMITS = {"sharesPerCampaign": 3, "campaigns": 2, "entryNotional": 500, "plannedRiskPerCampaign": 10, "totalPlannedRisk": 20}
 SCENARIOS = ("Limit", "Normal", "Breakout", "one target", "two targets", "one runner", "two runners", "breakeven", "amendment", "entry cancellation", "bounded closure", "reconnection")
+CAP_REJECTION = "The refreshed executable quote crossed the saved hard cap."
 
 
 def now(): return datetime.now(timezone.utc)
@@ -71,6 +72,28 @@ class PaperTestSessions:
         session.pop("userId", None)
         return session
 
+    def reject_unsent(self, session, attempt, reason):
+        """Record a known validation rejection, never classify a socket failure."""
+        if reason != CAP_REJECTION: raise PaperSafetyError("Uncertain submission cannot be classified as a price rejection.")
+        s = self.s
+        with s.store.transaction() as db:
+            batch = s.store.get(db, "batch", attempt["batchId"])
+            if batch["accountBinding"] != session["accountBinding"] or batch["sourceIdentity"] != session["sourceIdentity"]:
+                raise PaperSafetyError("Rejected ticket identity differs from the approved session.")
+            if db.execute("SELECT 1 FROM objects WHERE kind='campaign' AND id=?", (attempt["campaignId"],)).fetchone() or db.execute(
+                "SELECT 1 FROM commands WHERE id=? OR campaign=?", (attempt["commandId"], attempt["campaignId"])).fetchone():
+                raise PaperSafetyError("Durable submission evidence exists; reconcile instead of rejecting or retrying.")
+            receipt = {"sessionId": session["id"], "batchId": attempt["batchId"], "commandId": attempt["commandId"],
+                       "reason": reason, "at": now().isoformat(), "reviewedSource": s.source(), "userId": s.operator_id}
+            s.store.event(db, "preflight-rejection:" + attempt["commandId"], receipt)
+            s.store.put(db, "entry-rejection", attempt["batchId"], receipt)
+            attempt["result"] = {"state": "rejected before transmission", "reason": reason}
+            s.store.put(db, "test-session", session["id"], session)
+
+    def rejected(self, attempt):
+        with self.s.store.transaction() as db:
+            return db.execute("SELECT 1 FROM objects WHERE kind='entry-rejection' AND id=?", (attempt["batchId"],)).fetchone() is not None
+
     def start(self, command_id, target=200):
         s = self.s
         s._connected()
@@ -119,6 +142,11 @@ class PaperTestSessions:
         if not s.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are locked.")
         if session["state"] == "Complete": return self.status()
         s.reconcile()
+        # Recover the captured preflight failure only under its precise reason,
+        # with durable proof that transmission was never reached.
+        if session["state"] == "Halted" and session["message"] == CAP_REJECTION and session["attempts"]:
+            attempt = session["attempts"][-1]
+            if not self.rejected(attempt): self.reject_unsent(session, attempt, CAP_REJECTION)
         if session["sourceIdentity"] != s.source():
             # Explicit authenticated resume can renew the source approval only
             # after every old campaign is economically complete and cleared.
@@ -126,7 +154,7 @@ class PaperTestSessions:
             if any(c["state"] not in {"Closed", "Cancelled"} or
                    (c["state"] == "Closed" and not summarize(c)["costsComplete"]) for c in campaigns.values()):
                 raise PaperSafetyError("Close and reconcile every campaign before approving the repaired source.")
-            if any(a["campaignId"] not in campaigns or any(v["state"] == "pending" for v in a.get("actions", {}).values()) for a in session["attempts"]):
+            if any((a["campaignId"] not in campaigns and not self.rejected(a)) or any(v["state"] == "pending" for v in a.get("actions", {}).values()) for a in session["attempts"]):
                 raise PaperSafetyError("Uncertain session operations block source approval.")
             if any(not q.get("resolved") for q in s.store.all("quarantine")):
                 raise PaperSafetyError("Quarantined evidence blocks source approval.")
@@ -178,6 +206,7 @@ class PaperTestSessions:
                 raise PaperSafetyError("Another campaign requires attention before session continuation.")
             completed, active = 0, []
             for attempt in session["attempts"]:
+                if self.rejected(attempt): continue
                 c = campaigns.get(attempt["campaignId"])
                 if c is None: raise PaperSafetyError("Persisted submission has no confirmed campaign; no retry is permitted.")
                 result = summarize(c)
@@ -241,8 +270,14 @@ class PaperTestSessions:
                 attempt = {"index": index, "batchId": batch["id"], "campaignId": batch["id"] + ":0", "ticket": ticket,
                            "cancellationCase": cancellation, "commandId": str(uuid.uuid4()), "createdAt": now().isoformat(), "actions": {}}
                 session["attempts"].append(attempt); self.save(session)
-                s.approve(batch["id"], batch["digest"], str(uuid.uuid4()))
-                s.submit(batch["id"], 0, attempt["commandId"])
+                try:
+                    s.approve(batch["id"], batch["digest"], str(uuid.uuid4()))
+                    s.submit(batch["id"], 0, attempt["commandId"])
+                except PaperSafetyError as exc:
+                    if str(exc) != CAP_REJECTION: raise
+                    self.reject_unsent(session, attempt, str(exc))
+                    session["message"] = "Price moved beyond the exact cap; ticket rejected without transmission"
+                    self.save(session); return
                 session["message"] = f"{completed}/{session['target']} completed; exact protected ticket submitted"
                 self.save(session); return
             raise PaperSafetyError("No eligible candidate: " + "; ".join(reasons))

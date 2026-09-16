@@ -465,6 +465,10 @@ class PaperService:
 
     def _authority(self, batch, entry=False):
         self._connected()
+        if entry:
+            with self.store.transaction() as db:
+                if db.execute("SELECT 1 FROM objects WHERE kind='entry-rejection' AND id=?", (batch["id"],)).fetchone():
+                    raise PaperSafetyError("This exact ticket was rejected before transmission; prepare a new ticket.")
         if self.operator_id and (not self.operator_deadline or utcnow() >= self.operator_deadline):
             self.disarm()
             raise PaperSafetyError("Brontide sign-in lease expired; review before resuming.")

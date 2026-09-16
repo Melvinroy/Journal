@@ -105,6 +105,61 @@ def test_session_duplicate_start_cannot_change_target(service):
     with pytest.raises(PaperSafetyError, match="identity"): service.test_sessions.start("session", 200)
 
 
+def test_price_rejection_is_unsent_not_a_round_trip_and_cannot_be_retried(service, monkeypatch):
+    from brontide_eod.paper_test_session import CAP_REJECTION
+    authenticate(service)
+    service.test_sessions.start("session", 2)
+    original = service.submit
+    monkeypatch.setattr(service, "submit", lambda *args: (_ for _ in ()).throw(PaperSafetyError(CAP_REJECTION)))
+    service.test_sessions.step()
+    session = service.test_sessions.status()
+    attempt = session["attempts"][0]
+    assert session["state"] == "Running" and session["completed"] == 0
+    assert attempt["result"]["state"] == "rejected before transmission"
+    assert not service.client.writes
+    with pytest.raises(PaperSafetyError, match="rejected before transmission"):
+        original(attempt["batchId"], 0, attempt["commandId"])
+    monkeypatch.setattr(service, "submit", original)
+    service.test_sessions.step()
+    assert service.test_sessions.status()["state"] == "Running"
+    assert len(service.test_sessions.status()["attempts"]) == 2
+    assert service.test_sessions.status()["completed"] == 0
+
+
+def test_matching_error_text_after_transmission_is_never_classified_unsent(service, monkeypatch):
+    from brontide_eod.paper_test_session import CAP_REJECTION
+    authenticate(service)
+    service.test_sessions.start("session", 2)
+    original = service.submit
+    def transmitted(*args):
+        original(*args)
+        raise PaperSafetyError(CAP_REJECTION)
+    monkeypatch.setattr(service, "submit", transmitted)
+    service.test_sessions.step()
+    assert service.test_sessions.status()["state"] == "Halted"
+    assert not service.store.all("entry-rejection")
+    assert service.client.writes
+
+
+def test_captured_preflight_recovery_requires_exact_reason_and_absent_commands(service, monkeypatch):
+    from brontide_eod.paper_test_session import CAP_REJECTION
+    authenticate(service)
+    service.test_sessions.start("session", 2)
+    monkeypatch.setattr(service, "submit", lambda *args: (_ for _ in ()).throw(PaperSafetyError(CAP_REJECTION)))
+    # Reproduce the previous version halting before it could classify the rejection.
+    original = service.test_sessions.reject_unsent
+    monkeypatch.setattr(service.test_sessions, "reject_unsent", lambda *args: (_ for _ in ()).throw(PaperSafetyError(CAP_REJECTION)))
+    service.test_sessions.step()
+    monkeypatch.setattr(service.test_sessions, "reject_unsent", original)
+    assert service.test_sessions.status()["state"] == "Halted"
+    service.source = lambda: "fixed-preflight-source"
+    service.test_sessions.resume()
+    session = service.test_sessions.status()
+    assert session["state"] == "Running"
+    assert session["attempts"][0]["result"]["state"] == "rejected before transmission"
+    assert not service.client.writes
+
+
 def test_approved_session_reconnect_reconciles_protection_without_repeating_entry(service):
     from brontide_eod.paper_service import PaperService
     authenticate(service)

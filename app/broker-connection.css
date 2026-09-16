@@ -11,6 +11,8 @@
 .broker-execution-fields input,.broker-execution-fields select {width:100%;min-width:0;}
 .broker-connection :focus-visible,.broker-order-review :focus-visible {outline:3px solid #13875b;outline-offset:3px;}
 .broker-campaign-actions {padding-top:12px;}.broker-campaign-actions button {min-height:40px;}
+.broker-campaign-actions .editor-actions {flex-wrap:wrap;gap:8px;}
+.broker-campaign-actions .editor-actions button {flex:1 1 130px;white-space:normal;min-width:0;}
 @media(max-width:600px){.broker-connection-detail{position:static;width:auto;margin-top:8px;}.broker-connection{width:100%;}.broker-execution-fields{flex-direction:column;}.broker-campaign-actions button{display:inline-flex;min-height:44px;}}
 
 .broker-connection {width:fit-content;margin:8px 0;}

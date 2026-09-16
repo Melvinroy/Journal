@@ -153,6 +153,20 @@ test("missing execution timestamps and reconciliation do not crash the position 
   await expect(drawer.getByRole("button", {name:"Reconcile owned campaign",exact:true})).toBeEnabled();
   await drawer.getByRole("button", {name:"Reconcile owned campaign",exact:true}).click();
   await expect(drawer).toContainText("This sends no orders");
+  for (const width of [1280,390,1280]) {
+    await page.setViewportSize({width,height:900});
+    const bounds = await drawer.evaluate(el => {
+      const panel = el.getBoundingClientRect();
+      return Array.from(el.querySelectorAll('.broker-campaign-actions button')).map(button => {
+        const r = button.getBoundingClientRect();
+        return r.left >= panel.left && r.right <= panel.right && r.width > 60;
+      });
+    });
+    expect(bounds.every(Boolean)).toBe(true);
+    await expect(drawer.getByRole('button',{name:'Cancel action review'})).toBeVisible();
+  }
+  await drawer.getByRole('button',{name:'Cancel action review'}).press('Enter');
+  await expect(drawer.getByRole('group',{name:'Confirm paper position action'})).toHaveCount(0);
 });
 
 
