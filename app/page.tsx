@@ -11,6 +11,7 @@ import { CatalystDashboard } from "./CatalystDashboard";
 import { ScansDashboard } from "./ScansDashboard";
 import { ScannerDashboard } from "./ScannerDashboard";
 import { usePaperExecution } from "./usePaperExecution";
+import "./trading-refinement.css";
 import { paperJournalRow } from "../lib/paper-execution";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
@@ -871,7 +872,7 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
   const paddedMax = max + spread * 0.12;
   const x = (index: number) =>
     left +
-    (index / Math.max(cumulative.length - 1, 1)) * (width - left - right);
+    (cumulative.length === 1 ? 0.5 : index / (cumulative.length - 1)) * (width - left - right);
   const y = (value: number) =>
     top +
     ((paddedMax - value) / (paddedMax - paddedMin)) * (height - top - bottom);
@@ -924,8 +925,8 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
           y2={y(0)}
           className="zero-line"
         />
-        <polygon points={area} fill="url(#equity-area)" />
-        <polyline points={points} className="equity-line" />
+        {cumulative.length > 1 && <polygon points={area} fill="url(#equity-area)" />}
+        {cumulative.length > 1 && <polyline points={points} className="equity-line" />}
         {cumulative.map((value, index) => (
           <circle
             key={ordered[index].id}
@@ -944,9 +945,9 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
             </title>
           </circle>
         ))}
-        <text x={left} y={height - 8} className="axis-label">
+        {ordered.length > 1 && <text x={left} y={height - 8} className="axis-label">
           {shortDate(ordered[0].date)}
-        </text>
+        </text>}
         <text
           x={(left + width - right) / 2}
           y={height - 8}
@@ -955,14 +956,14 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
         >
           {shortDate(ordered[Math.floor(ordered.length / 2)].date)}
         </text>
-        <text
+        {ordered.length > 1 && <text
           x={width - right}
           y={height - 8}
           textAnchor="end"
           className="axis-label"
         >
           {shortDate(ordered[ordered.length - 1].date)}
-        </text>
+        </text>}
       </svg>
     </div>
   );
@@ -997,7 +998,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
   const height = 300;
   const left = 24;
   const right = 4;
-  const top = 28;
+  const top = 40;
   const chartBottom = 182;
   const rugTop = 238;
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
@@ -1097,7 +1098,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
         </text>
         <text
           x={Math.max(xValue(med) - 4, 48)}
-          y={23}
+          y={Math.abs(xValue(mean) - xValue(med)) < 90 ? 35 : 23}
           textAnchor="end"
           className="reference-label"
         >
@@ -1234,6 +1235,8 @@ export default function Home() {
   const [equityView, setEquityView] = useState<EquityView>("equity");
   const [setupFilter, setSetupFilter] = useState("all");
   const [directionFilter, setDirectionFilter] = useState("all");
+  const [journalSource, setJournalSource] = useState("all");
+  const [journalSearch, setJournalSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [todayLabel, setTodayLabel] = useState("Trading overview");
   const [reportingTimezone, setReportingTimezone] = useState("Local timezone");
@@ -1475,10 +1478,12 @@ export default function Home() {
       return (
         (!cutoff || !trade.date || new Date(reportingDate) >= cutoff) &&
         (setupFilter === "all" || trade.setup === setupFilter) &&
-        (directionFilter === "all" || trade.side === directionFilter)
+        (directionFilter === "all" || trade.side === directionFilter) &&
+        (journalSource === "all" || (journalSource === "paper" ? trade.id.startsWith("paper:") : !trade.id.startsWith("paper:"))) &&
+        trade.symbol.toUpperCase().includes(journalSearch.trim().toUpperCase())
       );
     });
-  }, [journalTrades, range, setupFilter, directionFilter]);
+  }, [journalTrades, range, setupFilter, directionFilter, journalSource, journalSearch]);
 
   const measuredTrades = useMemo(
     () => filteredTrades.filter(
@@ -1672,7 +1677,7 @@ export default function Home() {
           ? "This year"
           : "All time";
   const latestTrades = [...tableTrades].sort((a, b) =>
-    b.date.localeCompare(a.date),
+    (b.closedAt ?? b.date).localeCompare(a.closedAt ?? a.date),
   );
 
   useEffect(() => {
@@ -1947,7 +1952,7 @@ export default function Home() {
           <header className="topbar">
             <div>
               <p className="eyebrow">{todayLabel}</p>
-              <h1>{greeting}</h1>
+              <h1>Trading journal</h1>
               <small className="reporting-timezone">Reporting timezone: {reportingTimezone}</small>
             </div>
             <div className="header-actions">
@@ -1959,7 +1964,7 @@ export default function Home() {
                     ? "Syncing…"
                     : cloudError
                       ? "Sync issue"
-                      : "Cloud synced"}
+                      : paper.enabled ? "Cloud history synced · paper local" : "Cloud synced"}
               </span>
               <label className="range-control">
                 <Icon name="calendar" size={16} />
@@ -1978,7 +1983,7 @@ export default function Home() {
                 <span className="sr-only">Setup cohort</span>
                 <select value={setupFilter} onChange={(event) => setSetupFilter(event.target.value)}>
                   <option value="all">All setups</option>
-                  {[...new Set(trades.map(trade => trade.setup))].sort().map(setup => <option key={setup}>{setup}</option>)}
+                  {[...new Set(journalTrades.map(trade => trade.setup))].sort().map(setup => <option key={setup}>{setup}</option>)}
                 </select>
               </label>
               <label className="range-control compact-filter">
@@ -2035,10 +2040,16 @@ export default function Home() {
             </section>
           )}
 
+          <div className="journal-record-controls">
+            <label>Find symbol<input type="search" aria-label="Find Journal symbol" placeholder="Symbol" value={journalSearch} onChange={e => setJournalSearch(e.target.value)} /></label>
+            <label>Record source<select aria-label="Journal record source" value={journalSource} onChange={e => setJournalSource(e.target.value)}><option value="all">All sources</option><option value="paper">IBKR paper · local</option><option value="history">Historical / manual</option></select></label>
+            <span>{filteredTrades.length} records{paper.enabled ? " · Paper executions stay on this computer" : ""}</span>
+          </div>
+          {paper.enabled && !paper.status && <p className="workspace-notice" role="status">Local paper records are unavailable. Totals include loaded records only.</p>}
           <section className="journal-metric-grid" aria-label="Trading statistics">
             <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? formatMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
-            <MetricCard label="Win rate" value={`${stats.winRate.toFixed(2)}%`} detail={`${stats.wins} wins · ${stats.losses} losses · ${stats.breakevens} flat`} />
-            <MetricCard label="Avg planned R:R" value={`1:${stats.avgPlanned.toFixed(1)}`} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
+            <MetricCard label="Win rate" value={measuredTrades.length ? `${stats.winRate.toFixed(2)}%` : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail={`${stats.wins} wins · ${stats.losses} losses · ${stats.breakevens} flat`} />
+            <MetricCard label="Avg planned R:R" value={stats.plannedEligible.length ? `1:${stats.avgPlanned.toFixed(1)}` : "Unavailable"} tone={stats.plannedEligible.length ? "neutral" : "unavailable"} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
             <MetricCard label="Expectancy in R" title="Mean final net result divided by frozen initial dollar risk." value={stats.rEligible.length ? formatR(stats.avgR) : "Unavailable"} tone={journalSemanticTone(stats.avgR, stats.rEligible.length > 0)} detail={`${stats.rEligible.length} closed trades with valid risk`} />
             <MetricCard label="Profit factor" value={stats.profitFactor == null ? "Unavailable" : stats.profitFactor === "No losses" ? stats.profitFactor : stats.profitFactor.toFixed(2)} tone={stats.profitFactor == null ? "unavailable" : "neutral"} detail={`${measuredTrades.length} eligible closed trades`} />
             <MetricCard label="Closed" title="Closed campaigns with complete execution history and known costs." value={measuredTrades.length} detail={`${stats.wins}W / ${stats.losses}L / ${stats.breakevens}BE`} />
@@ -2046,8 +2057,8 @@ export default function Home() {
             <MetricCard label="Avg win" value={stats.averageWin == null ? "Unavailable" : formatMoney(stats.averageWin)} tone={journalSemanticTone(stats.averageWin)} detail={`${stats.wins} winning trades`} />
             <MetricCard label="Avg loss" value={stats.averageLoss == null ? "Unavailable" : formatMoney(stats.averageLoss)} tone={journalSemanticTone(stats.averageLoss)} detail={`${stats.losses} losing trades`} />
             <MetricCard label="Payoff" value={secondaryStats.payoff == null ? "Unavailable" : secondaryStats.payoff.toFixed(2)} tone={secondaryStats.payoff == null ? "unavailable" : "neutral"} detail="Average win ÷ average loss" />
-            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={formatMoney(-secondaryStats.maxDrawdown)} tone={journalSemanticTone(-secondaryStats.maxDrawdown)} detail="Selected closed-trade curve" />
-            <MetricCard label="Longest loss streak" value={secondaryStats.longestLosingStreak} detail="Consecutive losing trades" />
+            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? formatMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
+            <MetricCard label="Longest loss streak" value={measuredTrades.length ? secondaryStats.longestLosingStreak : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail="Consecutive losing trades" />
           </section>
           <p className="journal-eligibility-summary" aria-label="Journal eligibility summary">
             Eligibility: {measuredTrades.length} measured · {filteredTrades.length} recorded · {filteredTrades.length - measuredTrades.length} excluded as open or incomplete · {stats.multipleCurrencies ? "currencies separated" : stats.currency ?? "no currency cohort"}
@@ -2082,7 +2093,7 @@ export default function Home() {
               </div>
               <div className="chart-summary">
                 <strong>
-                  {equityView === "drawdown"
+                  {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length === 0 ? "Unavailable" : equityView === "drawdown"
                     ? formatMoney(-secondaryStats.maxDrawdown)
                     : equityMode === "dollar"
                       ? formatMoney(stats.pnl)
@@ -2108,14 +2119,14 @@ export default function Home() {
               <div className="distribution-summary">
                 <span>
                   Average{" "}
-                  <b className={stats.avgR >= 0 ? "positive" : "negative"}>
-                    {formatR(stats.avgR)}
+                  <b className={journalSemanticClass(journalSemanticTone(stats.avgR, rMeasuredTrades.length > 0))}>
+                    {rMeasuredTrades.length ? formatR(stats.avgR) : "Unavailable"}
                   </b>
                 </span>
                 <span>
                   Median{" "}
                   <b>
-                    {formatR(median(rMeasuredTrades.map((trade) => trade.r)))}
+                    {rMeasuredTrades.length ? formatR(median(rMeasuredTrades.map((trade) => trade.r))) : "Unavailable"}
                   </b>
                 </span>
               </div>
@@ -2160,6 +2171,7 @@ export default function Home() {
                   <span>Final Net R</span>
                   <span>Review</span>
                 </div>
+                {latestTrades.length === 0 && <p className="position-empty">No trades match these filters.</p>}
                 {latestTrades.map((trade, index) => (
                   <div className="journal-trade-group" key={trade.id}>
                     <div
@@ -2204,7 +2216,7 @@ export default function Home() {
                         {trade.finalRAvailable === false || trade.status !== "Closed" ? "Unavailable" : formatR(trade.r)}
                       </span>
                       <span>
-                        {reviewStore.value[trade.id] ? "Reviewed" : `Grade ${trade.grade}`}
+                        {reviewStore.value[trade.id] ? "Reviewed" : trade.id.startsWith("paper:") ? "Not reviewed" : `Grade ${trade.grade}`}
                       </span>
                     </div>
                     {expandedTrade === trade.id && (
@@ -2232,7 +2244,7 @@ export default function Home() {
                           <span><small>Entered / exited / remaining</small><b>{trade.enteredQuantity ?? "—"} / {trade.exitedQuantity ?? "—"} / {trade.openQuantity ?? "—"}</b></span>
                           <span><small>Weighted exit</small><b>{trade.weightedExit ? formatMoney(trade.weightedExit, false) : "Unavailable"}</b></span>
                           <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && trade.status === "Closed" && trade.costs != null))}>{trade.grossRealized == null ? "Unavailable" : `${formatMoney(trade.grossRealized)} / ${trade.costs == null ? "provisional" : formatMoney(trade.costs)} / ${trade.status === "Closed" && trade.costs != null ? formatMoney(trade.pnl) : "Unavailable"}`}</b></span>
-                          <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
+                          <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : trade.status === "Closed" ? "Closure time unavailable" : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
                         </div>
                         <div className="journal-plan-detail">
                           <div><strong>Planned exits</strong><p>{trade.journalSnapshot?.plannedTargets?.map(target => `${target.label} ${target.allocationPercent}%${target.multipleR ? ` @ ${target.multipleR}R` : target.price ? ` @ ${formatMoney(target.price, false)}` : ""}`).join(" · ") || "Unavailable"}</p><p>{trade.journalSnapshot?.plannedRunners?.map(runner => `${runner.label} ${runner.allocationPercent}% · ${runner.rule}`).join(" · ") || "No planned runners"}</p>{trade.planId && <button className="text-button" onClick={() => selectView("Trade")}>Open linked Plan &amp; Position</button>}</div>
@@ -2277,7 +2289,7 @@ export default function Home() {
                           </div>
                         ))}
                         <div className="journal-review-form" aria-label={`${trade.symbol} personal review`}>
-                          <strong>Personal review <i>optional · Grade {trade.grade}</i></strong>
+                          <strong>Personal review <i>{trade.id.startsWith("paper:") ? "optional" : `optional · Grade ${trade.grade}`}</i></strong>
                           {([
                             ["environment", "Market suitable?"],
                             ["entry", "Entry followed?"],

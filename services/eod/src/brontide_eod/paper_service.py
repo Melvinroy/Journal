@@ -282,6 +282,14 @@ class PaperService:
         if instrument["contract"]["currency"] != "USD": raise PaperSafetyError("This paper batch requires USD stocks.")
         if "OCA" not in instrument["contract"]["orderTypes"]:
             raise PaperSafetyError("The contract must advertise OCA for protected exits.")
+        for leg in ticket["exitPlan"]["legs"]:
+            if leg["role"] == "Target" and leg["target"]["mode"] == "Price":
+                target = leg["target"]["price"]
+                if target <= positive(ticket.get("hardCap"), "Entry cap"):
+                    raise PaperSafetyError("Fixed target must be above the maximum entry price.")
+                tick = instrument["contract"]["minimumTick"]
+                if abs(target / tick - round(target / tick)) > 1e-7:
+                    raise PaperSafetyError("Fixed target is not valid for the qualified price increment.")
         phase = broker_session_phase(instrument, utcnow())
         mode = ticket.get("sessionMode", "Regular")
         if phase["phase"] not in ({"RTH"} if mode == "Regular" else {"Premarket", "RTH", "Postmarket"}):

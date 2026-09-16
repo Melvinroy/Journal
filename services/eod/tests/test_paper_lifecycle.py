@@ -419,3 +419,28 @@ def test_transport_uses_official_order_cancel_and_independent_oca_fields(monkeyp
     transport.cancel_owned(1)
     assert isinstance(cancelled[0], OrderCancel)
     assert sent[0].ocaGroup == "owned" and sent[0].ocaType == 1
+
+
+def test_transport_ids_exceed_observed_orders_and_never_regress(monkeypatch):
+    pytest.importorskip("ibapi.order_cancel")
+    from concurrent.futures import ThreadPoolExecutor
+    from brontide_eod.paper_transport import PaperTransport
+    fake = FakeTransport()
+    transport = PaperTransport(fake.config, fake.verification)
+    transport.observe_order_id(700)
+    with pytest.raises(PaperSafetyError, match="unavailable"):
+        transport.reserve(1)
+    transport.nextValidId(100)
+    assert transport.reserve(2) == [701, 702]
+    transport.orderStatus(900, "Submitted", 0, 1, 0, 1, 0, 0, 99, "")
+    assert transport.reserve(1) == [901]
+    transport.nextValidId(200)  # a reconnect callback cannot reuse a reserved ID
+    assert transport.reserve(1) == [902]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        allocated = list(pool.map(lambda _: transport.reserve(3), range(40)))
+    ids = [value for batch in allocated for value in batch]
+    assert len(ids) == len(set(ids)) == 120
+    assert min(ids) == 903
+    transport._order_id_ready.clear()
+    with pytest.raises(PaperSafetyError, match="unavailable"):
+        transport.reserve(1)

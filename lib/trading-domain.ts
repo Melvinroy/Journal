@@ -441,6 +441,15 @@ export function deriveStop(input: {
   return stop;
 }
 
+/** Derived US-stock planning levels use cents; qualified broker ticks are checked at review. */
+export function roundedPlanningStop(value: number, direction: TradeDirection) {
+  if (!positive(value)) throw new Error("Stop must be positive.");
+  const units = value * 100;
+  const rounded = (direction === "Long" ? Math.floor(units + 1e-9) : Math.ceil(units - 1e-9)) / 100;
+  if (!positive(rounded)) throw new Error("Derived stop is below the supported planning increment; enter a manual stop.");
+  return rounded;
+}
+
 export function weightedAverageEntry(
   fills: Array<{ quantity: number; price: number }>,
 ): number | null {

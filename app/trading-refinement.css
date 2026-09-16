@@ -1,0 +1,84 @@
+/* Trading-specific refinements: readable controls, compact status, exposure first. */
+.consolidated-trading { --muted:#5d6b63; }
+.consolidated-trading .trade-planner { background:var(--canvas); padding-top:16px; }
+.consolidated-trading .broker-account-summary { display:grid; grid-template-columns:minmax(160px,1fr) minmax(0,3fr); gap:12px 24px; align-items:center; margin-bottom:18px; padding:14px 16px; }
+.consolidated-trading .broker-account-summary dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:0; }
+.consolidated-trading .broker-account-summary .broker-connection { grid-column:1/-1; margin:0; }
+.consolidated-trading .broker-connection > summary { border:0; padding:0; min-height:28px; font-size:12px; width:fit-content; }
+.consolidated-trading .broker-account-summary dt { color:#5d6b63; font-size:12px; }
+.consolidated-trading .broker-account-summary dd { font-variant-numeric:tabular-nums; font-weight:600; }
+.consolidated-trading .trade-commandbar { min-height:52px; gap:16px; }
+.consolidated-trading .trade-commandbar h1 { font-size:24px; }
+.consolidated-trading .trade-commandbar > div:first-child > p:last-child { font-size:12px; }
+.consolidated-trading .eyebrow { font-size:10px; color:#5d6b63; }
+.consolidated-trading .trade-actionbar { flex-wrap:wrap; margin-bottom:14px; }
+.consolidated-trading .trade-action-button { height:34px; padding:0 14px; font-size:12px; border-radius:6px; }
+.consolidated-trading .trade-execution-state { font-size:11px; color:#5d6b63; }
+.consolidated-trading .trade-risk-banner { font-size:12px; border-radius:8px; }
+.consolidated-trading .trade-risk-banner button { height:32px; font-size:12px; }
+.consolidated-trading .trade-input-grid { grid-template-columns:minmax(0,1fr) minmax(0,.7fr) minmax(0,1fr); gap:12px; }
+.consolidated-trading .trade-input-grid > label:last-child { grid-column:1/-1; }
+.consolidated-trading .trade-combined-control { max-width:440px; }
+.consolidated-trading .trade-input-grid > label, .consolidated-trading .trade-field,
+.consolidated-trading .trade-session-panel label, .consolidated-trading .trade-session-static,
+.consolidated-trading .trade-leg-row label, .consolidated-trading .trade-rule-fields label { font-size:11px; letter-spacing:.02em; color:#526258; }
+.consolidated-trading .trade-input-grid input, .consolidated-trading .trade-input-grid select,
+.consolidated-trading .trade-side-control button { font-size:14px; }
+.consolidated-trading .trade-context-line { flex-wrap:wrap; padding:10px 0; font-size:11px; color:#5d6b63; }
+.consolidated-trading .trade-session-panel { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.consolidated-trading .trade-session-panel select, .consolidated-trading .trade-session-panel input { font-size:12px; min-height:36px; }
+.consolidated-trading .trade-session-summary { font-size:11px; line-height:1.5; }
+.consolidated-trading .trade-result-strip span, .consolidated-trading .trade-result-strip small { font-size:11px; color:#526258; }
+.consolidated-trading .trade-result-strip strong { font-size:20px; font-variant-numeric:tabular-nums; }
+.consolidated-trading .trade-protection-row { flex-wrap:wrap; font-size:12px; }
+.consolidated-trading .trade-protection-row span, .consolidated-trading .trade-exit-help,
+.consolidated-trading .trade-safety-note, .consolidated-trading .trade-validation { font-size:11px; line-height:1.5; }
+.consolidated-trading .trade-ticket-head h2 { font-size:17px; }
+.consolidated-trading .trade-plan-summary, .consolidated-trading .trade-rule-title span { font-size:11px; }
+.consolidated-trading .trade-leg-row input, .consolidated-trading .trade-leg-row select,
+.consolidated-trading .trade-rule-fields input, .consolidated-trading .trade-rule-fields select { font-size:12px; min-height:34px; }
+.consolidated-trading .trade-linked-value { font-size:12px; }
+.consolidated-trading .trade-linked-value small, .consolidated-trading .trade-leg-name span { font-size:10px; }
+.consolidated-trading .position-command-center { border:1px solid var(--line); border-radius:11px; background:#fff; padding:16px; }
+.consolidated-trading .position-center-head { margin:0 0 14px; gap:12px; }
+.consolidated-trading .position-center-head p:last-child { font-size:12px; }
+.consolidated-trading .position-center-actions { justify-content:flex-start; }
+.consolidated-trading .position-center-actions button { min-height:32px; font-size:11px; }
+.consolidated-trading .position-center-actions button:first-child { color:#24523a; background:#fff; border:1px solid #cbd5ce; }
+.position-search, .journal-record-controls label { display:grid; gap:5px; font-size:12px; color:#526258; }
+.position-search input, .journal-record-controls input, .journal-record-controls select { width:100%; min-width:0; border:1px solid #cbd5ce; border-radius:6px; background:#fff; color:#1d2b24; padding:8px 10px; font-size:13px; min-height:36px; }
+.position-empty { color:#5d6b63; font-size:12px; margin:12px 0; }
+.consolidated-trading .section-kicker { flex-wrap:wrap; gap:6px; }
+.consolidated-trading .section-kicker h3 { font-size:13px; }
+.consolidated-trading .section-kicker span { font-size:11px; color:#5d6b63; }
+.consolidated-trading .position-compact-row { gap:10px; min-height:60px; }
+.consolidated-trading .position-compact-row small { font-size:10px; color:#5d6b63; }
+.consolidated-trading .position-compact-row strong { font-size:12px; }
+.consolidated-trading .position-symbol b { font-size:15px; }
+.consolidated-trading .saved-plan-grid { grid-template-columns:minmax(0,1fr); }
+.consolidated-trading .trade-preset-panel input, .consolidated-trading .trade-preset-panel select, .consolidated-trading .trade-preset-panel button { min-height:32px; font-size:11px; }
+.consolidated-trading .simulation-action-note { font-size:11px; color:#6c5b2b; }
+.paper-preflight { padding-left:18px; font-size:12px; color:#854513; line-height:1.5; }
+.journal-record-controls { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:0 0 16px; }
+.journal-record-controls > span { font-size:12px; padding-bottom:9px; color:#526258; }
+.journal-content .reporting-timezone, .journal-content .journal-eligibility-summary { font-size:11px; color:#5d6b63; }
+.journal-content .metric-label { font-size:12px; }
+.journal-content .metric-detail { font-size:11px; color:#5d6b63; }
+.journal-content .trade-row { font-size:12px; }
+.journal-content .symbol-cell > small, .journal-content .trade-row small { font-size:10px; }
+.journal-content .table-head { font-size:11px; }
+.journal-content .panel-heading p, .journal-content .trade-count { font-size:11px; color:#5d6b63; }
+.consolidated-trading :focus-visible, .journal-record-controls :focus-visible { outline:2px solid #087b43; outline-offset:3px; }
+@media(max-width:700px) {
+  .consolidated-trading .broker-account-summary { grid-template-columns:minmax(0,1fr); }
+  .consolidated-trading .broker-account-summary dl { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .consolidated-trading .broker-account-summary dl > div:last-child { grid-column:1/-1; }
+  .consolidated-trading .trade-input-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .consolidated-trading .trade-result-strip { grid-template-columns:repeat(2,minmax(0,1fr)); row-gap:12px; }
+  .consolidated-trading .trade-commandbar { align-items:flex-start; flex-direction:column; }
+  .consolidated-trading .position-command-center { padding:12px; }
+  .consolidated-trading .trade-leg-row, .consolidated-trading .trade-leg-row.runner { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .consolidated-trading .trade-leg-name, .consolidated-trading .trade-linked-value { grid-column:1/-1; }
+  .consolidated-trading .trade-leg-row.runner label:last-child { grid-column:auto; }
+  .journal-record-controls label { flex:1; min-width:130px; }
+}

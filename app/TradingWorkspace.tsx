@@ -349,6 +349,8 @@ export function TradingWorkspace({
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [showSaved, setShowSaved] = useState(true);
+  const [positionSearch, setPositionSearch] = useState("");
+  const matchesSymbol = (symbol: string) => symbol.toUpperCase().includes(positionSearch.trim().toUpperCase());
   const [planAmendmentMode, setPlanAmendmentMode] = useState(false);
   const [fill, setFill] = useState<Omit<Fill, "id" | "provenance">>({
     trancheId: "A",
@@ -828,13 +830,14 @@ export function TradingWorkspace({
     }
   }
 
-  const working = effectivePositions.filter(
+  const visiblePositions = effectivePositions.filter(item => matchesSymbol(item.symbol));
+  const working = visiblePositions.filter(
     (item) => item.status === "Working entry",
   );
-  const openPositions = effectivePositions.filter(
+  const openPositions = visiblePositions.filter(
     (item) => !["Working entry", "Closed"].includes(item.status),
   );
-  const closed = effectivePositions.filter((item) => item.status === "Closed");
+  const closed = visiblePositions.filter((item) => item.status === "Closed");
 
   return (
     <section className="consolidated-trading">
@@ -847,18 +850,17 @@ export function TradingWorkspace({
           </span>
         </div>
       )}
-      <TradePlanner demo={demo} paper={paper} context={context} onChart={onChart} />
+      <TradePlanner demo={demo} paper={paper} context={context} onChart={onChart} positions={
       <section
         className="position-command-center"
         aria-labelledby="position-center-title"
       >
         <header className="position-center-head">
           <div>
-            <p className="eyebrow">Saved plans → working entries → positions</p>
+            <p className="eyebrow">Portfolio</p>
             <h2 id="position-center-title">Positions</h2>
             <p>
-              Compact broker-shaped state; open a row for execution, risk,
-              protection and exits.
+              Execution, protection and remaining exposure.
             </p>
           </div>
           <div className="position-center-actions">
@@ -873,6 +875,7 @@ export function TradingWorkspace({
             </button>
           </div>
         </header>
+        <label className="position-search">Find symbol<input type="search" aria-label="Find position symbol" placeholder="Symbol" value={positionSearch} onChange={e => setPositionSearch(e.target.value)} /></label>
         {paper ? null : demo ? (
           <p className="simulation-action-note">
             No broker connection · broker submission disabled.
@@ -886,6 +889,82 @@ export function TradingWorkspace({
             were not overwritten.
           </p>
         )}
+        {demo || paper ? (
+          <>
+            <PositionRows
+              title="Working entries"
+              meta="Not yet positions"
+              items={working}
+              onOpen={openPositionDetail}
+            />
+            <PositionRows
+              title="Open positions"
+              meta="Recorded execution state"
+              items={openPositions}
+              onOpen={openPositionDetail}
+            />
+            <PositionRows
+              title="Recently closed"
+              meta="Zero confirmed open shares"
+              items={closed}
+              onOpen={openPositionDetail}
+            />
+          </>
+        ) : (
+          <>
+            {effectivePositions.length > 0 && (
+              <PositionRows
+                title="Associated paper positions"
+                meta="Exact persisted associations · snapshot state"
+                items={effectivePositions}
+                onOpen={openPositionDetail}
+              />
+            )}
+            <section aria-labelledby="actual-positions-title">
+              <div className="section-kicker">
+                <h3 id="actual-positions-title">Recorded positions</h3>
+                <span>Manual/imported executions</span>
+              </div>
+              <div className="position-list">
+                {recordedPositions.filter(({plan}) => matchesSymbol(plan.symbol)).map(({ plan, state }) => (
+                  <article className="position-card" key={plan.id}>
+                  <header>
+                    <div>
+                      <b>{plan.symbol}</b>
+                      <span className={`side-pill ${plan.side.toLowerCase()}`}>
+                        {plan.side}
+                      </span>
+                    </div>
+                    <i>{state.status}</i>
+                  </header>
+                  <div className="position-metrics">
+                    <span>
+                      <small>Entered</small>
+                      <strong>{state.entered}</strong>
+                    </span>
+                    <span>
+                      <small>Open</small>
+                      <strong>{state.remaining}</strong>
+                    </span>
+                    <span>
+                      <small>Realized</small>
+                      <strong>{money(state.realized, 2)}</strong>
+                    </span>
+                  </div>
+                  <p>
+                    Manual/imported execution records only; broker confirmation
+                    unavailable.
+                  </p>
+                  <button onClick={() => open(plan)}>
+                    Open plan &amp; fills
+                  </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+
         {showSaved && (
           <section
             className="saved-plan-rail"
@@ -896,7 +975,7 @@ export function TradingWorkspace({
               <span>Intent · not positions</span>
             </div>
             <div className="saved-plan-grid">
-              {savedRows.map((row) => (
+              {savedRows.filter(row => matchesSymbol(row.symbol)).map((row) => (
                 <article key={row.id} className="saved-plan-card">
                   <div>
                     <b>{row.symbol}</b>
@@ -937,82 +1016,6 @@ export function TradingWorkspace({
           </section>
         )}
 
-        {demo || paper ? (
-          <>
-            <PositionRows
-              title="Working entries"
-              meta="Not yet positions"
-              items={working}
-              onOpen={openPositionDetail}
-            />
-            <PositionRows
-              title="Open positions"
-              meta="Recorded execution state"
-              items={openPositions}
-              onOpen={openPositionDetail}
-            />
-            <PositionRows
-              title="Recently closed"
-              meta="Zero confirmed open shares"
-              items={closed}
-              onOpen={openPositionDetail}
-            />
-          </>
-        ) : (
-          <>
-            {effectivePositions.length > 0 && (
-              <PositionRows
-                title="Associated paper positions"
-                meta="Exact persisted associations · snapshot state"
-                items={effectivePositions}
-                onOpen={openPositionDetail}
-              />
-            )}
-            <section aria-labelledby="actual-positions-title">
-              <div className="section-kicker">
-                <h3 id="actual-positions-title">Recorded positions</h3>
-                <span>Manual/imported executions</span>
-              </div>
-              <div className="position-list">
-                {recordedPositions.map(({ plan, state }) => (
-                  <article className="position-card" key={plan.id}>
-                  <header>
-                    <div>
-                      <b>{plan.symbol}</b>
-                      <span className={`side-pill ${plan.side.toLowerCase()}`}>
-                        {plan.side}
-                      </span>
-                    </div>
-                    <i>{state.status}</i>
-                  </header>
-                  <div className="position-metrics">
-                    <span>
-                      <small>Entered</small>
-                      <strong>{state.entered}</strong>
-                    </span>
-                    <span>
-                      <small>Open</small>
-                      <strong>{state.remaining}</strong>
-                    </span>
-                    <span>
-                      <small>Realized</small>
-                      <strong>{money(state.realized, 2)}</strong>
-                    </span>
-                  </div>
-                  <p>
-                    Manual/imported execution records only; broker confirmation
-                    unavailable.
-                  </p>
-                  <button onClick={() => open(plan)}>
-                    Open plan &amp; fills
-                  </button>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
-
         {(demo || brokerState.lastSuccessfulUpdate || brokerState.positions.length > 0) && (
           <section
             className="unlinked-positions"
@@ -1030,7 +1033,7 @@ export function TradingWorkspace({
             {brokerPositions.length === 0 && (
               <p className="workspace-notice">No positions in the latest completed snapshot.</p>
             )}
-            {brokerPositions.map((item) => {
+            {brokerPositions.filter(item => matchesSymbol(item.symbol)).map((item) => {
               const association = associations.value.find(
                 (value) => value.brokerPositionId === item.id,
               );
@@ -1107,6 +1110,8 @@ export function TradingWorkspace({
           </section>
         )}
       </section>
+
+      } />
 
       {detail && detailNumbers && (
         <PositionDetail
@@ -1561,6 +1566,7 @@ function PositionRows({
           {meta} · {items.length}
         </span>
       </div>
+      {items.length === 0 && <p className="position-empty">No matching {title.toLowerCase()}.</p>}
       <div className="position-list">
         {items.map((item) => {
           const numbers = positionNumbers(item);
@@ -1872,7 +1878,7 @@ const PositionDetail = ({
         <p className="workspace-notice">
           {item.snapshotOnly
             ? "Historical fills, exited quantity, realized P&L and initial risk are unavailable. Current quantity and average entry come only from the identified position snapshot."
-            : "No confirmed executions are recorded for this working entry."}
+            : "No confirmed executions are recorded for this position."}
         </p>
       )}
       <div className="editor-actions">

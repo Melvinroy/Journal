@@ -24,3 +24,22 @@ test('Final net result and execution R are copied from the shared ledger only af
  const c=campaign();Object.assign(c.summary,{openQuantity:0,exited:1,grossRealized:4,fees:1,netRealized:3,finalNetR:1.5,costsComplete:true});c.state='Closed';
  const row=paper.paperJournalRow(c);assert.equal(row.pnl,3);assert.equal(row.r,1.5);assert.equal(row.costs,1);assert.equal(row.finalRAvailable,true);
 });
+
+
+test('Paper Journal uses confirmed closure time and keeps missing exit timestamps unknown', () => {
+ const c=campaign(); c.state='Closed';
+ c.executions[0].occurredAt='2026-09-14T14:00:00Z';
+ c.executions.push({...c.executions[0],executionId:'exit',effect:'exit',occurredAt:'2026-09-16T15:00:00Z'});
+ let row=paper.paperJournalRow(c);
+ assert.equal(row.firstFillAt,'2026-09-14T14:00:00Z'); assert.equal(row.closedAt,'2026-09-16T15:00:00Z');
+ c.executions[1].occurredAt=''; assert.equal(paper.paperJournalRow(c).closedAt,undefined);
+});
+
+test('Paper planner explains unsupported cases and nonzero exit allocation before review', () => {
+ const t={...campaign().ticket,direction:'Long',quantity:1,method:'Limit',sessionMode:'Regular',duration:'DAY',protectionOrderType:'STP'};
+ assert.deepEqual(paper.paperTicketBlockers(t),[]);
+ assert.ok(paper.paperTicketBlockers({...t,direction:'Short'}).some(x=>x.includes('Short')));
+ assert.ok(paper.paperTicketBlockers({...t,duration:'GTC'}).some(x=>x.includes('DAY')));
+ assert.ok(paper.paperTicketBlockers({...t,quantity:4}).some(x=>x.includes('1–3')));
+ assert.ok(paper.paperTicketBlockers({...t,exitPlan:{...t.exitPlan,legs:[{...t.exitPlan.legs[0],allocationPercent:50},{...t.exitPlan.legs[0],id:'T2',allocationPercent:50}]}}).some(x=>x.includes('at least one share')));
+});

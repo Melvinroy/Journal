@@ -17,6 +17,20 @@ class PaperTransport(TwsPaperClient):
         self.execution_ids = set()
         self.history_end = threading.Event()
         self.daily_bars = []
+        self.order_id_lock = threading.Lock()
+        self.observed_order_id_floor = 0
+
+    def nextValidId(self, order_id):
+        with self.order_id_lock:
+            super().nextValidId(max(order_id, self._next_order_id or 0, self.observed_order_id_floor))
+
+    def observe_order_id(self, order_id):
+        if order_id < 0:
+            return
+        with self.order_id_lock:
+            # reqAllOpenOrders can expose IDs higher than nextValidId, including
+            # unrelated orders. Advance the allocator without adopting ownership.
+            self.observed_order_id_floor = max(self.observed_order_id_floor, order_id + 1)
 
     def emit(self, kind, **fields):
         with self.event_lock:
@@ -31,10 +45,12 @@ class PaperTransport(TwsPaperClient):
 
     def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId,
                     parentId, lastFillPrice, clientId, whyHeld, mktCapPrice=0):
+        self.observe_order_id(orderId)
         self.emit("order-status", orderId=orderId, status=status, filled=float(filled),
                   remaining=float(remaining), clientId=clientId, whyHeld=whyHeld)
 
     def openOrder(self, order_id, contract, order, order_state):
+        self.observe_order_id(order_id)
         super().openOrder(order_id, contract, order, order_state)
         fields = {key: getattr(order, key, None) for key in
                   ("account", "action", "orderType", "lmtPrice", "auxPrice", "parentId",
@@ -94,10 +110,14 @@ class PaperTransport(TwsPaperClient):
         self.emit("disconnected")
 
     def reserve(self, count):
-        if self._next_order_id is None: raise PaperSafetyError("Broker order IDs are unavailable.")
-        start = self._next_order_id
-        self._next_order_id += count
-        return list(range(start, start + count))
+        if not isinstance(count, int) or isinstance(count, bool) or count < 1:
+            raise PaperSafetyError("Order ID count must be a positive integer.")
+        with self.order_id_lock:
+            if self._next_order_id is None or not self._order_id_ready.is_set():
+                raise PaperSafetyError("Broker order IDs are unavailable.")
+            start = max(self._next_order_id, self.observed_order_id_floor)
+            self._next_order_id = start + count
+            return list(range(start, start + count))
 
     def write(self, order_id, contract, fields):
         account = authorize_connection(self.config, self.verification, self._managed_accounts)

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { exitDescriptions } from "../lib/paper-execution";
+import { exitDescriptions, paperTicketBlockers } from "../lib/paper-execution";
 import type { PaperBatch, PaperTicket } from "../lib/paper-execution";
 import type { PaperExecution } from "./usePaperExecution";
 import { useModalAccessibility } from "./useModalAccessibility";
@@ -14,6 +14,7 @@ export function PaperOrderReview({ paper, ticket, saved }: { paper: PaperExecuti
   const inFlight = useRef(false);
   const drawer = useRef<HTMLElement>(null);
   const reviewButton = useRef<HTMLButtonElement>(null);
+  const blockers = paperTicketBlockers(ticket);
   const fingerprint = JSON.stringify(ticket);
   const generation = useRef(0);
   useEffect(() => { generation.current++; setBatch(null); setMessage(""); }, [fingerprint, saved, paper.status?.connectionId, paper.status?.connected, paper.status?.account, paper.signedIn]);
@@ -41,11 +42,12 @@ export function PaperOrderReview({ paper, ticket, saved }: { paper: PaperExecuti
   }
   return <section className="paper-intent-readiness" aria-label="Paper order review">
     <div><p className="eyebrow">TWS paper execution</p><h2>Review and submit</h2>
-      <p>Save entry and exits first. Review freezes the exact saved revision; it sends no order.</p>
+      <p>Review the saved entry and exits before sending.</p>
       <p>Paper test limits: 3 shares per campaign · 2 campaigns · $500 entry notional · $10 risk per campaign / $20 total.</p>
+      {blockers.length > 0 && <ul className="paper-preflight" aria-label="Paper order blockers">{blockers.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {!saved && <p role="status">Save the current plan and exit settings before review.</p>}
       {error && <p role="alert">{error}</p>}{message && <p role="status">{message}</p>}</div>
-    <button ref={reviewButton} type="button" disabled={!saved || !paper.status?.connected || busy} onClick={() => void review()}>{busy ? "Checking…" : "Review paper order"}</button>
+    <button ref={reviewButton} type="button" disabled={!saved || blockers.length > 0 || !paper.status?.connected || busy} onClick={() => void review()}>{busy ? "Checking…" : "Review paper order"}</button>
     {batch && <div className="modal-backdrop"><section ref={drawer} tabIndex={-1} className="modal broker-order-review" role="dialog" aria-modal="true" aria-labelledby="paper-review-title">
       <h2 id="paper-review-title">Review {batch.tickets[0].symbol} paper order</h2>
       <p>{paper.status?.account} · {batch.tickets[0].direction} · {batch.tickets[0].quantity} shares · {batch.tickets[0].method} · {batch.tickets[0].sessionMode} / {batch.tickets[0].duration}</p>

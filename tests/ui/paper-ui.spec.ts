@@ -128,6 +128,8 @@ test("the existing position drawer and Journal share broker executions without f
   await expect(row).toBeVisible();
   await expect(row).toContainText("Unavailable");
   await expect(row).toContainText("IBKR paper");
+  await expect(row).toContainText("Not reviewed");
+  await expect(row).not.toContainText("Grade C");
   await expect(row).toHaveCount(1);
   await expect(page.getByRole("dialog", { name: "TEST position details" })).toHaveCount(0);
 });
@@ -139,6 +141,76 @@ test("paper sign-in stays contained at medium, mobile and desktop widths", async
     await page.setViewportSize({ width, height: 900 });
     await expect(page.getByLabel("Email address")).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+});
+
+
+test("account summary precedes planner and positions align beside setup only in wide workspaces", async ({ page }) => {
+  await signIn(page, { ...empty, account:null });
+  const summary = page.getByRole("region", { name: "IBKR account summary" });
+  await expect(summary.getByText("Unavailable", { exact: true })).toHaveCount(2);
+  for (const width of [1600, 1190, 390, 1600]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const boxes = await page.evaluate(() => {
+      const rect = (selector: string) => { const r = document.querySelector(selector)!.getBoundingClientRect(); return { x:r.x, y:r.y, right:r.right, bottom:r.bottom }; };
+      return { summary:rect(".broker-account-summary"), heading:rect(".trade-commandbar"), setup:rect(".trade-ticket"), positions:rect(".position-command-center"), editor:rect(".planner-editing-column"), overflow:document.documentElement.scrollWidth > innerWidth };
+    });
+    expect(boxes.summary.bottom).toBeLessThanOrEqual(boxes.heading.y);
+    if (width === 1600) {
+      expect(Math.abs(boxes.setup.y - boxes.positions.y)).toBeLessThan(2);
+      expect(boxes.positions.x).toBeGreaterThan(boxes.setup.right);
+    } else expect(boxes.positions.y).toBeGreaterThanOrEqual(boxes.editor.bottom);
+    expect(boxes.overflow).toBe(false);
+  }
+});
+
+test("stale account snapshot stays visible without opening connection details", async ({ page }) => {
+  await signIn(page, { ...empty, readiness:{state:"blocked",message:"Connection requires attention. " + "Reconciliation and fresh quotes are required before trading. ".repeat(8)}, broker: { mode:"read-only", source:"IBKR TWS", connectionStatus:"stale", dataStatus:"stale", lastSuccessfulUpdate:"2026-09-15T12:00:00Z", error:null, account:{ id:"fixture", maskedId:"DU••10", value:12345, currency:"USD", source:"fixture", observedAt:"2026-09-15T12:00:00Z", available:true }, positions:[], openOrders:[] } });
+  const summary = page.getByRole("region", { name:"IBKR account summary" });
+  await expect(summary.getByText("12,345 USD · Stale", { exact:true })).toBeVisible();
+  await expect(summary.locator("dd").filter({ hasText:"Stale" })).toHaveCount(2);
+  await expect(summary.locator("details.broker-connection")).not.toHaveAttribute("open");
+  await page.setViewportSize({ width:390, height:844 });
+  await summary.locator("details.broker-connection > summary").press("Enter");
+  await expect(summary.getByText(/Connection requires attention/)).toBeVisible();
+  expect(await summary.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+});
+
+
+test("QC derived stop precision and symbol/source filters preserve the existing controls", async ({ page }) => {
+  await page.setViewportSize({ width:1600, height:1000 });
+  await page.goto("/?demo=1");
+  await page.getByRole("button", {name:"Workspace navigation"}).click();
+  await page.getByRole("button", {name:"Trading",exact:true}).click();
+  await page.getByLabel("ATR multiplier").fill("1.234567");
+  await expect(page.getByLabel("Stop price", {exact:true})).toHaveValue("97.53");
+  await page.getByRole("button", {name:"Short",exact:true}).click();
+  await expect(page.getByLabel("Stop price", {exact:true})).toHaveValue("102.47");
+  await page.getByLabel("Find position symbol").fill("aapl");
+  await expect(page.getByRole("button", {name:"Open AAPL position details"})).toBeVisible();
+  await expect(page.getByRole("button", {name:"Open NVDA position details"})).toHaveCount(0);
+  await page.getByLabel("Find position symbol").fill("NO_MATCH");
+  await expect(page.getByText("No matching open positions.", {exact:true})).toBeVisible();
+  await page.getByLabel("Find position symbol").fill("");
+  await page.setViewportSize({width:390,height:844});
+  await page.getByLabel("Runner A trailing method").selectOption({label:"Percent"});
+  expect((await page.getByLabel("Runner A trailing method").boundingBox())!.width).toBeGreaterThan(120);
+  await page.setViewportSize({width:1600,height:1000});
+  await page.getByRole("button", {name:"Journal",exact:true}).click();
+  await expect(page.getByRole("heading",{name:"Trading journal",exact:true})).toBeVisible();
+  await page.getByLabel("Journal record source").selectOption("paper");
+  await expect(page.getByText("No trades match these filters.", {exact:true})).toBeVisible();
+  await expect(page.locator(".metric-card").filter({hasText:"Win rate"})).toContainText("Unavailable");
+  await expect(page.locator(".metric-card").filter({hasText:"Avg planned R:R"})).toContainText("Unavailable");
+  await page.getByLabel("Journal record source").selectOption("all");
+  await page.getByLabel("Find Journal symbol").fill("HOOD");
+  await expect(page.locator(".trade-table .journal-trade-group")).toHaveCount(1);
+  // One observed result must not shade a fabricated path down to the baseline.
+  await expect(page.locator(".equity-chart circle")).toHaveCount(1);
+  await expect(page.locator(".equity-chart polygon, .equity-chart polyline")).toHaveCount(0);
+  for (const width of [1600,390,1600]) {
+    await page.setViewportSize({width,height:900});
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
 });

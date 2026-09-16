@@ -1,5 +1,7 @@
 # Consolidated paper-acceptance QC coverage
 
+Latest QC and consolidation plan: [16 September product and execution review](TRADING_QC_2026_09_16.md). Additional deterministic coverage includes 200 sequential campaigns / 880 unique executions, replay, late commissions, restart, order-ID allocation above unrelated observed orders, conservative stop precision, fixed-target validation, Journal closure dates and source/search filters. This does not promote any of P01–P38 to an actual broker pass. The retained three-share cap cannot cover four nonzero exit legs in one broker campaign.
+
 September 16 implementation continuation: [Connected paper lifecycle](PAPER_LIFECYCLE.md) adds the server ledger, paper UI, owned command transport and deterministic integration tests. It does not change any historical actual-paper result below into a pass. Fresh exact-batch execution evidence remains a separate gate.
 
 This matrix separates actual paper observations from deterministic evidence. Construction, acknowledgement and simulation never prove a fill, protection trigger, protection fill or exit. PL long 100 and AMD short 100 are excluded throughout.

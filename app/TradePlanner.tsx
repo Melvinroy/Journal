@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   EXIT_PLAN_SCHEMA_VERSION,
   calculatePositionSize,
   deleteExitPlanPreset,
   deriveStop,
+  roundedPlanningStop,
   exitLegQuantities,
   freezeRiskReference,
   loadExitPlanPreset,
@@ -155,7 +156,7 @@ function trailingFromMode(mode: string): TrailingRule {
   return { mode: "Manual", stopPrice: 1 };
 }
 
-export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution}) {
+export function TradePlanner({ context, onChart, demo=false, paper, positions }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;positions?:ReactNode}) {
   const initialSnapshot = demo ? demoPlanningMarketSnapshot("NVDA") : null;
   const [symbol, setSymbol] = useState("NVDA");
   const [side, setSide] = useState<TradeSide>("Long");
@@ -304,7 +305,7 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
         const label = stopSource === "ATR" ? "ATR" : side === "Long" ? "Day low" : "Day high";
         throw new Error(`${label} is unavailable. ${marketLoad.error ?? "Daily market data is still loading."} Choose Manual to enter an explicit stop.`);
       }
-      return { error: "", price: deriveStop({
+      const derived = deriveStop({
         method: stopSource,
         direction: side,
         capturedEntry: entryPrice,
@@ -313,12 +314,14 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
         dayLow: snapshot?.dayLow,
         dayHigh: snapshot?.dayHigh,
         manualStop: stopPrice,
-      }) };
+      });
+      return { error: "", price: stopSource === "Manual" ? derived : roundedPlanningStop(derived, side) };
     } catch (error) {
       return { error: (error as Error).message, price: stopSource === "Manual" ? stopPrice : 0 };
     }
   }, [atrMultiplier, entryPrice, marketLoad.error, marketLoad.snapshot, side, stopPrice, stopSource]);
-  const effectiveStopPrice = stopDerivation.price || (marketLoad.state === "legacy" && stopSource !== "Manual" ? stopPrice : 0);
+  const rawStopPrice = stopDerivation.price || (marketLoad.state === "legacy" && stopSource !== "Manual" ? stopPrice : 0);
+  const effectiveStopPrice = rawStopPrice;
   const sessionSelection = useMemo(() => {
     try {
       return { error: "", policy: resolveExecutionSession({ mode: sessionMode, duration, protectionOrderType, protectionStopPrice: effectiveStopPrice, protectionLimitPrice }) };
@@ -543,12 +546,12 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
 
   return (
     <div className="trade-planner">
+      <BrokerConnection paper={paper} demo={demo} />
       <header className="trade-commandbar">
         <div>
           <p className="eyebrow">Plan &amp; Position</p>
           <h1>Trade planner</h1>
-          {paper && !demo && <BrokerConnection paper={paper} />}
-          <p>Calculate position size and save your intended entry and exit settings.</p>
+          <p>Size the entry. Define exits. Review before sending.</p>
         </div>
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
@@ -566,9 +569,11 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
         <button type="button" className={`trade-action-button exits ${afterFillStaged && !exitPlanDirty ? "active" : ""}`} disabled={!result.valid} onClick={afterFillStaged && !exitPlanDirty ? cancelAfterFill : stageAfterFill}>
           {afterFillStaged && !exitPlanDirty ? "Unsave exits" : "Save exits"}
         </button>
-        <span className="trade-execution-state">{paper ? "Save drafts, then review the exact paper order" : "Planning only · simulated states are never broker confirmation"}</span>
+        <span className="trade-execution-state">{paper ? "Save drafts, then review the exact paper order" : "Draft only · no broker order"}</span>
       </section>
 
+      <div className="planner-position-layout">
+      <div className="planner-editing-column">
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
         <div className="trade-ticket-head">
           <div><p className="eyebrow">Order calculator</p><h2 id="trade-ticket-title">Trade setup</h2></div>
@@ -614,7 +619,7 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
           </div>
 
           <div className="trade-protection-row">
-            <div><b>Initial protection</b><span>One full-position {protectionOrderType === "STP LMT" ? `stop-limit at ${price(effectiveStopPrice)} / limit ${price(protectionLimitPrice)}` : `stop at ${price(effectiveStopPrice)}`} · {sessionSelection.policy?.submissionEligible ? "planned, not broker acknowledged" : "submission inactive"}</span></div>
+            <div><b>Initial protection</b><span>Full-position {protectionOrderType === "STP LMT" ? `stop-limit at ${price(effectiveStopPrice)} / limit ${price(protectionLimitPrice)}` : `stop at ${price(effectiveStopPrice)}`} · {sessionSelection.policy?.submissionEligible ? "planned, not broker acknowledged" : "submission inactive"}</span></div>
             <strong>{result.valid ? `${result.shares.toLocaleString()} shares` : "—"}</strong>
           </div>
 
@@ -633,7 +638,7 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
             <div className="trade-allocation-total"><span>Allocation</span><strong className={Math.abs(allocationTotal - 100) > 1e-9 ? "invalid" : ""}>{allocationTotal}% · {result.valid ? `${result.shares} shares` : "—"}</strong></div>
           </div>
           <div className="trade-rule-panel">
-            <div className="trade-rule-title"><div><b>Price-based breakeven</b><span>Independent of target fills · initial protection stays active first</span></div></div>
+            <div className="trade-rule-title"><div><b>Price-based breakeven</b><span>Independent of target fills</span></div></div>
             <div className="trade-rule-fields">
               <label>Activate at<select aria-label="Breakeven activation" value={[1,2,3].includes(exitPlan.breakeven.activationR) ? String(exitPlan.breakeven.activationR) : "custom"} onChange={event=>editExitPlan({...exitPlan,breakeven:{...exitPlan.breakeven,activationR:event.target.value==="custom"?1.1:Number(event.target.value)}})}><option value="1">1R</option><option value="2">2R</option><option value="3">3R</option><option value="custom">Custom</option></select></label>
               {![1,2,3].includes(exitPlan.breakeven.activationR)&&<label>Custom R<input aria-label="Custom breakeven R" type="number" min="0" step="0.1" value={exitPlan.breakeven.activationR||""} onChange={event=>editExitPlan({...exitPlan,breakeven:{...exitPlan.breakeven,activationR:Number(event.target.value)}})}/></label>}
@@ -679,7 +684,7 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
             <button type="button" onClick={renamePreset} disabled={!selectedPresetId}>Rename</button>
             <button type="button" onClick={removePreset} disabled={!selectedPresetId}>Delete</button>
           </div>
-          <p className="trade-exit-help">These are planning controls. Save exits records an explicit local draft; no protection, execution, or broker order changes. Position changes require a separate unapplied amendment draft.</p>
+          <p className="trade-exit-help">Save exits updates the draft. Open positions require a reviewed amendment.</p>
         </div>
       </section>
 
@@ -690,7 +695,7 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
           <label>Entry price cap<input aria-label="Entry price cap" type="number" min="0.0001" step="any" value={hardCap || entryPrice || ""} onChange={e => { editPlan(); setHardCap(safeNumber(e.target.value)); }} /></label>
           {executionMethod === "Breakout" && <label>Entry trigger<input aria-label="Entry trigger" type="number" min="0.0001" step="any" value={triggerPrice || ""} onChange={e => { editPlan(); setTriggerPrice(safeNumber(e.target.value)); }} /></label>}
         </div>
-        <p className="trade-exit-help">Calculated size {result.shares} shares · requested {executionQuantity || result.shares}. Quantity is never reduced automatically. Cleanup uses the fixed initial stop as its minimum price. Short fill-bound, auction and overnight submissions remain blocked.</p>
+        <p className="trade-exit-help">Calculated size {result.shares} shares · requested {executionQuantity || result.shares}. Quantity is never reduced automatically.</p>
         {executionQuantity > result.shares && <p role="alert">Requested paper quantity must not exceed calculated sizing.</p>}
         <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
           planId: planIdentity.current, planRevision, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
@@ -714,6 +719,10 @@ export function TradePlanner({ context, onChart, demo=false, paper }: {demo?:boo
       </section>}
 
       <p className="trade-safety-note"><span>i</span> {paper && !demo ? "Saving keeps a draft. Only exact paper-order confirmation can send an order." : "Plans and exit settings are stored in this browser. Nothing is sent to a broker."}</p>
+
+      </div>
+      {positions}
+      </div>
 
       {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
         <section ref={settingsRef} tabIndex={-1} className="modal trade-settings-modal" role="dialog" aria-modal="true" aria-labelledby="risk-settings-title" onMouseDown={(event) => event.stopPropagation()}>

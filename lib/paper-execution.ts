@@ -26,6 +26,23 @@ export type PaperStatus = { connected: boolean; account: string | null; connecti
   submissionsEnabled: boolean; lastReconciled: string | null; error: string | null; campaigns: PaperCampaign[]; batches: PaperBatch[];
   readiness: { state: "disconnected" | "blocked" | "ready" | "error"; message: string }; broker: PaperBrokerView | null };
 
+export function paperTicketBlockers(t: PaperTicket): string[] {
+  const reasons: string[] = [];
+  if (t.direction !== "Long") reasons.push("Short execution is not supported in this paper pilot.");
+  if (!["Regular", "RegularExtended"].includes(t.sessionMode)) reasons.push("Overnight execution is not supported in this paper pilot.");
+  if (t.duration !== "DAY") reasons.push("The paper pilot supports DAY entries only.");
+  if (!Number.isInteger(t.quantity) || t.quantity < 1 || t.quantity > 3) reasons.push("Choose 1–3 whole shares for the paper pilot.");
+  if (t.quantity * t.hardCap > 500) reasons.push("Entry notional exceeds the $500 paper limit.");
+  if (t.quantity * (t.hardCap - t.stopPrice) > 10) reasons.push("Planned stop risk exceeds the $10 campaign limit.");
+  if (t.sessionMode === "RegularExtended" && (t.method !== "Limit" || t.protectionOrderType !== "STP LMT")) reasons.push("Extended hours require a limit entry and stop-limit protection.");
+  try {
+    const shares = allocateExitShares(t.quantity, t.exitPlan.legs.map(l => l.allocationPercent));
+    if (shares.some(n => n < 1)) reasons.push("Each target and runner needs at least one share. Adjust quantity or exit allocation.");
+  } catch { reasons.push("Complete a valid share allocation before review."); }
+  if (t.exitPlan.legs.some(l => l.role === "Target" && l.target.mode === "Price" && l.target.price <= t.hardCap)) reasons.push("Fixed targets must be above the entry price cap.");
+  return reasons;
+}
+
 export function paperDomainCampaign(c: PaperCampaign): TradeCampaign {
   return { schemaVersion: 1, campaignId: c.id, journalTradeId: `paper:${c.id}`, accountId: c.accountBinding,
     planId: c.ticket.planId, symbol: c.symbol, direction: c.direction,
@@ -46,12 +63,17 @@ export function paperDomainCampaign(c: PaperCampaign): TradeCampaign {
 
 export function paperJournalRow(c: PaperCampaign) {
   const campaign = paperDomainCampaign(c);
+  const entryTimes = c.executions.filter(e => e.effect === "entry" && e.occurredAt && Number.isFinite(Date.parse(e.occurredAt))).map(e => e.occurredAt).sort((a,b) => Date.parse(a)-Date.parse(b));
+  const exits = c.executions.filter(e => e.effect === "exit");
+  const exitTimes = exits.filter(e => e.occurredAt && Number.isFinite(Date.parse(e.occurredAt))).map(e => e.occurredAt).sort((a,b) => Date.parse(a)-Date.parse(b));
+  const firstFillAt = entryTimes[0];
+  const closedAt = c.state === "Closed" && exits.length > 0 && exitTimes.length === exits.length ? exitTimes.at(-1) : undefined;
   const fixedTargets = c.ticket.exitPlan.legs.filter(l => l.role === "Target" && l.target.mode === "R");
   const fixedTargetCoverage = fixedTargets.reduce((sum,l) => sum + l.allocationPercent, 0);
   const plannedR = fixedTargetCoverage === 100 ? fixedTargets.reduce((sum,l) => sum + (l.role === "Target" && l.target.mode === "R" ? l.allocationPercent * l.target.multipleR / 100 : 0), 0) : 0;
   return { id: `paper:${c.id}`, campaignId: c.id, planId: c.ticket.planId, symbol: c.symbol, side: c.direction,
     setup: "Unclassified", grade: "C" as const, plannedR, fixedTargetCoverage, currency: c.contract.currency,
-    date: c.executions.find(e => e.occurredAt)?.occurredAt.slice(0, 10) ?? "", executions: campaign.executions,
+    date: firstFillAt?.slice(0, 10) ?? "", firstFillAt, closedAt, executions: campaign.executions,
     journalSnapshot: campaign.journalSnapshot, status: c.state, pnl: c.summary.netRealized ?? 0, realizedAvailable: c.summary.netRealized != null,
     r: c.summary.finalNetR ?? 0, finalRAvailable: c.summary.finalNetR != null, costsComplete: c.summary.costsComplete,
     costs: c.summary.fees ?? undefined, grossRealized: c.summary.grossRealized ?? undefined,
@@ -63,7 +85,7 @@ export function paperJournalRow(c: PaperCampaign) {
 export function trailingDescription(rule: TrailingRule) {
   switch (rule.mode) {
     case "SMA": return `${rule.period}-day moving average`;
-    case "Day extreme": return "Previous day extreme";
+    case "Day extreme": return "Current-session day extreme";
     case "Dollar": return `$${rule.distance} trailing distance`;
     case "Percentage": return `${rule.percent}% trailing distance`;
     case "Manual": return `Manual stop $${rule.stopPrice}`;
@@ -85,7 +107,7 @@ export function paperPosition(c: PaperCampaign, connected: boolean): DemoPositio
     averageEntry: c.summary.averageEntry ?? undefined, plannedEntry: c.ticket.planningPrice, plannedRisk: c.summary.initialRisk ?? undefined,
     fixedInitialStop: c.ticket.stopPrice, entryLabel: "Broker-confirmed executions", simulated: false, stale: !connected,
     protection: { state: c.summary.openQuantity === 0 ? "Staged" : protectedQuantity === c.summary.openQuantity ? "Working" : "Unprotected",
-      quantity: protectedQuantity, stop: protectedSlots.length ? Math.min(...protectedSlots.map(s => s.confirmedStop!)) : undefined,
+      quantity: protectedQuantity, stop: protectedSlots.length ? (c.direction === "Long" ? Math.min : Math.max)(...protectedSlots.map(s => s.confirmedStop!)) : undefined,
       confirmed: protectedQuantity > 0, source: connected ? "TWS confirmed protection by share" : "Last TWS confirmation · stale" },
     targets: c.slots.flatMap(s => s.leg?.role === "Target" && s.exitPrice != null ? [{ label: `${s.leg.id} · share ${Number(s.id)+1}`,
       quantity: 1, price: s.exitPrice, state: s.exitStatus === "Filled" ? "Filled" as const : ["Submitted", "PreSubmitted"].includes(s.exitStatus ?? "") ? "Working" as const : "Staged" as const }] : []),

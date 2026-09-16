@@ -1275,12 +1275,6 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 .journal-review-form .review-lesson { grid-column:span 3; }
 .journal-review-form>span { align-self:center; color:#65736b; font-size:7px; }
 
-@media(min-width:1650px){
-  .consolidated-trading { grid-template-columns:minmax(780px,1.45fr) minmax(500px,.85fr); align-items:start; }
-  .consolidated-trading>.simulation-ribbon { grid-column:1/-1; }
-  .consolidated-trading>.trade-planner { min-width:0; justify-content:stretch; }
-  .position-command-center { position:sticky; top:51px; width:100%; max-height:calc(100vh - 55px); justify-self:stretch; padding:4px 24px 34px 8px; overflow:auto; }
-}
 
 @media(max-width:700px){
   .table-scroll-hint { display:block; margin:8px 0 0; color:#7b8780; font-size:8px; }
@@ -1392,3 +1386,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
   .chart-header-actions .auto-trend-toggle span { display:inline; font-size:11px; }
   .chart-header-actions .chart-accent { display:inline-flex; }
 }
+
+.consolidated-trading > .trade-planner { grid-template-columns:minmax(0,1fr); }
+.planner-position-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:24px; align-items:start; }
+.planner-editing-column { min-width:0; }
+.planner-position-layout > .position-command-center { width:100%; min-width:0; padding:0; margin:0; position:static; max-height:none; overflow:visible; }
+.planner-position-layout .position-center-head, .planner-position-layout .position-center-actions { flex-wrap:wrap; }
+@container (min-width:1200px) { .planner-position-layout { grid-template-columns:minmax(0,3fr) minmax(0,2fr); } }
