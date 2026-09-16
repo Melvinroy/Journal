@@ -93,8 +93,11 @@ class FakeTransport:
         self.orders[oid] = {"fields": deepcopy(fields), "status": "Submitted"}
         self.echo(oid)
     def cancel_owned(self, oid):
-        self.orders[oid]["status"] = "Cancelled"
-        self.events.append({"kind": "order-status", "orderId": oid, "status": "Cancelled", "filled": 0, "remaining": 0, "clientId": 71})
+        group = self.orders[oid]["fields"].get("ocaGroup")
+        for other, order in self.orders.items():
+            if (other == oid or (group and order["fields"].get("ocaGroup") == group)) and order["status"] not in {"Filled", "Cancelled", "Inactive"}:
+                order["status"] = "Cancelled"
+                self.events.append({"kind": "order-status", "orderId": other, "status": "Cancelled", "filled": 0, "remaining": 0, "clientId": 71})
     def fill(self, oid, price, fee=.1):
         order = self.orders[oid]; order["status"] = "Filled"
         event = {"kind": "execution", "executionId": f"E{oid}", "orderId": oid, "account": "TEST-PAPER", "clientId": 71,
@@ -324,7 +327,7 @@ def test_all_runner_modes_preserve_direction_and_latched_activation(direction, m
     assert next_stop(direction, 100, 2, stop, quote, favorable, leg, be, .01, refs, True) is None
 
 
-def test_cleanup_exhaustion_waits_for_cancel_and_keeps_stop(service):
+def test_cleanup_exhaustion_reprices_same_order_and_keeps_stop(service):
     from datetime import timedelta
     c = opened(service)
     service.client.bid = 99
@@ -337,7 +340,7 @@ def test_cleanup_exhaustion_waits_for_cancel_and_keeps_stop(service):
             slot["exit"]["createdAt"] = (datetime.now(timezone.utc) - timedelta(seconds=61)).isoformat()
         service._save(c)
         service._automate(c)
-        # Pending cancellation cannot authorize a replacement before its callback.
+        # Pending modification cannot authorize another transmission before its callback.
         before = len(service.client.writes)
         service._automate(service.store.all("campaign")[0])
         assert len(service.client.writes) == before
@@ -349,6 +352,80 @@ def test_cleanup_exhaustion_waits_for_cancel_and_keeps_stop(service):
     assert summarize(c)["openQuantity"] == 3
     assert all(s["stop"]["status"] == "Submitted" for s in c["slots"])
     assert "exhausted" in c["automation"]
+    assert len({oid for oid, fields in service.client.writes if fields["orderType"] == "LMT" and fields["action"] == "SELL"}) == 3
+    assert all(s["exit"]["status"] == "Submitted" for s in c["slots"])
+
+
+def test_cleanup_modifies_target_in_place_and_pause_retains_oca_protection(service):
+    c = opened(service)
+    service._automate(c); service._events()
+    c = service.store.all("campaign")[0]
+    target_id = c["slots"][0]["exit"]["orderId"]
+    before = len(service.client.writes)
+    service.action(c["id"], c["revision"], "pause", "cancel-exits")
+    service._events()
+    c = service.store.all("campaign")[0]
+    assert len(service.client.writes) == before
+    assert c["slots"][0]["exit"]["status"] == "Submitted"
+    assert all(s["stop"]["status"] == "Submitted" for s in c["slots"])
+    service.action(c["id"], c["revision"], "close", "cleanup")
+    service._automate(service.store.all("campaign")[0]); service._events()
+    c = service.store.all("campaign")[0]
+    assert c["slots"][0]["exit"]["orderId"] == target_id
+    assert c["slots"][0]["exit"]["role"] == "cleanup"
+    assert all(s["stop"]["status"] == "Submitted" for s in c["slots"])
+    for slot in c["slots"]: service.client.fill(slot["exit"]["orderId"], 99.99)
+    service._events()
+    c = service.store.all("campaign")[0]
+    assert c["state"] == "Closed"
+    assert all(s["stop"]["status"] == "Cancelled" for s in c["slots"])
+
+
+def test_cancelled_oca_recovery_is_closure_only_and_retains_floor(service):
+    c = opened(service)
+    service._automate(c); service._events()
+    c = service.store.all("campaign")[0]
+    slot = c["slots"][0]
+    service.client.cancel_owned(slot["exit"]["orderId"]); service._events()
+    c = service.store.all("campaign")[0]
+    slot = c["slots"][0]
+    c["cleanup"] = True
+    slot["entry"]["permId"] = 123
+    slot["stop"]["permId"] = 124
+    slot["brokerGroup"] = "123"
+    # Close the other slots using their broker-held stops; one cancelled pair remains.
+    for other in c["slots"][1:]: service.client.fill(other["stop"]["orderId"], 98)
+    service._save(c); service._events()
+    c = service.store.all("campaign")[0]
+    service.authenticated("verified-user")
+    service.source = lambda: "fixed-source"
+    writes = len(service.client.writes)
+    # An unrelated order or a mismatched permanent parent blocks recovery.
+    service.client.orders[9999] = {"status": "Submitted", "fields": {"orderRef": "unrelated", "action": "SELL"}}
+    with pytest.raises(PaperSafetyError): service.recover(c["id"], c["revision"], "blocked-unrelated")
+    del service.client.orders[9999]
+    c = service.store.all("campaign")[0]
+    c["slots"][0]["brokerGroup"] = "wrong-parent"; service._save(c)
+    with pytest.raises(PaperSafetyError): service.recover(c["id"], c["revision"], "blocked-parent")
+    c = service.store.all("campaign")[0]
+    c["slots"][0]["brokerGroup"] = "123"; service._save(c)
+    recovered = service.recover(c["id"], c["revision"], "recover-cancelled")
+    assert recovered["state"] == "Unprotected"
+    assert len(service.client.writes) == writes
+    c = service.store.all("campaign")[0]
+    assert c["closureOnly"]
+    with pytest.raises(PaperSafetyError, match="closure only"):
+        service.review_action(c["id"], c["revision"], "cannot-resume", "resume")
+    service.review_action(c["id"], c["revision"], "close-only", "cleanup")
+    service.client.bid = 97
+    service._automate(service.store.all("campaign")[0])
+    assert len(service.client.writes) == writes
+    service.client.bid = 99
+    service._automate(service.store.all("campaign")[0]); service._events()
+    c = service.store.all("campaign")[0]
+    service.client.fill(c["slots"][0]["exit"]["orderId"], 99)
+    service._events()
+    assert service.store.all("campaign")[0]["state"] == "Closed"
 
 
 def test_exit_fill_racing_cancellation_cannot_create_another_close(service):
@@ -450,6 +527,26 @@ def test_amendment_is_unapplied_and_requires_exact_approval(service):
     service.action(c["id"], saved["revision"], "apply-approved", "apply-amendment")
     assert len(service.client.writes) == before
     assert service.store.all("campaign")[0]["activeExitPlan"]["legs"][0]["target"]["multipleR"] == 3
+
+
+@pytest.mark.parametrize("change_legs", [False, True])
+def test_working_targets_allow_only_breakeven_amendment(service, change_legs):
+    c = opened(service)
+    service._automate(c); service._events()
+    c = service.store.all("campaign")[0]
+    service.authenticated("verified-user")
+    changed = plan(); changed["breakeven"]["activationR"] = 2
+    if change_legs: changed["legs"][0]["target"]["multipleR"] = 3
+    saved = service.action(c["id"], c["revision"], "amend-draft", "save-amendment", changed)
+    before = len(service.client.writes)
+    if change_legs:
+        with pytest.raises(PaperSafetyError, match="Only breakeven"):
+            service.review_action(c["id"], saved["revision"], "amend-apply", "apply-amendment", {"digest": saved["draft"]["digest"]})
+    else:
+        service.review_action(c["id"], saved["revision"], "amend-apply", "apply-amendment", {"digest": saved["draft"]["digest"]})
+        assert service.store.all("campaign")[0]["activeExitPlan"]["breakeven"]["activationR"] == 2
+    assert len(service.client.writes) == before
+    assert all(s["stop"]["status"] == "Submitted" for s in service.store.all("campaign")[0]["slots"])
 
 
 def test_missing_and_late_fees_remain_truthful(service):

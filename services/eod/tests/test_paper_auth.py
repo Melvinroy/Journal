@@ -117,4 +117,4 @@ def test_position_review_resumes_only_that_campaign_and_pause_returns_state(serv
     assert len(service.client.writes) == before
     c = service.store.all("campaign")[0]
     result = service.review_action(c["id"], c["revision"], "pause-one", "cancel-exits")
-    assert result["automation"] == "Paused"
+    assert result["automation"] == "Managed rules paused; broker targets and stops remain active"

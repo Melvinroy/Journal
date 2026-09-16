@@ -81,6 +81,24 @@ def test_session_source_change_blocks_new_entries(service):
     assert not service.client.writes
 
 
+def test_explicit_resume_audits_repaired_source_only_while_flat(service):
+    authenticate(service)
+    service.test_sessions.start("session", 2)
+    service.source = lambda: "repaired-source"
+    service.test_sessions.step()
+    service.test_sessions.resume()
+    session = service.test_sessions.status()
+    assert session["state"] == "Running"
+    assert session["sourceReviews"][0]["previousSource"] == "reviewed-source"
+    assert session["sourceIdentity"] == "repaired-source"
+    assert not service.client.writes
+    service.test_sessions.step(); service._events()
+    service.source = lambda: "another-repair"
+    with pytest.raises(PaperSafetyError, match="Close and reconcile"):
+        service.test_sessions.resume()
+    assert service.test_sessions.status()["sourceIdentity"] == "repaired-source"
+
+
 def test_session_duplicate_start_cannot_change_target(service):
     authenticate(service)
     service.test_sessions.start("session", 2)

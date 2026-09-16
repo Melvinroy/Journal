@@ -255,6 +255,8 @@ class PaperService:
             with self.store.transaction() as db: c = self.store.get(db, "campaign", campaign_id)
             if c["revision"] != revision: raise PaperSafetyError("Position changed. Review the current revision.")
             if c["state"] == "Needs reconciliation": raise PaperSafetyError("Resolve reconciliation before a broker action.")
+            if c.get("closureOnly") and action != "cleanup":
+                raise PaperSafetyError("This recovered exposure permits bounded closure only.")
             batch = self._batch(c["batchId"])
             if self.source() != self.management_source(batch): raise PaperSafetyError("The reviewed execution source changed; operator reconciliation is required.")
             if not self.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are locked.")
@@ -318,15 +320,29 @@ class PaperService:
             total = summarize(c)
             quantity = sum(p["quantity"] for p in self.snapshot.position_rows if p["conId"] == c["contract"]["conId"])
             if quantity != total["openQuantity"]: raise PaperSafetyError("Broker position differs from owned executions.")
+            closure_only = False
             for slot in c["slots"]:
                 if slot["entry"]["status"] not in TERMINAL: raise PaperSafetyError("Entry remains uncertain; recovery cannot retransmit it.")
                 open_quantity = sum(e["quantity"] * (1 if e["effect"] == "entry" else -1) for e in c["executions"] if e["slotId"] == slot["id"])
-                if open_quantity and not stop_is_protective(slot["stop"]): raise PaperSafetyError("Exact broker protection is not confirmed.")
+                if open_quantity and not stop_is_protective(slot["stop"]):
+                    stop = slot["stop"]
+                    # Audited exception for flattening an exactly owned, cancelled
+                    # OCA pair. It never treats the cancelled stop as protection.
+                    proven_cancelled_pair = (c.get("cleanup") and stop.get("confirmed")
+                        and stop["status"] in {"Cancelled", "ApiCancelled"}
+                        and slot["entry"].get("permId") and stop.get("permId")
+                        and slot.get("brokerGroup") == str(slot["entry"]["permId"])
+                        and all(o["status"] in TERMINAL and not o.get("pendingCommand") for role in ("entry", "stop", "exit") if (o := slot.get(role)))
+                        and not any(o["conId"] == c["contract"]["conId"] for o in self.snapshot.open_order_rows))
+                    if not proven_cancelled_pair: raise PaperSafetyError("Exact broker protection is not confirmed.")
+                    closure_only = True
             before = {"state": c["state"], "message": c.get("message"), "revision": c["revision"]}
             c["state"] = "Sync pending"; c["message"] = None
             self._derive(c)
-            if c["state"] in {"Needs reconciliation", "Unprotected"}: raise PaperSafetyError("Recovery invariants are unresolved.")
-            c["automation"] = "Recovered; managed exits paused until review"
+            if c["state"] == "Needs reconciliation" or (c["state"] == "Unprotected" and not closure_only):
+                raise PaperSafetyError("Recovery invariants are unresolved.")
+            c["closureOnly"] = closure_only
+            c["automation"] = "Recovered for bounded closure only; stop is cancelled" if closure_only else "Recovered; managed exits paused until review"
             source = self.source()
             self.store.command(db, command_id, campaign_id, {"action": "recover", "revision": revision})
             self.store.event(db, "recovery:" + command_id, {"campaignId": campaign_id, "before": before, "sourceIdentity": source, "at": stamp()})
@@ -789,6 +805,7 @@ class PaperService:
                     return self.public_campaign(c)
                 if c["revision"] != revision: raise PaperSafetyError("Campaign changed; refresh before applying the action.")
             if action == "save-amendment":
+                if c.get("closureOnly"): raise PaperSafetyError("This recovered exposure permits bounded closure only.")
                 plan = validate_exit_plan(payload)
                 if any(leg["quantity"] < 1 for leg in allocations(summarize(c)["openQuantity"], plan)):
                     raise PaperSafetyError("Each amended exit leg needs at least one confirmed open share.")
@@ -799,6 +816,7 @@ class PaperService:
                     self._save(c, db)
                 return self.public_campaign(c)
             self._authority(self._batch(c["batchId"]))
+            if c.get("closureOnly") and action != "cleanup": raise PaperSafetyError("This recovered exposure permits bounded closure only.")
             if c["state"] == "Needs reconciliation": raise PaperSafetyError("Reconcile the campaign before a broker action.")
             # Flush actual callbacks before checking the optimistic revision again.
             self._events()
@@ -827,8 +845,8 @@ class PaperService:
                     receipt = json.loads(Path(approval_path).read_text()) if approval_path else {}
                     approved = draft["digest"] in receipt.get("approvedAmendmentDigests", [])
                 if not approved: raise PaperSafetyError("This exact saved amendment needs approval before application.")
-                if any(s.get("exit") and s["exit"]["status"] not in TERMINAL for s in c["slots"]):
-                    raise PaperSafetyError("Cancel and reconcile working target/cleanup orders before reallocating exits.")
+                if any(s.get("exit") and s["exit"]["status"] not in TERMINAL for s in c["slots"]) and draft["exitPlan"]["legs"] != c.get("activeExitPlan", c["ticket"]["exitPlan"])["legs"]:
+                    raise PaperSafetyError("Working OCA targets must remain protected. Only breakeven amendments are supported while those targets are active.")
                 c["activeExitPlan"] = draft["exitPlan"]
                 c["allocationPending"] = False
                 legs = [leg for leg in allocations(draft["quantity"], draft["exitPlan"]) for _ in range(leg["quantity"])]
@@ -837,10 +855,9 @@ class PaperService:
                 c["draft"] = None
                 self._save(c)
             elif action == "cancel-exits":
-                for s in c["slots"]:
-                    if s.get("exit") and s["exit"]["status"] not in TERMINAL and not s["exit"].get("pendingCommand"):
-                        self._write(c, s["exit"], "exit", command_id + ":" + s["id"], cancel=True)
-                c["automation"] = "Paused"
+                # Cancelling an OCA target also cancels its protective sibling.
+                # Pause application rules only; retain both broker-held orders.
+                c["automation"] = "Managed rules paused; broker targets and stops remain active"
                 c["paused"] = True
                 self._save(c)
             elif action == "resume":
@@ -887,6 +904,9 @@ class PaperService:
                 self._write(c, stop, "protection-retry", str(uuid.uuid4()))
                 continue
             if not stop_is_protective(stop):
+                if c.get("closureOnly") and c.get("cleanup") and stop["status"] in {"Cancelled", "ApiCancelled"}:
+                    self._cleanup_slot(c, slot, bid)
+                    continue
                 c["automation"] = "Unprotected — operator reconciliation required"; continue
             if not c.get("entryFinal"): continue
             current = stop["confirmed"]["auxPrice"]
@@ -928,20 +948,26 @@ class PaperService:
     def _cleanup_slot(self, c, slot, bid):
         order = slot.get("exit")
         if order and order.get("pendingCommand"): return
-        if order and order["status"] not in TERMINAL:
-            if order["role"] != "cleanup" or (utcnow() - parsed(order["createdAt"])).total_seconds() >= 60:
-                self._write(c, order, "cancel-exit", str(uuid.uuid4()), cancel=True)
-            return
-        if order and order["status"] == "Filled": return  # Await execution, never recreate an economic close.
-        if slot.get("cleanupAttempts", 0) >= 2:
-            c["automation"] = "Cleanup unresolved — two attempts exhausted; protective stop retained"; return
+        if order and order["status"] == "Filled": return  # Wait for execution evidence.
         floor = max(c["ticket"]["cleanupFloor"], slot["stop"]["confirmed"]["auxPrice"])
         if bid < floor:
-            c["automation"] = "Cleanup blocked below its fixed floor; protective stop retained"; return
-        slot["cleanupAttempts"] = slot.get("cleanupAttempts", 0) + 1
+            c["automation"] = "Cleanup blocked below its fixed floor"; return
         price = math.floor((bid + 1e-9) / c["tick"]) * c["tick"]
         if price < floor: return
-        self._exit(c, slot, price, "cleanup")
+        if order and order["status"] not in TERMINAL and order["role"] == "cleanup" and (utcnow() - parsed(order["createdAt"])).total_seconds() < 60:
+            return
+        if slot.get("cleanupAttempts", 0) >= 2:
+            c["automation"] = "Cleanup unresolved — two attempts exhausted; existing broker orders retained"; return
+        slot["cleanupAttempts"] = slot.get("cleanupAttempts", 0) + 1
+        if order and order["status"] not in TERMINAL:
+            # Reprice the exact target in place. Cancelling it would cancel the
+            # protective stop in the same OCA group on the real broker.
+            order["fields"]["lmtPrice"] = round(price, 8)
+            order["role"] = "cleanup"
+            order["createdAt"] = stamp()
+            self._write(c, order, "cleanup-reprice", str(uuid.uuid4()))
+        else:
+            self._exit(c, slot, price, "cleanup")
 
     def _worker(self):
         while not self.stop_event.wait(2):

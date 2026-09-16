@@ -114,9 +114,31 @@ class PaperTestSessions:
         s._connected()
         if s.operator_id != session["userId"] or not s.operator_deadline or now() >= s.operator_deadline:
             raise PaperSafetyError("Sign into the approved operator account.")
-        if session["accountBinding"] != s.client.config.binding() or session["sourceIdentity"] != s.source():
-            raise PaperSafetyError("Session binding or source changed; reconcile its approval before resuming.")
+        if session["accountBinding"] != s.client.config.binding():
+            raise PaperSafetyError("Session account binding changed.")
+        if not s.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are locked.")
         if session["state"] == "Complete": return self.status()
+        s.reconcile()
+        if session["sourceIdentity"] != s.source():
+            # Explicit authenticated resume can renew the source approval only
+            # after every old campaign is economically complete and cleared.
+            campaigns = {c["id"]: c for c in s.store.all("campaign")}
+            if any(c["state"] not in {"Closed", "Cancelled"} or
+                   (c["state"] == "Closed" and not summarize(c)["costsComplete"]) for c in campaigns.values()):
+                raise PaperSafetyError("Close and reconcile every campaign before approving the repaired source.")
+            if any(a["campaignId"] not in campaigns or any(v["state"] == "pending" for v in a.get("actions", {}).values()) for a in session["attempts"]):
+                raise PaperSafetyError("Uncertain session operations block source approval.")
+            if any(not q.get("resolved") for q in s.store.all("quarantine")):
+                raise PaperSafetyError("Quarantined evidence blocks source approval.")
+            if session["limits"] != LIMITS or list(session["scenarios"]) != list(SCENARIOS) or list(session["symbols"]) != list(SYMBOLS):
+                raise PaperSafetyError("Session policy changed; its original approval cannot be reused.")
+            receipt = {"sessionId": session["id"], "userId": s.operator_id, "accountBinding": session["accountBinding"],
+                       "previousSource": session["sourceIdentity"], "sourceIdentity": s.source(), "at": now().isoformat()}
+            session.setdefault("sourceReviews", []).append(receipt)
+            session["sourceIdentity"] = receipt["sourceIdentity"]
+            with s.store.transaction() as db:
+                s.store.event(db, "session-source-review:" + str(uuid.uuid4()), receipt)
+                s.store.put(db, "test-session", session["id"], session)
         session["state"] = "Running"; session["message"] = "Resuming approved session after fresh reconciliation"
         self.save(session)
         return self.status()
@@ -194,9 +216,6 @@ class PaperTestSessions:
                     if age(c["createdAt"]) > 45 or session["state"] == "Draining":
                         self.act(session, attempt, c, "cleanup"); return
                     if attempt["index"] % 7 == 6 and not c.get("cleanup"):
-                        if "cancel-exits" not in attempt["actions"]:
-                            self.act(session, attempt, c, "cancel-exits"); return
-                        if any(slot.get("exit") and slot["exit"]["status"] not in {"Filled", "Cancelled", "ApiCancelled", "Inactive"} for slot in c["slots"]): return
                         if not any(key.startswith("save-amendment") for key in attempt["actions"]):
                             if summarize(c)["openQuantity"] < len(c["ticket"]["exitPlan"]["legs"]): continue
                             amendment = deepcopy(c["ticket"]["exitPlan"])
