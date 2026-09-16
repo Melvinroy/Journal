@@ -255,16 +255,83 @@ test("QC derived stop precision and symbol/source filters preserve the existing 
 });
 
 
-test("fresh broker quote updates only the draft and approved session controls retain server locks", async ({page}) => {
+test("fresh broker quote updates only the main draft and testing remains a progress view", async ({page}) => {
   let submissions=0;
   await page.route("**/v1/ibkr/paper/submit", route => {submissions++; return route.fulfill({json:{}});});
   await page.route("**/v1/ibkr/paper/quote/*", route => route.fulfill({json:{contract:{symbol:"NVDA"},observedAt:new Date().toISOString(),executable:true,error:null,quote:{bid:99.98,ask:100.02}}}));
   await signIn(page);
   await page.getByLabel("Stock symbol",{exact:true}).fill("NVDA");
-  await page.getByRole("button",{name:"Use fresh ask in draft"}).click();
+  await page.getByRole("button",{name:"Use ask in draft"}).click();
   await expect(page.getByLabel("Entry price cap",{exact:true})).toHaveValue("100.02");
   await expect(page.getByRole("button",{name:"Review paper order",exact:true})).toBeDisabled();
-  await page.getByText("Paper test session · not started",{exact:true}).click();
-  await expect(page.getByRole("button",{name:"Start approved 200-trade paper session"})).toBeDisabled();
+  await page.getByText("Testing · no session record",{exact:true}).click();
+  await expect(page.getByRole("button",{name:/Start approved|Resume approved/})).toHaveCount(0);
   expect(submissions).toBe(0);
+});
+
+test("quotes and execution fields stay inside trade setup across resizing without changing the draft", async ({page}) => {
+  let submissions = 0;
+  await page.route("**/v1/ibkr/paper/submit", r => { submissions++; return r.fulfill({json:{}}); });
+  await page.route("**/v1/ibkr/paper/quote/*", r => r.fulfill({json:{contract:{symbol:"TEST"},observedAt:new Date().toISOString(),executable:true,error:null,quote:{bid:99.98,ask:100.02}}}));
+  await signIn(page); await savePlan(page);
+  const setup = page.getByRole("region", {name:"Trade setup",exact:true});
+  for (const width of [1600,1280,1024,768,390,1600]) {
+    await page.setViewportSize({width,height:900});
+    await expect(setup.getByRole("button", {name:"Refresh bid / ask"})).toBeVisible();
+    await expect(setup.getByLabel("Order method",{exact:true})).toBeVisible();
+    await expect(setup.getByLabel("Requested shares",{exact:true})).toHaveValue("3");
+    const bounds = await setup.evaluate(el => {
+      const parent=el.getBoundingClientRect();
+      return [...el.querySelectorAll('.paper-quote button,.broker-execution-fields input,.broker-execution-fields select')].every(n => {const b=n.getBoundingClientRect();return b.left>=parent.left && b.right<=parent.right+1;});
+    });
+    expect(bounds).toBe(true);
+    expect((await setup.boundingBox())!.y).toBeLessThan((await page.getByRole("region",{name:"After-fill plan",exact:true}).boundingBox())!.y);
+  }
+  await setup.getByRole("button", {name:"Refresh bid / ask"}).press("Enter");
+  await expect(setup.getByRole("region",{name:"Executable broker quote"})).toContainText("100.02");
+  await expect(page.getByLabel("Captured planning entry price")).toHaveValue("100");
+  await expect(page.getByRole("button",{name:"Unsave plan",exact:true})).toBeVisible();
+  await setup.getByRole("button", {name:"Use ask in draft"}).click();
+  await expect(page.getByLabel("Captured planning entry price")).toHaveValue("100.02");
+  await expect(page.getByLabel("Entry price cap")).toHaveValue("100.02");
+  await expect(page.getByRole("button",{name:"Review paper order",exact:true})).toBeDisabled();
+  await page.getByLabel("Order method",{exact:true}).selectOption("Breakout");
+  await expect(setup.getByLabel("Entry trigger",{exact:true})).toBeVisible();
+  await expect(setup.locator(".trade-session-static")).toContainText("Stop-limit breakout");
+  expect(submissions).toBe(0);
+});
+
+test("quote application uses the chosen side and rejects stale, malformed and unavailable snapshots", async ({page}) => {
+  let quote = {contract:{symbol:"TEST"},observedAt:new Date().toISOString(),executable:true,error:null as string|null,quote:{bid:99.98,ask:100.02}};
+  await page.route("**/v1/ibkr/paper/quote/*", r => r.fulfill({json:quote}));
+  await signIn(page); await savePlan(page);
+  await page.getByRole("button",{name:"Short",exact:true}).click();
+  await page.getByRole("button",{name:"Use bid in draft"}).click();
+  await expect(page.getByLabel("Captured planning entry price")).toHaveValue("99.98");
+  await expect(page.getByLabel("Entry price cap")).toHaveValue("99.98");
+  for (const observedAt of ["not-a-time", new Date(Date.now()-60000).toISOString()]) {
+    quote = {...quote, observedAt, quote:{bid:101,ask:102}};
+    await page.getByRole("button",{name:"Use bid in draft"}).click();
+    await expect(page.getByRole("region",{name:"Executable broker quote"}).getByRole("alert")).toContainText("Fresh executable quote unavailable");
+    await expect(page.getByLabel("Captured planning entry price")).toHaveValue("99.98");
+  }
+  quote = {...quote,observedAt:new Date().toISOString(),executable:false,error:"Market data unavailable (10197)."};
+  await page.getByRole("button",{name:"Refresh bid / ask"}).click();
+  await expect(page.getByRole("region",{name:"Executable broker quote"}).getByRole("alert")).toContainText("10197");
+});
+
+test("changing symbol while a quote is pending cannot apply the previous symbol's price", async ({page}) => {
+  let release!: () => void;
+  const pending = new Promise<void>(resolve => {release=resolve;});
+  await page.route("**/v1/ibkr/paper/quote/*", async r => {
+    await pending;
+    await r.fulfill({json:{contract:{symbol:"TEST"},observedAt:new Date().toISOString(),executable:true,error:null,quote:{bid:101,ask:102}}});
+  });
+  await signIn(page); await savePlan(page);
+  await page.getByRole("button",{name:"Use ask in draft"}).click();
+  await expect(page.getByRole("button",{name:"Refreshing…"})).toBeDisabled();
+  await page.getByLabel("Stock symbol",{exact:true}).fill("OTHER");
+  release();
+  await expect(page.getByRole("region",{name:"Executable broker quote"}).getByRole("alert")).toContainText("Symbol or side changed");
+  await expect(page.getByLabel("Captured planning entry price")).not.toHaveValue("102");
 });

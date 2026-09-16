@@ -586,6 +586,21 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
             <label>Initial stop<span className={`trade-combined-control ${stopSource === "ATR" ? "with-multiplier" : ""}`}><select value={stopSource} onChange={(event) => changeStopMethod(event.target.value as StopMethod)} aria-label="Stop method"><option value="ATR">ATR</option><option value={side === "Long" ? "LoD" : "HoD"}>{side === "Long" ? "Day low" : "Day high"}</option><option value="Manual">Manual</option></select>{stopSource === "ATR" && <input className="trade-atr-multiplier" inputMode="decimal" value={atrMultiplier || ""} min="0" aria-label="ATR multiplier" onChange={(event)=>{editPlan();setAtrMultiplier(safeNumber(event.target.value));}}/>}<input inputMode="decimal" value={effectiveStopPrice || ""} onChange={(event) => editStopPrice(event.target.value)} aria-label="Stop price" aria-describedby="initial-stop-context"/></span></label>
           </div>
 
+          {paper && !demo && <>
+        <PaperQuote paper={paper} symbol={symbol.trim().toUpperCase()} side={side} onApply={(value, observedAt) => {
+          editPlan(); entryEdited.current = true; setEntryPrice(value); setHardCap(value);
+          setCapturedEntrySource({source: "IBKR TWS snapshot", observedAt});
+        }} />
+        <div className="broker-execution-fields">
+          <label>Order method<select aria-label="Order method" value={executionMethod} onChange={e => { editPlan(); setExecutionMethod(e.target.value as PaperTicket["method"]); }}><option value="Limit">Limit</option><option value="Normal">Capped midpoint</option><option value="Breakout">Stop-limit breakout</option></select></label>
+          <label>Requested shares<input aria-label="Requested shares" type="number" min="1" step="1" placeholder={`Calculated: ${result.shares}`} value={executionQuantity || ""} onChange={e => { editPlan(); setExecutionQuantity(safeNumber(e.target.value)); }} /></label>
+          <label>Entry price cap<input aria-label="Entry price cap" type="number" min="0.0001" step="any" value={hardCap || entryPrice || ""} onChange={e => { editPlan(); setHardCap(safeNumber(e.target.value)); }} /></label>
+          {executionMethod === "Breakout" && <label>Entry trigger<input aria-label="Entry trigger" type="number" min="0.0001" step="any" value={triggerPrice || ""} onChange={e => { editPlan(); setTriggerPrice(safeNumber(e.target.value)); }} /></label>}
+        </div>
+        <p className="trade-exit-help">Calculated size {result.shares} shares · requested {executionQuantity || result.shares}. Quantity is never reduced automatically.</p>
+        {executionQuantity > result.shares && <p role="alert">Requested paper quantity must not exceed calculated sizing.</p>}
+          </>}
+
           <div className="trade-context-line" id="initial-stop-context">
             <span>{stopSource === "ATR" ? `ATR ${marketLoad.snapshot ? price(marketLoad.snapshot.atr14) : "—"} × ${atrMultiplier || "—"}` : stopSource === "Manual" ? `Manual stop · ${capturedEntrySource.source === "Legacy" ? "saved legacy value" : "operator supplied"}` : marketLoad.snapshot ? `${sessionLabel} completed-session ${side === "Long" ? "low" : "high"} ${price(side === "Long" ? marketLoad.snapshot.dayLow : marketLoad.snapshot.dayHigh)}` : `${side === "Long" ? "Day low" : "Day high"} unavailable`}</span>
             <span>{marketLoad.snapshot ? `${marketLoad.snapshot.source} · ${sessionLabel} · ${dataStatus}` : `${capturedEntrySource.source} · ${dataStatus}`}</span>
@@ -597,7 +612,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
             <legend>Execution session</legend>
             <label>Coverage<select aria-label="Trading session" value={sessionMode} onChange={(event)=>{editPlan();const next=event.target.value as TradingSessionMode;setSessionMode(next);if(!sessionDurationOptions(next).includes(duration))setDuration("DAY");}}><option value="Regular">Regular hours</option><option value="RegularExtended">Regular + extended</option><option value="Overnight">Overnight only</option><option value="OvernightDay">Overnight + following day</option></select></label>
             <label>Duration<select aria-label="Order duration" value={duration} onChange={(event)=>{editPlan();setDuration(event.target.value as OrderDuration);}}>{sessionDurationOptions(sessionMode).map(value=><option key={value} value={value}>{value}</option>)}</select></label>
-            <span className="trade-session-static"><small>Entry / route</small><b>{sessionSelection.policy?.entryOrderType ?? "—"} · {sessionSelection.policy?.route ?? "—"}</b></span>
+            <span className="trade-session-static"><small>Entry / route</small><b>{paper && !demo ? ({Limit: "Limit", Normal: "Capped midpoint", Breakout: "Stop-limit breakout"} as const)[executionMethod] : sessionSelection.policy?.entryOrderType ?? "—"} · {sessionSelection.policy?.route ?? "—"}</b></span>
             <label>Protection<select aria-label="Protection order type" value={protectionOrderType} onChange={(event)=>{editPlan();setProtectionOrderType(event.target.value as ProtectionOrderType);}}><option value="STP">Stop</option><option value="STP LMT">Stop limit</option></select></label>
             {protectionOrderType === "STP LMT" && <label>Protection limit<input aria-label="Protection limit price" inputMode="decimal" value={protectionLimitPrice || ""} onChange={(event)=>{editPlan();setProtectionLimitPrice(safeNumber(event.target.value));}}/></label>}
           </fieldset>
@@ -691,19 +706,6 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
       </section>
 
       {paper && !demo ? <>
-        <PaperTestSessionPanel paper={paper} />
-        <PaperQuote paper={paper} symbol={symbol.trim().toUpperCase()} onApply={(value, observedAt) => {
-          editPlan(); entryEdited.current = true; setEntryPrice(value); setHardCap(value);
-          setCapturedEntrySource({source: "IBKR TWS snapshot", observedAt});
-        }} />
-        <div className="broker-execution-fields">
-          <label>Order method<select aria-label="Order method" value={executionMethod} onChange={e => { editPlan(); setExecutionMethod(e.target.value as PaperTicket["method"]); }}><option value="Limit">Limit</option><option value="Normal">Capped midpoint</option><option value="Breakout">Stop-limit breakout</option></select></label>
-          <label>Requested shares<input aria-label="Requested shares" type="number" min="1" step="1" placeholder={`Calculated: ${result.shares}`} value={executionQuantity || ""} onChange={e => { editPlan(); setExecutionQuantity(safeNumber(e.target.value)); }} /></label>
-          <label>Entry price cap<input aria-label="Entry price cap" type="number" min="0.0001" step="any" value={hardCap || entryPrice || ""} onChange={e => { editPlan(); setHardCap(safeNumber(e.target.value)); }} /></label>
-          {executionMethod === "Breakout" && <label>Entry trigger<input aria-label="Entry trigger" type="number" min="0.0001" step="any" value={triggerPrice || ""} onChange={e => { editPlan(); setTriggerPrice(safeNumber(e.target.value)); }} /></label>}
-        </div>
-        <p className="trade-exit-help">Calculated size {result.shares} shares · requested {executionQuantity || result.shares}. Quantity is never reduced automatically.</p>
-        {executionQuantity > result.shares && <p role="alert">Requested paper quantity must not exceed calculated sizing.</p>}
         <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
           planId: planIdentity.current, planRevision, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
           method: executionMethod, quantity: executionQuantity || result.shares, planningPrice: entryPrice, hardCap: hardCap || entryPrice,
@@ -724,6 +726,8 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
         </div>
         <p id="paper-submission-lock" className="paper-intent-lock">TWS Read-Only and Brontide submission lock must remain enabled until the reviewed test batch receives explicit approval.</p>
       </section>}
+
+      {paper && !demo && <PaperTestSessionPanel paper={paper} />}
 
       <p className="trade-safety-note"><span>i</span> {paper && !demo ? "Saving keeps a draft. Only exact paper-order confirmation can send an order." : "Plans and exit settings are stored in this browser. Nothing is sent to a broker."}</p>
 

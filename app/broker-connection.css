@@ -7,13 +7,22 @@
 .broker-order-review {width:min(580px,calc(100vw - 32px));max-height:85vh;overflow:auto;}
 .broker-order-review li {margin:8px 0;overflow-wrap:anywhere;}.broker-order-review code {overflow-wrap:anywhere;}
 .broker-execution-fields {display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;}
-.broker-execution-fields label {display:flex;flex-direction:column;gap:6px;min-width:120px;flex:1;}
-.broker-execution-fields input,.broker-execution-fields select {width:100%;min-width:0;}
+.broker-execution-fields label {display:flex;flex-direction:column;gap:6px;min-width:0;flex:0 1 140px;font-size:12px;}
+.broker-execution-fields label:first-child {flex-basis:180px;}
+.broker-execution-fields input,.broker-execution-fields select {width:100%;min-width:0;min-height:36px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface,#fff);color:var(--ink);font-size:14px;}
+.paper-quote {display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 0;margin-top:8px;border-block:1px solid var(--line);font-size:13px;}
+.paper-quote-prices,.paper-quote-actions {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0;}
+.paper-quote-prices {font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.paper-quote-prices>span {white-space:nowrap;}
+.paper-quote-actions button {min-height:36px;padding:6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface,#fff);color:var(--ink);font-size:13px;}
+.paper-quote p {flex-basis:100%;margin:0;line-height:1.5;overflow-wrap:anywhere;}
+.paper-quote-caption {font-size:12px;color:var(--muted);}
+.paper-quote :focus-visible,.broker-execution-fields :focus-visible {outline:3px solid #13875b;outline-offset:3px;}
 .broker-connection :focus-visible,.broker-order-review :focus-visible {outline:3px solid #13875b;outline-offset:3px;}
 .broker-campaign-actions {padding-top:12px;}.broker-campaign-actions button {min-height:40px;}
 .broker-campaign-actions .editor-actions {flex-wrap:wrap;gap:8px;}
 .broker-campaign-actions .editor-actions button {flex:1 1 130px;white-space:normal;min-width:0;}
-@media(max-width:600px){.broker-connection-detail{position:static;width:auto;margin-top:8px;}.broker-connection{width:100%;}.broker-execution-fields{flex-direction:column;}.broker-campaign-actions button{display:inline-flex;min-height:44px;}}
+@media(max-width:600px){.broker-connection-detail{position:static;width:auto;margin-top:8px;}.broker-connection{width:100%;}.broker-execution-fields label,.broker-execution-fields label:first-child{flex:1 1 130px;}.broker-execution-fields input,.broker-execution-fields select,.paper-quote-actions button{min-height:44px;}.broker-campaign-actions button{display:inline-flex;min-height:44px;}}
 
 .broker-connection {width:fit-content;margin:8px 0;}
 .broker-connection-detail .editor-actions {display:flex;flex-wrap:wrap;gap:8px;}
