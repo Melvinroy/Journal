@@ -1,14 +1,14 @@
 "use client";
-import type { ReactNode } from "react";
 import { REPORT_TYPES, deliveryStatus, publication, reportHistory, timestamp, type Observation, type Report, type Schedule } from "../lib/catalyst-reports";
 
-export function CatalystReports({reports,type,setType,reportId,setReportId,schedules,observations,now,diagnostic,themePanel,loading=false}: {
+export function CatalystReports({reports,type,setType,reportId,setReportId,schedules,observations,now,diagnostic,loading=false}: {
   reports:Report[];type:string;setType:(v:string)=>void;reportId:string;setReportId:(v:string)=>void;
-  schedules:Schedule[];observations:Observation[];now:Date;diagnostic:string;themePanel:ReactNode;loading?:boolean;
+  schedules:Schedule[];observations:Observation[];now:Date;diagnostic:string;loading?:boolean;
 }) {
   const history=reportHistory(reports,type);
   const active=reportId?history.find(r=>r.id===reportId):history[0];
   const unknown=reportHistory(reports,"Unknown");
+  const deliveries = REPORT_TYPES.map(t => ({ type:t, state:deliveryStatus(schedules.find(s=>s.report_type===t), reportHistory(reports,t), observations.filter(o=>o.report_type===t), now) }));
   return <section className="catalyst-panel catalyst-report-controls" aria-label="Reports and delivery">
     <div className="catalyst-report-selectors">
       <div className="catalyst-window-switch" aria-label="Report type">{[...REPORT_TYPES,...(unknown.length?["Unknown"]:[])].map(t=><button type="button" key={t} aria-pressed={type===t} className={type===t?"active":""} onClick={()=>setType(t)}>{t}</button>)}</div>
@@ -18,14 +18,15 @@ export function CatalystReports({reports,type,setType,reportId,setReportId,sched
       <strong>{type} · {active.trading_date_checked}</strong>
       <span>{active.id!==history[0]?.id?"Older report being shown":"Latest available report"} · {Math.max(0,Math.floor((now.getTime()-Date.parse(publication(active)))/3600000))}h since {active.published_at?"publication":"receipt"}</span>
       <span>Coverage: {active.coverage_start&&active.coverage_end?`${active.coverage_start} – ${active.coverage_end}`:active.coverage_window||"Not supplied"}</span>
-      <span>Published: {active.published_at?timestamp(active.published_at):"Not recorded for this legacy report"} · Received: {timestamp(active.last_received_at||active.created_at)}</span>
+
+    </div>:loading?<p role="status">Loading report history…</p>:<p role="status">No {type} report received{reportId?" for this selection":""}. No other report type is being shown.</p>}</div></div>
+    {deliveries.filter(item=>item.state.delivery.startsWith("Late")).map(item=><p key={item.type} className="catalyst-delivery-warning" role="status">{item.type}: {item.state.delivery}</p>)}
+    <details><summary>Delivery details and diagnostics</summary>{active&&<div className="catalyst-report-metadata">      <span>Published: {active.published_at?timestamp(active.published_at):"Not recorded for this legacy report"} · Received: {timestamp(active.last_received_at||active.created_at)}</span>
       <span>Source: {active.source||"Not attributed in legacy metadata"}</span>
-      <div className="catalyst-selected-brief"><span>Selected brief · generated {timestamp(active.generated_at_sgt)}</span><strong>{active.report_type}</strong><p>{active.best_focus||active.market_summary||"No focus note recorded."}</p></div>
-    </div>:loading?<p role="status">Loading report history…</p>:<p role="status">No {type} report received{reportId?" for this selection":""}. No other report type is being shown.</p>}</div>{themePanel}</div>
-    <details><summary>Delivery details and diagnostics</summary>
+      <div className="catalyst-selected-brief"><span>Selected brief · generated {timestamp(active.generated_at_sgt)}</span><strong>{active.report_type}</strong><p>{active.best_focus||active.market_summary||"No focus note recorded."}</p></div></div>}
       <div className="catalyst-delivery-grid">{REPORT_TYPES.map(t=>{
         const schedule=schedules.find(s=>s.report_type===t), items=reportHistory(reports,t), events=observations.filter(o=>o.report_type===t);
-        const state=deliveryStatus(schedule,items,events,now);
+        const state=deliveries.find(item=>item.type===t)!.state;
         const failures=events.filter(o=>o.status==="failed").sort((a,b)=>Date.parse(b.observed_at)-Date.parse(a.observed_at));
         return <article key={t}><strong>{t}</strong>
           <span>{schedule?`${schedule.weekdays.map(d=>["","Mon","Tue","Wed","Thu","Fri","Sat","Sun"][d]).join(", ")} ${schedule.local_time.slice(0,5)} · ${schedule.timezone}`:"Schedule / timezone: Not observable"}</span>

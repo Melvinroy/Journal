@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure, MissingValue } from "./WorkspacePresentation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEMO_CAMPAIGNS,
@@ -348,7 +349,7 @@ export function TradingWorkspace({
   const [draft, setDraft] = useState<Plan | null>(null);
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
-  const [showSaved, setShowSaved] = useState(true);
+  const [showSaved, setShowSaved] = useState(false);
   const [positionSearch, setPositionSearch] = useState("");
   const matchesSymbol = (symbol: string) => symbol.toUpperCase().includes(positionSearch.trim().toUpperCase());
   const [planAmendmentMode, setPlanAmendmentMode] = useState(false);
@@ -841,23 +842,14 @@ export function TradingWorkspace({
 
   return (
     <section className="consolidated-trading">
-      {demo && (
-        <div className="simulation-ribbon" role="status">
-          <strong>SIMULATED PREVIEW</strong>
-          <span>
-            Isolated sample records · paper QC remains blocked · no
-            broker-confirmed fills
-          </span>
-        </div>
-      )}
-      <TradePlanner demo={demo} paper={paper} context={context} onChart={onChart} positions={
+      <TradePlanner demo={demo} paper={paper} context={context} onChart={onChart} positionCount={effectivePositions.filter(item => item.status !== "Closed").length} exposure={<><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
       <section
         className="position-command-center"
         aria-labelledby="position-center-title"
       >
         <header className="position-center-head">
           <div>
-            <p className="eyebrow">Portfolio</p>
+
             <h2 id="position-center-title">Positions</h2>
             <p>
               Execution, protection and remaining exposure.
@@ -903,12 +895,12 @@ export function TradingWorkspace({
               items={openPositions}
               onOpen={openPositionDetail}
             />
-            <PositionRows
+            <Disclosure title={`Recently closed (${closed.length})`} name="closed-positions" scope={demo ? "demo" : paper?.identity?.userId ?? "account"}><PositionRows
               title="Recently closed"
               meta="Zero confirmed open shares"
               items={closed}
               onOpen={openPositionDetail}
-            />
+            /></Disclosure>
           </>
         ) : (
           <>
@@ -943,7 +935,7 @@ export function TradingWorkspace({
                       <strong>{state.entered}</strong>
                     </span>
                     <span>
-                      <small>Open</small>
+                      <small>Remaining</small>
                       <strong>{state.remaining}</strong>
                     </span>
                     <span>
@@ -1591,7 +1583,7 @@ function PositionRows({
                   {item.changedInIbkr && <em>Changed in IBKR</em>}
                 </span>
                 <span>
-                  <small>Open</small>
+                  <small>Remaining</small>
                   <strong>{numbers.openQuantity} sh</strong>
                 </span>
                 <span>
@@ -1606,7 +1598,7 @@ function PositionRows({
                     }
                   >
                     {numbers.unrealized == null
-                      ? "Unavailable"
+                      ? <MissingValue reason="Unrealized P&L unavailable; check quote and execution details" />
                       : signedMoney(numbers.unrealized)}
                   </strong>
                 </span>

@@ -267,17 +267,7 @@ export function ScannerDashboard({ local, onChart }: {
           <p title="All scans use the same completed EOD session">{payload?.data_date ? `EOD ${payload.data_date}` : "Completed-session EOD"} · {compactStatus}</p>
         </div>
         <div className="scanner-actions">
-          <button type="button" className="secondary-button" disabled={!local || refreshing || state === "updating"}
-            onClick={manualRefresh}>{refreshing || state === "updating" ? "Updating…" : "Refresh EOD"}</button>
-        </div>
-      </header>
-
-      {preferences.error && <p className="scanner-state scanner-state-failed">{preferences.error}</p>}
-      {stateMessage && state !== "stale" && <p className={`scanner-state scanner-state-${state}`}>{stateMessage}</p>}
-      {unavailable && <p className="scanner-state scanner-state-unavailable">Unavailable — {unavailable}</p>}
-      {state === "stale" && <p className="scanner-routine-state" role="status">{stateMessage}</p>}
-
-      {Boolean(payload?.status.recent_runs?.length) && (
+          {Boolean(payload?.status.recent_runs?.length) && (
         <details className="scanner-update-details">
           <summary>Update details</summary>
           <div className="scanner-update-history" aria-label="Recent EOD updates">
@@ -300,7 +290,18 @@ export function ScannerDashboard({ local, onChart }: {
         </details>
       )}
 
-      <div className="scanner-grid">
+          <button type="button" className="secondary-button" disabled={!local || refreshing || state === "updating"}
+            onClick={manualRefresh}>{refreshing || state === "updating" ? "Updating…" : "Refresh EOD"}</button>
+        </div>
+      </header>
+
+      {preferences.error && <p className="scanner-state scanner-state-failed">{preferences.error}</p>}
+      {stateMessage && state !== "stale" && <p className={`scanner-state scanner-state-${state}`}>{stateMessage}</p>}
+      {unavailable && <p className="scanner-state scanner-state-unavailable">Unavailable — {unavailable}</p>}
+      {state === "stale" && <p className="scanner-routine-state" role="status">{stateMessage}</p>}
+
+
+      <div className="scanner-grid" onKeyDown={event => { if (settingsOpen && event.key === "Escape") { event.preventDefault(); setSettingsOpen(false); settingsButtonRef.current?.focus(); } }}>
         <ScanPanel title="Biggest One Month" count={sorted.length} approximate={approximate}
           settingsOpen={settingsOpen} settingsButtonRef={settingsButtonRef}
           onSettings={() => setSettingsOpen(value => !value)}>
@@ -313,6 +314,7 @@ export function ScannerDashboard({ local, onChart }: {
                   settingsButtonRef.current?.focus();
                 }
               }}>
+              <button type="button" className="scanner-close" onClick={() => { setSettingsOpen(false); settingsButtonRef.current?.focus(); }}>Close settings</button>
               <label>DV &gt;<input aria-label="Minimum dollar volume" type="number" min="0" step="1000000"
                 value={draft.minDollarVolume} onChange={event => setDraft({ ...draft, minDollarVolume: Number(event.target.value) })} /></label>
               <label>ADR% &gt;<input aria-label="Minimum ADR percent" type="number" min="0" max="1000" step="0.1"

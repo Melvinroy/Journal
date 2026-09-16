@@ -120,8 +120,8 @@ test("Scanner remains contained through wide, narrow, and wide resize", async ({
     const panel = await page.locator(".scan-panel").boundingBox();
     expect(panel).not.toBeNull();
     if (viewport.width >= 720) {
-      expect(panel!.width).toBeGreaterThanOrEqual(300);
-      expect(panel!.width).toBeLessThanOrEqual(360);
+      expect(panel!.width).toBeGreaterThanOrEqual(500);
+      expect(panel!.width).toBeLessThanOrEqual(640);
     }
     await expect(page.getByRole("button", { name: "Refresh EOD" })).toBeVisible();
     await page.getByRole("button", { name: "Biggest One Month settings" }).click();

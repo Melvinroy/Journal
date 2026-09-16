@@ -26,6 +26,13 @@ async function navigateTo(
     await expect(destination).toBeVisible();
   }
   await destination.click();
+  if (name === "Trading") {
+    const presets = page.getByRole("button", { name: "Exit presets", exact: false });
+    if (await presets.isVisible() && await presets.getAttribute("aria-expanded") === "false") await presets.click();
+    const saved = page.getByRole("button", { name: "Show saved plans", exact: true });
+    if (await saved.isVisible()) await saved.click();
+    if (await page.locator(".workspace").count()) await page.locator(".workspace").evaluate(element => element.scrollTo(0,0));
+  }
 }
 
 async function dividerGeometry(page: Page): Promise<Geometry> {
@@ -123,14 +130,14 @@ test("planner derives sourced ATR and day-extreme stops, then preserves explicit
   await page.getByRole("button", { name: "Short", exact: true }).click();
   await expect(stop).toHaveValue("103");
   await method.selectOption("HoD");
-  await expect(method.locator("option:checked")).toHaveText("Day high · Sep 3");
+  await expect(method.locator("option:checked")).toHaveText("Day high");
   await expect(stop).toHaveValue("101");
   await expect(
     page.getByText("Sep 3, 2026 completed-session high $101.00"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Long", exact: true }).click();
   await expect(method).toHaveValue("LoD");
-  await expect(method.locator("option:checked")).toHaveText("Day low · Sep 3");
+  await expect(method.locator("option:checked")).toHaveText("Day low");
   await expect(stop).toHaveValue("99");
   await expect(
     page.getByText("Sep 3, 2026 completed-session low $99.00"),
@@ -142,7 +149,7 @@ test("planner derives sourced ATR and day-extreme stops, then preserves explicit
   await expect(stop).toHaveValue("97.5");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("short stop must be above entry");
 
@@ -150,19 +157,19 @@ test("planner derives sourced ATR and day-extreme stops, then preserves explicit
   await page.getByLabel("Stock symbol").fill("ZZZZ");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("ATR is unavailable");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("No simulated daily data exists");
   await method.selectOption("Manual");
   await stop.fill("105");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toBeHidden();
 });
@@ -213,7 +220,7 @@ test("planner reopens reproducible saves and preserves legacy stop method and pr
   await expect(page.getByLabel("Stop price")).toHaveValue("96.25");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("saved draft has no recorded market-data source");
 });
@@ -629,7 +636,7 @@ test("read-only paper snapshots stay isolated, duplicate-free, and recover after
   await page.getByRole("button", { name: "Refresh broker state" }).click();
   await expect(unlinked).toHaveCount(2);
   outage = true;
-  await expect(page.locator(".broker-connection-detail")).toContainText("Local service unavailable", { timeout: 10000 });
+  await expect(page.locator(".broker-blocker")).toContainText("Local service unavailable", { timeout: 10000 });
   await expect(unlinked).toHaveCount(2);
   outage = false;
   await page.getByRole("button", { name: "Retry connection" }).click();
@@ -655,7 +662,7 @@ test("demo preview never requests paper-account data", async ({ page }) => {
   });
   await openDemo(page);
   await navigateTo(page, "Trading");
-  await expect(page.getByText(/SIMULATED PREVIEW/)).toBeVisible();
+  await expect(page.getByText("Simulation · no broker connection", {exact:true})).toBeVisible();
   expect(brokerRequests).toBe(0);
 });
 
@@ -710,6 +717,7 @@ test("position detail reports accounting, protection and price-data limitations 
   await expect(dialog).toContainText("12 sh");
   await page.keyboard.press("Escape");
 
+  await page.getByRole("button", {name:/Recently closed/}).click();
   await page.getByRole("button", { name: "Open AMD position details" }).click();
   dialog = page.getByRole("dialog", { name: "AMD position details" });
   await expect(dialog).toContainText("Exited");
@@ -930,20 +938,17 @@ test("mobile workspaces do not create document-level horizontal scrolling", asyn
     await expectContained(page, selector, true);
   await page.getByRole("button", { name: "Journal", exact: true }).click();
   await expect(
-    page.getByText("Swipe horizontally to review all trade metrics."),
+    page.getByText("Open a symbol for all trade metrics and execution details."),
   ).toBeVisible();
   const table = page.getByRole("region", {
     name: /Recent trades; scroll vertically/,
   });
-  await expectContainedScroller(page, ".trade-table");
-  await table.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect
-    .poll(() => table.evaluate((element) => element.scrollLeft))
-    .toBeGreaterThan(0);
+  await expectContained(page, ".trade-table", true);
+  await table.getByRole("button", {name:"NVDA",exact:true}).click();
+  await expect(page.getByRole("region", {name:"NVDA entry and exit details"})).toBeVisible();
 });
 
-test("positions sit beside the planner when wide and stack on the same loaded page when compact", async ({
+test("positions stay beside the planner on laptops and switch panes on compact screens", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 900 });
@@ -967,13 +972,14 @@ test("positions sit beside the planner when wide and stack on the same loaded pa
   await expectContained(page, ".position-command-center", true);
 
   await page.setViewportSize({ width: 1280, height: 760 });
-  const compact = await Promise.all([
-    planner.boundingBox(),
-    positions.boundingBox(),
-  ]);
-  expect(compact[1]!.y).toBeGreaterThanOrEqual(
-    compact[0]!.y + compact[0]!.height - 1,
-  );
+  const laptop = await Promise.all([planner.boundingBox(), positions.boundingBox()]);
+  expect(Math.abs(laptop[0]!.y - laptop[1]!.y)).toBeLessThan(2);
+  await page.setViewportSize({width:768,height:900});
+  await page.getByRole("tab", {name:"Plan",exact:true}).click();
+  await expect(positions).not.toBeVisible();
+  await page.getByRole("tab", {name:/Positions \(/}).click();
+  await expect(positions).toBeVisible();
+  await expect(planner).not.toBeVisible();
   await expectContained(page, ".position-command-center", true);
   await page
     .getByRole("button", { name: "Open AAPL position details" })
@@ -1050,6 +1056,7 @@ test("Journal stays within viewport and clipping bounds through wide-narrow-wide
   await navigateTo(page, "Trading");
   await page.getByRole("button", { name: "Journal", exact: true }).click();
 
+  await page.getByRole("button", { name: /Distribution and setup analysis/ }).click();
   const chartSizes: Array<{ width: number; height: number }> = [];
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -1074,10 +1081,10 @@ test("Journal stays within viewport and clipping bounds through wide-narrow-wide
     for (const selector of [
       ".journal-content",
       ".header-actions",
-      ".topbar .range-control:not(.compact-filter)",
+      ".journal-record-controls .range-control:not(.compact-filter)",
       ".auth-button",
       ".topbar .primary-button",
-      ".journal-metric-grid",
+      ".journal-content > .journal-metric-grid",
       ".equity-panel",
       ".distribution-panel",
       ".equity-chart svg",
@@ -1167,7 +1174,7 @@ test("Plan stays container-bound through a large-to-small per-monitor DPI transi
     expect(workspaceSizing.cssWidth).toBe(workspaceSizing.clientWidth);
     for (const selector of [
       ".trading-tabs",
-      ".simulation-ribbon",
+      ".broker-account-summary",
       ".trade-commandbar",
       ".trade-risk-banner",
       ".trade-actionbar",
@@ -1179,10 +1186,13 @@ test("Plan stays container-bound through a large-to-small per-monitor DPI transi
       ".trade-leg-list",
       ".trade-preset-panel",
       ".trade-safety-note",
-      ".position-command-center",
     ]) {
       await expectContained(page, selector, true);
     }
+    const panes = page.getByRole("tab", {name:/Positions \(/});
+    if (await panes.isVisible()) await panes.click();
+    await expectContained(page,".position-command-center",true);
+    if (await panes.isVisible()) await page.getByRole("tab",{name:"Plan",exact:true}).click();
     if (
       state.deviceScaleFactor === 1.5 &&
       process.env.BRONTIDE_CAPTURE_LAYOUT === "1"
@@ -1307,7 +1317,7 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   await page.getByRole("button", { name: "Journal", exact: true }).click();
 
   const cards = page.locator(".journal-metric-grid .metric-card");
-  const metricLayout = () => page.locator(".journal-metric-grid").evaluate((grid) => {
+  const metricLayout = () => page.locator(".journal-content > .journal-metric-grid").evaluate((grid) => {
     const cards = [...grid.querySelectorAll<HTMLElement>(".metric-card")];
     const rowTops = [...new Set(cards.map(card => Math.round(card.getBoundingClientRect().top)))];
     const content = grid.closest<HTMLElement>(".journal-content")!;
@@ -1330,9 +1340,8 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   await expect(cards.locator(":scope > .metric-value")).toHaveCount(12);
   await expect(cards.locator(":scope > .metric-detail")).toHaveCount(12);
   await expect(cards.locator(".metric-label")).toHaveText([
-    "Net P&L", "Win rate", "Avg planned R:R", "Expectancy in R", "Profit factor",
-    "Closed", "Avg result", "Avg win", "Avg loss", "Payoff", "Max drawdown",
-    "Longest loss streak",
+    "Net P&L", "Win rate", "Expectancy in R", "Profit factor", "Max drawdown", "Closed trades",
+    "Avg planned R:R", "Avg result", "Avg win", "Avg loss", "Payoff", "Longest loss streak",
   ]);
   await expect(cards.filter({ hasText: "Net P&L" })).toHaveAttribute("data-metric-tone", "positive");
   await expect(cards.filter({ hasText: "Avg win" })).toHaveAttribute("data-metric-tone", "positive");
@@ -1342,7 +1351,7 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   let layout = await metricLayout();
   expect(layout.contentWidth).toBeGreaterThanOrEqual(960);
   expect(layout.columns).toBe(6);
-  expect(layout.rows).toBe(2);
+  expect(layout.rows).toBe(1);
   expect(layout.contained).toBe(true);
   expect(layout.horizontalOverflow).toBeLessThanOrEqual(1);
   const eligibility = page.getByLabel("Journal eligibility summary");
@@ -1387,10 +1396,10 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   expect(atBottom.lastBottom).toBeLessThanOrEqual(atBottom.tableBottom + 1);
   await lastRow.getByRole("button").click();
   await expect(table.locator(".journal-execution-details")).toBeVisible();
-  expect(await table.evaluate(element => element.clientHeight)).toBe(initial.clientHeight);
+  expect(await table.evaluate(element => element.clientHeight)).toBeGreaterThanOrEqual(initial.clientHeight);
 
   const unavailableR = rows.filter({ hasText: "MSFT" }).locator(":scope > span").nth(7);
-  await expect(unavailableR).toHaveText("Unavailable");
+  await expect(unavailableR).toContainText("Final Net R unavailable");
   await expect(unavailableR).toHaveClass(/journal-semantic-unavailable/);
 
   for (const state of [
@@ -1407,12 +1416,12 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
     expect(layout.contained).toBe(true);
     expect(layout.horizontalOverflow).toBeLessThanOrEqual(1);
   }
-  await expectContainedScroller(page, ".trade-table");
+  await expectContained(page, ".trade-table", true);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(table).toHaveAttribute("data-visible-rows", "10");
   await expect.poll(async () => (await metricLayout()).columns).toBe(6);
   layout = await metricLayout();
-  expect(layout.rows).toBe(2);
+  expect(layout.rows).toBe(1);
   expect(layout.contained).toBe(true);
 });
 
@@ -1438,5 +1447,5 @@ test("Journal filters, drawdown, review persistence and expanded rows remain res
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('[data-journal-trade-id="journal-amd"] button').click();
   await expectContained(page, ".journal-execution-details", true);
-  await expectContainedScroller(page, ".trade-table");
+  await expectContained(page, ".trade-table", true);
 });

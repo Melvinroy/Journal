@@ -1,3 +1,4 @@
+import { MissingValue } from "./WorkspacePresentation";
 import {
   journalSemanticClass,
   type JournalSemanticTone,
@@ -19,7 +20,7 @@ export function MetricCard({
   return (
     <article className="metric-card" data-metric-tone={tone}>
       <span className="metric-label" title={title}>{label}</span>
-      <strong className={`metric-value ${journalSemanticClass(tone)}`}>{value}</strong>
+      <strong className={`metric-value ${journalSemanticClass(tone)}`}>{tone === "unavailable" ? <MissingValue reason={typeof detail === "string" ? detail : "Measurement unavailable"} /> : value}</strong>
       <small className="metric-detail">{detail}</small>
     </article>
   );

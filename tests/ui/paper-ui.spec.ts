@@ -126,7 +126,7 @@ test("the existing position drawer and Journal share broker executions without f
   await drawer.getByRole("button", { name: "Open Journal trade" }).click();
   const row = page.locator('[data-journal-trade-id="paper:confirmed-campaign"]');
   await expect(row).toBeVisible();
-  await expect(row).toContainText("Unavailable");
+  await expect(row).toContainText(/unavailable/i);
   await expect(row).toContainText("IBKR paper");
   await expect(row).toContainText("Not reviewed");
   await expect(row).not.toContainText("Grade C");
@@ -157,10 +157,13 @@ test("account summary precedes planner and positions align beside setup only in 
       return { summary:rect(".broker-account-summary"), heading:rect(".trade-commandbar"), setup:rect(".trade-ticket"), positions:rect(".position-command-center"), editor:rect(".planner-editing-column"), overflow:document.documentElement.scrollWidth > innerWidth };
     });
     expect(boxes.summary.bottom).toBeLessThanOrEqual(boxes.heading.y);
-    if (width === 1600) {
+    if ((await page.locator(".planner-workspace").boundingBox())!.width >= 960) {
       expect(Math.abs(boxes.setup.y - boxes.positions.y)).toBeLessThan(2);
       expect(boxes.positions.x).toBeGreaterThan(boxes.setup.right);
-    } else expect(boxes.positions.y).toBeGreaterThanOrEqual(boxes.editor.bottom);
+    } else {
+      await expect(page.getByRole("tab", {name:/Positions/})).toBeVisible();
+      await expect(page.locator(".position-command-center")).not.toBeVisible();
+    }
     expect(boxes.overflow).toBe(false);
   }
 });
@@ -194,6 +197,7 @@ test("QC derived stop precision and symbol/source filters preserve the existing 
   await expect(page.getByText("No matching open positions.", {exact:true})).toBeVisible();
   await page.getByLabel("Find position symbol").fill("");
   await page.setViewportSize({width:390,height:844});
+  await page.getByRole("tab", {name:"Plan",exact:true}).click();
   await page.getByLabel("Runner A trailing method").selectOption({label:"Percent"});
   expect((await page.getByLabel("Runner A trailing method").boundingBox())!.width).toBeGreaterThan(120);
   await page.setViewportSize({width:1600,height:1000});
@@ -201,8 +205,8 @@ test("QC derived stop precision and symbol/source filters preserve the existing 
   await expect(page.getByRole("heading",{name:"Trading journal",exact:true})).toBeVisible();
   await page.getByLabel("Journal record source").selectOption("paper");
   await expect(page.getByText("No trades match these filters.", {exact:true})).toBeVisible();
-  await expect(page.locator(".metric-card").filter({hasText:"Win rate"})).toContainText("Unavailable");
-  await expect(page.locator(".metric-card").filter({hasText:"Avg planned R:R"})).toContainText("Unavailable");
+  await expect(page.locator(".metric-card").filter({hasText:"Win rate"})).toHaveAttribute("data-metric-tone", "unavailable");
+  await expect(page.locator(".metric-card").filter({hasText:"Avg planned R:R"})).toHaveAttribute("data-metric-tone", "unavailable");
   await page.getByLabel("Journal record source").selectOption("all");
   await page.getByLabel("Find Journal symbol").fill("HOOD");
   await expect(page.locator(".trade-table .journal-trade-group")).toHaveCount(1);

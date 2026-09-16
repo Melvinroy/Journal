@@ -10,7 +10,7 @@ async function open(page:Page,query='?demo=1'){
  if(await menu.isVisible())await menu.click();
  await page.getByRole('button',{name:'Discover',exact:true}).click();
  await page.getByRole('button',{name:'Catalysts',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Executive signal board'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Catalysts',exact:true})).toBeVisible();
 }
 async function expectSignalCardGeometry(page:Page){
  const geometry=await page.locator('.catalyst-signal-card').evaluateAll(cards=>cards.map(card=>{
@@ -29,6 +29,7 @@ test('three types, scoped history, empty results, navigation, keyboard details a
  await expect(page.getByRole('button',{name:'Open WEEK catalyst detail'})).toBeVisible();
  await page.getByRole('button',{name:'Premarket',exact:true}).click();
  await expect(page.getByRole('button',{name:'Open WEEK catalyst detail'})).toHaveCount(0);
+ await page.getByRole('button',{name:/Report analysis/}).click();
  const leadership=page.locator('.catalyst-leader-panel');
  await expect(leadership.nth(0).locator('.catalyst-signal-card')).toHaveCount(6);
  await expect(leadership.nth(1).locator('.catalyst-signal-card')).toHaveCount(5);
@@ -59,11 +60,9 @@ test('three types, scoped history, empty results, navigation, keyboard details a
  expect(await page.locator('.catalyst-leadership-grid').evaluate(grid=>getComputedStyle(grid).gridTemplateColumns.split(' ').length)).toBe(2);
  for(const panel of [leadership.nth(0),leadership.nth(1)]){
    const stack=panel.locator('.catalyst-signal-stack'),last=stack.locator('.catalyst-signal-card').last();
-   const before=await stack.evaluate(node=>({scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,overflowY:getComputedStyle(node).overflowY}));
-   expect(before.scrollHeight).toBeGreaterThan(before.clientHeight);expect(before.overflowY).toBe('auto');
+   await expect(stack).toHaveCSS('overflow-y','visible');
    await last.focus();
-   const after=await stack.evaluate((node)=>{const focused=document.activeElement!.getBoundingClientRect(),box=node.getBoundingClientRect();return {scrollTop:node.scrollTop,inside:focused.top>=box.top-1&&focused.bottom<=box.bottom+1};});
-   expect(after.scrollTop).toBeGreaterThan(0);expect(after.inside).toBe(true);
+   await expect(last).toBeInViewport();
  }
  await expect(page.locator('.catalyst-signal-card').first().locator('.catalyst-signal-summary')).toHaveCSS('white-space','normal');
  await page.setViewportSize({width:980,height:800});
@@ -79,10 +78,8 @@ test('three types, scoped history, empty results, navigation, keyboard details a
  await page.setViewportSize({width:390,height:844});
  for(const panel of [leadership.nth(0),leadership.nth(1)]){
    const stack=panel.locator('.catalyst-signal-stack');
-   await expect(stack).toHaveCSS('touch-action','pan-y');
-   expect(await stack.evaluate(node=>node.scrollHeight>node.clientHeight)).toBe(true);
    await stack.locator('.catalyst-signal-card').last().focus();
-   expect(await stack.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
+   await expect(stack.locator('.catalyst-signal-card').last()).toBeInViewport();
  }
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  await page.setViewportSize({width:1440,height:900});
@@ -105,12 +102,16 @@ test('demo exit exposes the existing sign-in flow without using fixture data',as
  await expect(page.getByText('Demo data',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Leave demo and sign in'}).click();
  await expect(page).not.toHaveURL(/demo=1/);
+ if(!await page.getByRole('heading',{name:'Welcome back'}).isVisible()) {
+   await page.getByRole('button',{name:'Workspace navigation',exact:true}).click();
+   await page.getByRole('button',{name:'Trading',exact:true}).click();
+ }
  await expect(page.getByRole('heading',{name:'Welcome back'})).toBeVisible();
  await expect(page.getByText(/Fictional reports/)).toHaveCount(0);
 });
 test('password recovery turns an unreachable auth service into a retryable error',async({page})=>{
  await page.route('**/auth/v1/recover*',route=>route.abort());
- await page.goto('/');
+ await page.goto('/?paper=1');
  await page.getByRole('button',{name:'Forgot password?'}).click();
  await page.getByLabel('Email address').fill('reader@example.com');
  await page.getByRole('button',{name:'Send reset link'}).click();
@@ -142,7 +143,7 @@ test('missing type, late receipt and known ingestion failure do not invent sched
  await expect(page.locator('.catalyst-table tbody tr')).toHaveCount(0);
  await open(page,'?demo=1&catalystFixture=failure');
  await page.getByText('Delivery details and diagnostics',{exact:true}).click();
- await expect(page.getByText('Late · expected report not yet received')).toBeVisible();
+ await expect(page.locator('.catalyst-delivery-grid').getByText('Late · expected report not yet received')).toBeVisible();
  await expect(page.getByText(/Scheduler: succeeded/)).toBeVisible();
  await expect(page.getByText(/Recorded ingestion failure/)).toBeVisible();
  await expect(page.getByText(/Invalid report payload/)).toBeVisible();

@@ -40,6 +40,7 @@ import {
   journalSemanticClass,
   journalSemanticTone,
 } from "../lib/journal-presentation";
+import { Disclosure, MissingValue } from "./WorkspacePresentation";
 import { MetricCard } from "./MetricCard";
 
 type Grade = "A" | "B" | "C";
@@ -1708,7 +1709,7 @@ export default function Home() {
         if (headerHeight <= 0 || rowsHeight <= 0) return;
         table.style.setProperty(
           "--journal-table-viewport-height",
-          `${headerHeight + rowsHeight}px`,
+          expandedTrade ? `${Math.max(headerHeight + rowsHeight, viewportHeight * .7)}px` : `${headerHeight + rowsHeight}px`,
         );
         table.dataset.visibleRows = String(rows.length);
       });
@@ -1727,7 +1728,7 @@ export default function Home() {
       window.removeEventListener("resize", sizeTableViewport);
       window.visualViewport?.removeEventListener("resize", sizeTableViewport);
     };
-  }, [latestTrades.length]);
+  }, [latestTrades.length, expandedTrade]);
 
   const accountLabel = demoMode
     ? "Demo Trader"
@@ -1966,34 +1967,6 @@ export default function Home() {
                       ? "Sync issue"
                       : paper.enabled ? "Cloud history synced · paper local" : "Cloud synced"}
               </span>
-              <label className="range-control">
-                <Icon name="calendar" size={16} />
-                <span className="sr-only">Date range</span>
-                <select
-                  value={range}
-                  onChange={(event) => setRange(event.target.value as RangeKey)}
-                >
-                  <option value="30">Last 30 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="ytd">This year</option>
-                  <option value="all">All time</option>
-                </select>
-              </label>
-              <label className="range-control compact-filter">
-                <span className="sr-only">Setup cohort</span>
-                <select value={setupFilter} onChange={(event) => setSetupFilter(event.target.value)}>
-                  <option value="all">All setups</option>
-                  {[...new Set(journalTrades.map(trade => trade.setup))].sort().map(setup => <option key={setup}>{setup}</option>)}
-                </select>
-              </label>
-              <label className="range-control compact-filter">
-                <span className="sr-only">Direction cohort</span>
-                <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)}>
-                  <option value="all">Long + short</option>
-                  <option value="Long">Long</option>
-                  <option value="Short">Short</option>
-                </select>
-              </label>
               <button
                 className="secondary-button auth-button"
                 onClick={signOut}
@@ -2040,32 +2013,61 @@ export default function Home() {
             </section>
           )}
 
-          <div className="journal-record-controls">
+          <div className="journal-record-controls" aria-label="Journal filters">              <label className="range-control">
+                <Icon name="calendar" size={16} />
+                <span>Date range</span>
+                <select
+                  value={range}
+                  onChange={(event) => setRange(event.target.value as RangeKey)}
+                >
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="ytd">This year</option>
+                  <option value="all">All time</option>
+                </select>
+              </label>
+              <label className="range-control compact-filter">
+                <span>Setup cohort</span>
+                <select value={setupFilter} onChange={(event) => setSetupFilter(event.target.value)}>
+                  <option value="all">All setups</option>
+                  {[...new Set(journalTrades.map(trade => trade.setup))].sort().map(setup => <option key={setup}>{setup}</option>)}
+                </select>
+              </label>
+              <label className="range-control compact-filter">
+                <span>Direction cohort</span>
+                <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)}>
+                  <option value="all">Long + short</option>
+                  <option value="Long">Long</option>
+                  <option value="Short">Short</option>
+                </select>
+              </label>
+
             <label>Find symbol<input type="search" aria-label="Find Journal symbol" placeholder="Symbol" value={journalSearch} onChange={e => setJournalSearch(e.target.value)} /></label>
             <label>Record source<select aria-label="Journal record source" value={journalSource} onChange={e => setJournalSource(e.target.value)}><option value="all">All sources</option><option value="paper">IBKR paper · local</option><option value="history">Historical / manual</option></select></label>
-            <span>{filteredTrades.length} records{paper.enabled ? " · Paper executions stay on this computer" : ""}</span>
+            <button type="button" className="secondary-button" onClick={() => { setRange("30"); setSetupFilter("all"); setDirectionFilter("all"); setJournalSearch(""); setJournalSource("all"); setStatusFilter("all"); }}>Clear filters</button><span>{filteredTrades.length} records{paper.enabled ? " · Paper executions stay on this computer" : ""}</span>
           </div>
           {paper.enabled && !paper.status && <p className="workspace-notice" role="status">Local paper records are unavailable. Totals include loaded records only.</p>}
+          {measuredTrades.length === 0 && <div className="journal-empty-state" role="status"><strong>{journalTrades.length === 0 ? "No records yet" : filteredTrades.length === 0 ? "No records match these filters" : "No eligible closed trades"}</strong><p>{journalTrades.length === 0 ? "Log a trade or review a confirmed paper execution to begin." : filteredTrades.length === 0 ? "Clear or adjust filters to see your records." : "Your records are below. Performance requires completed trades with execution history and known costs; R metrics also require initial risk."}</p></div>}
           <section className="journal-metric-grid" aria-label="Trading statistics">
             <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? formatMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
             <MetricCard label="Win rate" value={measuredTrades.length ? `${stats.winRate.toFixed(2)}%` : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail={`${stats.wins} wins · ${stats.losses} losses · ${stats.breakevens} flat`} />
-            <MetricCard label="Avg planned R:R" value={stats.plannedEligible.length ? `1:${stats.avgPlanned.toFixed(1)}` : "Unavailable"} tone={stats.plannedEligible.length ? "neutral" : "unavailable"} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
             <MetricCard label="Expectancy in R" title="Mean final net result divided by frozen initial dollar risk." value={stats.rEligible.length ? formatR(stats.avgR) : "Unavailable"} tone={journalSemanticTone(stats.avgR, stats.rEligible.length > 0)} detail={`${stats.rEligible.length} closed trades with valid risk`} />
             <MetricCard label="Profit factor" value={stats.profitFactor == null ? "Unavailable" : stats.profitFactor === "No losses" ? stats.profitFactor : stats.profitFactor.toFixed(2)} tone={stats.profitFactor == null ? "unavailable" : "neutral"} detail={`${measuredTrades.length} eligible closed trades`} />
-            <MetricCard label="Closed" title="Closed campaigns with complete execution history and known costs." value={measuredTrades.length} detail={`${stats.wins}W / ${stats.losses}L / ${stats.breakevens}BE`} />
+            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? formatMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
+            <MetricCard label="Closed trades" title="Closed campaigns with complete execution history and known costs." value={measuredTrades.length} detail={`${stats.wins}W / ${stats.losses}L / ${stats.breakevens}BE`} />
+          </section>
+<Disclosure title="More statistics" name="journal-statistics" scope={demoMode ? "demo" : session?.user.id ?? "account"}><section className="journal-metric-grid" aria-label="Additional statistics">            <MetricCard label="Avg planned R:R" value={stats.plannedEligible.length ? `1:${stats.avgPlanned.toFixed(1)}` : "Unavailable"} tone={stats.plannedEligible.length ? "neutral" : "unavailable"} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
             <MetricCard label="Avg result" title="Net result divided by eligible closed trade count." value={measuredTrades.length ? formatMoney(stats.averageResult) : "Unavailable"} tone={journalSemanticTone(stats.averageResult, measuredTrades.length > 0)} detail="Per eligible closed trade" />
             <MetricCard label="Avg win" value={stats.averageWin == null ? "Unavailable" : formatMoney(stats.averageWin)} tone={journalSemanticTone(stats.averageWin)} detail={`${stats.wins} winning trades`} />
             <MetricCard label="Avg loss" value={stats.averageLoss == null ? "Unavailable" : formatMoney(stats.averageLoss)} tone={journalSemanticTone(stats.averageLoss)} detail={`${stats.losses} losing trades`} />
             <MetricCard label="Payoff" value={secondaryStats.payoff == null ? "Unavailable" : secondaryStats.payoff.toFixed(2)} tone={secondaryStats.payoff == null ? "unavailable" : "neutral"} detail="Average win ÷ average loss" />
-            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? formatMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
-            <MetricCard label="Longest loss streak" value={measuredTrades.length ? secondaryStats.longestLosingStreak : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail="Consecutive losing trades" />
-          </section>
+            <MetricCard label="Longest loss streak" value={measuredTrades.length ? secondaryStats.longestLosingStreak : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail="Consecutive losing trades" /></section></Disclosure>
           <p className="journal-eligibility-summary" aria-label="Journal eligibility summary">
             Eligibility: {measuredTrades.length} measured · {filteredTrades.length} recorded · {filteredTrades.length - measuredTrades.length} excluded as open or incomplete · {stats.multipleCurrencies ? "currencies separated" : stats.currency ?? "no currency cohort"}
           </p>
 
           <section className="analytics-grid">
-            <article className="panel equity-panel">
+            <article className={`panel equity-panel ${(equityMode === "r" ? rMeasuredTrades : measuredTrades).length ? "" : "is-empty"}`}>
               <div className="panel-heading">
                 <div>
                   <h2>{equityView === "equity" ? "Equity curve" : "Drawdown"}</h2>
@@ -2103,35 +2105,10 @@ export default function Home() {
                 </strong>
                 <span>{measuredTrades.length} measured trades in view</span>
               </div>
-              <EquityChart trades={equityMode === "r" ? rMeasuredTrades : measuredTrades} mode={equityMode} view={equityView} />
+              {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length ? <EquityChart trades={equityMode === "r" ? rMeasuredTrades : measuredTrades} mode={equityMode} view={equityView} /> : <p className="chart-empty-note">{filteredTrades.length ? "No eligible completed trades for this measurement." : "No records in this selection."}</p>}
             </article>
 
-            <article className="panel distribution-panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Realized R distribution</h2>
-                  <p>Where trades finished</p>
-                </div>
-                <span className="trade-count">
-                  {rMeasuredTrades.length} measured trades
-                </span>
-              </div>
-              <div className="distribution-summary">
-                <span>
-                  Average{" "}
-                  <b className={journalSemanticClass(journalSemanticTone(stats.avgR, rMeasuredTrades.length > 0))}>
-                    {rMeasuredTrades.length ? formatR(stats.avgR) : "Unavailable"}
-                  </b>
-                </span>
-                <span>
-                  Median{" "}
-                  <b>
-                    {rMeasuredTrades.length ? formatR(median(rMeasuredTrades.map((trade) => trade.r))) : "Unavailable"}
-                  </b>
-                </span>
-              </div>
-              <DistributionChart trades={rMeasuredTrades} />
-            </article>
+
           </section>
 
           <section className="lower-grid journal-flow">
@@ -2151,7 +2128,7 @@ export default function Home() {
                 </label>
               </div>
               <p className="table-scroll-hint">
-                Swipe horizontally to review all trade metrics.
+                Open a symbol for all trade metrics and execution details.
               </p>
               <div
                 className="trade-table"
@@ -2205,15 +2182,15 @@ export default function Home() {
                         </i>
                       </span>
                       <span><i className="status-pill">{trade.status ?? "Closed"}</i></span>
-                      <span>{trade.initialRiskAvailable === false ? "Unavailable" : formatMoney(trade.risk, false)}</span>
+                      <span>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : formatMoney(trade.risk, false)}</span>
                       <span>{trade.fixedTargetCoverage === 100 ? `1:${trade.plannedR.toFixed(1)}` : `${trade.fixedTargetCoverage ?? 0}% fixed · incomplete`}</span>
                       <span
                         className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.realizedAvailable !== false))}
                       >
-                        {trade.realizedAvailable === false ? "Unavailable" : `${formatMoney(trade.pnl)}${trade.costsComplete === false ? " provisional" : ""}`}
+                        {trade.realizedAvailable === false ? <MissingValue reason="Realized P&L unavailable" /> : `${formatMoney(trade.pnl)}${trade.costsComplete === false ? " provisional" : ""}`}
                       </span>
                       <span className={journalSemanticClass(journalSemanticTone(trade.r, trade.finalRAvailable !== false && trade.status === "Closed"))}>
-                        {trade.finalRAvailable === false || trade.status !== "Closed" ? "Unavailable" : formatR(trade.r)}
+                        {trade.finalRAvailable === false || trade.status !== "Closed" ? <MissingValue reason="Final Net R unavailable until eligible closure" /> : formatR(trade.r)}
                       </span>
                       <span>
                         {reviewStore.value[trade.id] ? "Reviewed" : trade.id.startsWith("paper:") ? "Not reviewed" : `Grade ${trade.grade}`}
@@ -2236,14 +2213,14 @@ export default function Home() {
                         {trade.historyStatus && (
                           <p className="workspace-notice">{trade.historyStatus}</p>
                         )}
-                        <div className="journal-detail-grid">
-                          <span><small>Planned entry / size</small><b>{trade.journalSnapshot?.plannedEntry ? `${formatMoney(trade.journalSnapshot.plannedEntry, false)} · ${trade.journalSnapshot.plannedQuantity ?? "—"} sh` : "Unavailable"}</b></span>
-                          <span><small>Actual weighted entry</small><b>{trade.weightedEntry ? formatMoney(trade.weightedEntry, false) : "Unavailable"}</b></span>
-                          <span><small>Original / current stop</small><b>{trade.journalSnapshot?.originalStop ? `${formatMoney(trade.journalSnapshot.originalStop, false)} / ${trade.journalSnapshot.currentConfirmedStop ? formatMoney(trade.journalSnapshot.currentConfirmedStop, false) : "Unavailable"}` : "Unavailable"}</b></span>
-                          <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? "Unavailable" : formatMoney(trade.risk, false)}</b></span>
+                        <div className="journal-mobile-metrics"><span>Initial risk <b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : formatMoney(trade.risk, false)}</b></span><span>Planned R:R <b>{trade.fixedTargetCoverage === 100 ? `1:${trade.plannedR.toFixed(1)}` : `${trade.fixedTargetCoverage ?? 0}% fixed · incomplete`}</b></span><span>Final Net R <b>{trade.finalRAvailable === false || trade.status !== "Closed" ? <MissingValue reason="Final Net R unavailable until eligible closure" /> : formatR(trade.r)}</b></span><span>Review <b>{reviewStore.value[trade.id] ? "Reviewed" : `Grade ${trade.grade}`}</b></span></div><div className="journal-detail-grid">
+                          <span><small>Planned entry / size</small><b>{trade.journalSnapshot?.plannedEntry ? `${formatMoney(trade.journalSnapshot.plannedEntry, false)} · ${trade.journalSnapshot.plannedQuantity ?? "—"} sh` : <MissingValue reason="Planned entry unavailable" />}</b></span>
+                          <span><small>Actual weighted entry</small><b>{trade.weightedEntry ? formatMoney(trade.weightedEntry, false) : <MissingValue reason="Entry execution history unavailable" />}</b></span>
+                          <span><small>Original / current stop</small><b>{trade.journalSnapshot?.originalStop ? <>{formatMoney(trade.journalSnapshot.originalStop, false)} / {trade.journalSnapshot.currentConfirmedStop ? formatMoney(trade.journalSnapshot.currentConfirmedStop, false) : <MissingValue reason="Current confirmed stop unavailable" />}</> : <MissingValue reason="Original stop unavailable" />}</b></span>
+                          <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : formatMoney(trade.risk, false)}</b></span>
                           <span><small>Entered / exited / remaining</small><b>{trade.enteredQuantity ?? "—"} / {trade.exitedQuantity ?? "—"} / {trade.openQuantity ?? "—"}</b></span>
-                          <span><small>Weighted exit</small><b>{trade.weightedExit ? formatMoney(trade.weightedExit, false) : "Unavailable"}</b></span>
-                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && trade.status === "Closed" && trade.costs != null))}>{trade.grossRealized == null ? "Unavailable" : `${formatMoney(trade.grossRealized)} / ${trade.costs == null ? "provisional" : formatMoney(trade.costs)} / ${trade.status === "Closed" && trade.costs != null ? formatMoney(trade.pnl) : "Unavailable"}`}</b></span>
+                          <span><small>Weighted exit</small><b>{trade.weightedExit ? formatMoney(trade.weightedExit, false) : <MissingValue reason="Exit execution history unavailable" />}</b></span>
+                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && trade.status === "Closed" && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${formatMoney(trade.grossRealized)} / ${trade.costs == null ? "provisional" : formatMoney(trade.costs)} / ${trade.status === "Closed" && trade.costs != null ? formatMoney(trade.pnl) : "Unavailable"}`}</b></span>
                           <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : trade.status === "Closed" ? "Closure time unavailable" : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
                         </div>
                         <div className="journal-plan-detail">
@@ -2276,7 +2253,7 @@ export default function Home() {
                               {formatMoney(execution.price, false)}
                             </span>
                             <span data-label="Fee">
-                              {execution.feeAvailable === false ? "Unavailable" : formatMoney(execution.fee, false)}
+                              {execution.feeAvailable === false ? <MissingValue reason="Fee unavailable" /> : formatMoney(execution.fee, false)}
                             </span>
                             <span data-label="Time">
                               {execution.occurredAt ? new Date(execution.occurredAt).toLocaleString() : "Broker time unavailable"}
@@ -2310,7 +2287,34 @@ export default function Home() {
               </div>
             </article>
 
-            <article className="panel setup-panel">
+
+          </section>
+<Disclosure title="Distribution and setup analysis" name="journal-analysis" scope={demoMode ? "demo" : session?.user.id ?? "account"}><div className="journal-secondary-analysis">            <article className="panel distribution-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>Realized R distribution</h2>
+                  <p>Where trades finished</p>
+                </div>
+                <span className="trade-count">
+                  {rMeasuredTrades.length} measured trades
+                </span>
+              </div>
+              <div className="distribution-summary">
+                <span>
+                  Average{" "}
+                  <b className={journalSemanticClass(journalSemanticTone(stats.avgR, rMeasuredTrades.length > 0))}>
+                    {rMeasuredTrades.length ? formatR(stats.avgR) : <MissingValue reason="No eligible closed trades with known initial risk" />}
+                  </b>
+                </span>
+                <span>
+                  Median{" "}
+                  <b>
+                    {rMeasuredTrades.length ? formatR(median(rMeasuredTrades.map((trade) => trade.r))) : <MissingValue reason="No eligible closed trades with known initial risk" />}
+                  </b>
+                </span>
+              </div>
+              {rMeasuredTrades.length ? <DistributionChart trades={rMeasuredTrades} /> : <p className="chart-empty-note">No completed trades with known initial risk.</p>}
+            </article>            <article className="panel setup-panel">
               <div className="panel-heading">
                 <div>
                   <h2>Setup performance</h2>
@@ -2340,8 +2344,7 @@ export default function Home() {
                   </div>
                 ))}
               </div>
-            </article>
-          </section>
+            </article></div></Disclosure>
         </div>
       </section>
 

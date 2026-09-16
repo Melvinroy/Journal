@@ -43,6 +43,8 @@ import { PaperOrderReview } from "./PaperOrderReview";
 import type { PaperExecution } from "./usePaperExecution";
 import type { PaperTicket } from "../lib/paper-execution";
 
+import { Disclosure, PlannerWorkspace } from "./WorkspacePresentation";
+
 const RISK_OPTIONS = [.25, .5, .75, 1] as const;
 const ALLOCATION_OPTIONS = [3, 5, 10, 15, 20, 25] as const;
 const SETTINGS_KEY = "journal.trade-planner.settings.v1";
@@ -156,7 +158,7 @@ function trailingFromMode(mode: string): TrailingRule {
   return { mode: "Manual", stopPrice: 1 };
 }
 
-export function TradePlanner({ context, onChart, demo=false, paper, positions }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;positions?:ReactNode}) {
+export function TradePlanner({ context, onChart, demo=false, paper, positions, positionCount, exposure }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;positions?:ReactNode;positionCount?:number;exposure?:ReactNode}) {
   const initialSnapshot = demo ? demoPlanningMarketSnapshot("NVDA") : null;
   const [symbol, setSymbol] = useState("NVDA");
   const [side, setSide] = useState<TradeSide>("Long");
@@ -358,7 +360,6 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
   const allocationLimited = result.valid && result.sharesByAllocation < result.sharesByRisk;
   const dataStatus = marketLoad.snapshot?.status === "sample" ? "Sample" : marketLoad.snapshot?.status === "fresh" ? "Fresh" : marketLoad.snapshot?.status === "stale" ? "Stale" : marketLoad.snapshot?.status === "unknown" ? "Freshness unknown" : marketLoad.state === "loading" ? "Loading" : "Unavailable";
   const sessionLabel = marketLoad.snapshot?.sessionDate ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${marketLoad.snapshot.sessionDate}T12:00:00Z`)) : "No session";
-  const sessionShortLabel = marketLoad.snapshot?.sessionDate ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${marketLoad.snapshot.sessionDate}T12:00:00Z`)) : "unavailable";
 
   function saveSettings() {
     if (!Number.isFinite(settingsDraft.accountEquity) || settingsDraft.accountEquity <= 0) {
@@ -548,11 +549,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
     <div className="trade-planner">
       <BrokerConnection paper={paper} demo={demo} />
       <header className="trade-commandbar">
-        <div>
-          <p className="eyebrow">Plan &amp; Position</p>
-          <h1>Trade planner</h1>
-          <p>Size the entry. Define exits. Review before sending.</p>
-        </div>
+        <div><h1>Trade planner</h1></div>
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
           <i aria-hidden="true"/>
@@ -572,11 +569,10 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
         <span className="trade-execution-state">{paper ? "Save drafts, then review the exact paper order" : "Draft only · no broker order"}</span>
       </section>
 
-      <div className="planner-position-layout">
-      <div className="planner-editing-column">
+      <PlannerWorkspace positions={positions} count={positionCount} exposure={exposure} scope={demo ? "demo" : paper?.identity?.userId ?? "account"}>
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
         <div className="trade-ticket-head">
-          <div><p className="eyebrow">Order calculator</p><h2 id="trade-ticket-title">Trade setup</h2></div>
+          <div><h2 id="trade-ticket-title">Trade setup</h2></div>
           <span className={`trade-draft-state ${stageState === "staged" ? "staged" : ""}`}><i/> {stageState === "staged" ? "Saved locally" : "Draft"}</span>
         </div>
 
@@ -585,7 +581,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
             <label>Symbol<input className="trade-symbol-input" value={symbol} onChange={(event) => changeSymbol(event.target.value)} placeholder="NVDA" aria-label="Stock symbol"/></label>
             <div className="trade-field"><span>Side</span><span className="trade-side-control" role="group" aria-label="Trade side"><button type="button" aria-pressed={side === "Long"} className={side === "Long" ? "active" : ""} onClick={() => changeSide("Long")}>Long</button><button type="button" aria-pressed={side === "Short"} className={side === "Short" ? "active" : ""} onClick={() => changeSide("Short")}>Short</button></span></div>
             <label>Entry price<span className="trade-price-control"><span>$</span><input inputMode="decimal" value={entryPrice || ""} onChange={(event) => changeEntry(event.target.value)} aria-label="Captured planning entry price"/></span></label>
-            <label>Initial stop<span className={`trade-combined-control ${stopSource === "ATR" ? "with-multiplier" : ""}`}><select value={stopSource} onChange={(event) => changeStopMethod(event.target.value as StopMethod)} aria-label="Stop method"><option value="ATR">ATR</option><option value={side === "Long" ? "LoD" : "HoD"}>{`${side === "Long" ? "Day low" : "Day high"} · ${sessionShortLabel}`}</option><option value="Manual">Manual</option></select>{stopSource === "ATR" && <input className="trade-atr-multiplier" inputMode="decimal" value={atrMultiplier || ""} min="0" aria-label="ATR multiplier" onChange={(event)=>{editPlan();setAtrMultiplier(safeNumber(event.target.value));}}/>}<input inputMode="decimal" value={effectiveStopPrice || ""} onChange={(event) => editStopPrice(event.target.value)} aria-label="Stop price" aria-describedby="initial-stop-context"/></span></label>
+            <label>Initial stop<span className={`trade-combined-control ${stopSource === "ATR" ? "with-multiplier" : ""}`}><select value={stopSource} onChange={(event) => changeStopMethod(event.target.value as StopMethod)} aria-label="Stop method"><option value="ATR">ATR</option><option value={side === "Long" ? "LoD" : "HoD"}>{side === "Long" ? "Day low" : "Day high"}</option><option value="Manual">Manual</option></select>{stopSource === "ATR" && <input className="trade-atr-multiplier" inputMode="decimal" value={atrMultiplier || ""} min="0" aria-label="ATR multiplier" onChange={(event)=>{editPlan();setAtrMultiplier(safeNumber(event.target.value));}}/>}<input inputMode="decimal" value={effectiveStopPrice || ""} onChange={(event) => editStopPrice(event.target.value)} aria-label="Stop price" aria-describedby="initial-stop-context"/></span></label>
           </div>
 
           <div className="trade-context-line" id="initial-stop-context">
@@ -603,13 +599,17 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
             <label>Protection<select aria-label="Protection order type" value={protectionOrderType} onChange={(event)=>{editPlan();setProtectionOrderType(event.target.value as ProtectionOrderType);}}><option value="STP">Stop</option><option value="STP LMT">Stop limit</option></select></label>
             {protectionOrderType === "STP LMT" && <label>Protection limit<input aria-label="Protection limit price" inputMode="decimal" value={protectionLimitPrice || ""} onChange={(event)=>{editPlan();setProtectionLimitPrice(safeNumber(event.target.value));}}/></label>}
           </fieldset>
+          {(sessionSelection.policy?.blockedReason || sessionSelection.error) && <p className="trade-validation" role="alert">{sessionSelection.policy?.blockedReason || sessionSelection.error}</p>}
+          {protectionOrderType === "STP LMT" && <p className="trade-validation">A triggered stop-limit may remain unfilled. Planned risk is not a guaranteed loss cap.</p>}
+          <Disclosure title="Session details" name="session-details" scope={demo ? "demo" : paper?.identity?.userId ?? "account"}>
           <div id="trade-session-summary" className={`trade-session-summary ${sessionSelection.policy?.submissionEligible ? "" : "blocked"}`} role={sessionSelection.policy?.submissionEligible ? "status" : "alert"}>
             <span><b>{brokerIntentCheck.sessionPolicy?.effectiveCoverage ?? sessionSelection.policy?.effectiveCoverage ?? "Session schedule will be verified from the broker contract before submission."}</b>{brokerIntentCheck.sessionPolicy?.expiresAt ? ` · expires ${new Date(brokerIntentCheck.sessionPolicy.expiresAt).toLocaleString()}` : sessionSelection.policy?.expiresAt ? ` · ${sessionSelection.policy.expiresAt}` : ""}</span>
             <span>{(sessionSelection.policy?.blockedReason ?? sessionSelection.error) || `${sessionSelection.policy?.protectionOrderType} protection is ${sessionSelection.policy?.protectionOutsideRth ? "eligible during the selected extended schedule when broker-confirmed" : "eligible only during its verified regular-hours schedule"}.`}</span>
             {protectionOrderType === "STP LMT" && <small>A triggered stop-limit may remain unfilled. Planned stop risk is a sizing reference, not a guaranteed loss cap.</small>}
           </div>
+          </Disclosure>
 
-          {!result.valid && <p className="trade-validation" role="alert">{result.error}</p>}
+          {!result.valid && <p className="trade-validation trade-entry-validation" role="alert">{result.error}</p>}
 
           <div className="trade-result-strip" aria-label="Position sizing result">
             <div><span>Shares</span><strong>{result.valid ? result.shares.toLocaleString() : "—"}</strong></div>
@@ -674,7 +674,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
 
           {(exitState.error||exitMessage)&&<p className={exitState.error?"trade-validation":"trade-exit-message"} role={exitState.error?"alert":"status"}>{exitState.error||exitMessage}</p>}
 
-          <div className="trade-preset-panel">
+          <Disclosure title="Exit presets" name="exit-presets" scope={demo ? "demo" : paper?.identity?.userId ?? "account"}><div className="trade-preset-panel">
             <div><b>Named presets</b><span>Load copies values into this unsaved draft.</span></div>
             <select aria-label="Exit-plan preset" value={selectedPresetId} onChange={event=>setSelectedPresetId(event.target.value)}><option value="">Choose preset</option>{presetStore.presets.filter(item=>item.scope==="General"||item.symbol===symbol.trim().toUpperCase()).map(item=><option key={item.presetId} value={item.presetId}>{item.name} · {item.scope==="Symbol"?item.symbol:"General"}</option>)}</select>
             <button type="button" onClick={loadPreset} disabled={!selectedPresetId}>Load</button>
@@ -684,7 +684,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
             <button type="button" onClick={renamePreset} disabled={!selectedPresetId}>Rename</button>
             <button type="button" onClick={removePreset} disabled={!selectedPresetId}>Delete</button>
           </div>
-          <p className="trade-exit-help">Save exits updates the draft. Open positions require a reviewed amendment.</p>
+          </Disclosure><p className="trade-exit-help">Save exits updates the draft. Open positions require a reviewed amendment.</p>
         </div>
       </section>
 
@@ -720,9 +720,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions }:
 
       <p className="trade-safety-note"><span>i</span> {paper && !demo ? "Saving keeps a draft. Only exact paper-order confirmation can send an order." : "Plans and exit settings are stored in this browser. Nothing is sent to a broker."}</p>
 
-      </div>
-      {positions}
-      </div>
+      </PlannerWorkspace>
 
       {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
         <section ref={settingsRef} tabIndex={-1} className="modal trade-settings-modal" role="dialog" aria-modal="true" aria-labelledby="risk-settings-title" onMouseDown={(event) => event.stopPropagation()}>

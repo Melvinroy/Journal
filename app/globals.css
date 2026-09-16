@@ -1386,10 +1386,3 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
   .chart-header-actions .auto-trend-toggle span { display:inline; font-size:11px; }
   .chart-header-actions .chart-accent { display:inline-flex; }
 }
-
-.consolidated-trading > .trade-planner { grid-template-columns:minmax(0,1fr); }
-.planner-position-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:24px; align-items:start; }
-.planner-editing-column { min-width:0; }
-.planner-position-layout > .position-command-center { width:100%; min-width:0; padding:0; margin:0; position:static; max-height:none; overflow:visible; }
-.planner-position-layout .position-center-head, .planner-position-layout .position-center-actions { flex-wrap:wrap; }
-@container (min-width:1200px) { .planner-position-layout { grid-template-columns:minmax(0,3fr) minmax(0,2fr); } }

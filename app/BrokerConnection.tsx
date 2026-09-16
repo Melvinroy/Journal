@@ -15,9 +15,9 @@ export function BrokerConnection({ paper, demo = false }: { paper?: PaperExecuti
   return <section className="broker-account-summary" aria-label="IBKR account summary">
     <div className="broker-account-status"><i className={`broker-dot ${state}`} aria-hidden="true" /><strong>{label}</strong></div>
     <dl><div><dt>Paper account</dt><dd>{paper.status?.account ?? "Unavailable"}</dd></div><div><dt>Account value</dt><dd>{paper.status?.broker?.account?.value == null ? "Unavailable" : `${paper.status.broker.account.value.toLocaleString()} ${paper.status.broker.account.currency ?? ""}${stale ? " · Stale" : ""}`}</dd></div><div><dt>Last successful update</dt><dd>{updatedAt ? `${new Date(updatedAt).toLocaleString()}${stale ? " · Stale" : ""}` : "Not completed"}</dd></div></dl>
+    {(paper.error || paper.status?.readiness.state !== "ready") && <p className="broker-blocker" role="status">{paper.error || paper.status?.readiness.message || "Sign in and open your linked paper TWS on this computer."}</p>}
     <details className="broker-connection"><summary aria-label={`Connection details. TWS connection: ${label}`}><i className={`broker-dot ${state}`} aria-hidden="true" />Connection details</summary>
     <div className="broker-connection-detail"><strong>{paper.status?.account ?? "No verified paper connection"}</strong>
-      <p role="status">{paper.error || paper.status?.readiness.message || "Sign in and open your linked paper TWS on this computer."}</p>
       <p>Last reconciliation: {paper.status?.lastReconciled ? new Date(paper.status.lastReconciled).toLocaleString() : "Not completed"}</p>
       {paper.identity && !paper.identity.linked && <p>One-time local setup required. Verified user ID: <code>{paper.identity.userId}</code>. Confirm the configured paper account with the local operator; signing in alone never claims it.</p>}
       {paper.status?.broker?.account && <p>Account equity: {paper.status.broker.account.value == null ? "Unavailable" : `${paper.status.broker.account.value.toLocaleString()} ${paper.status.broker.account.currency ?? ""}`} · Planner equity is set separately.</p>}
