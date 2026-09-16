@@ -584,3 +584,30 @@ def test_audited_recovery_rebuilds_missing_timestamp_from_preserved_fill(service
     assert recovered["executions"][0]["occurredAt"] == "2026-09-16T15:23:43+00:00"
     assert len(recovered["executions"]) == 3
     assert recovered["state"] == "Open"
+
+
+def test_modern_sdk_history_requests_seven_days_and_normalizes_errors_and_fees(service, monkeypatch):
+    from types import SimpleNamespace
+    from brontide_eod.paper_transport import PaperTransport
+    from ibapi.execution import ExecutionFilter
+    if not hasattr(ExecutionFilter(), "lastNDays"):
+        pytest.skip("Explicit seven-day history requires the current official SDK")
+    transport = PaperTransport(service.client.config, service.client.verification)
+    transport.authorized_account = service.client.authorized_account
+    monkeypatch.setattr(transport, "serverVersion", lambda: 226)
+    captured = {}
+    def request(request_id, filters):
+        captured.update(days=filters.lastNDays, client=filters.clientId, account=filters.acctCode)
+        transport.execution_end.set()
+    monkeypatch.setattr(transport, "reqExecutions", request)
+    transport.execution_snapshot()
+    assert captured == {"days": 7, "client": 71, "account": service.client.authorized_account}
+    transport.error(9301, 10197, "legacy broker text", "")
+    transport.error(9301, 1770000000000, 321, "modern broker text", "")
+    transport.commissionAndFeesReport(SimpleNamespace(execId="known-fill", commissionAndFees=1.09, currency="USD"))
+    events = transport.drain()
+    assert [e["code"] for e in events if e["kind"] == "broker-error"] == [10197, 321]
+    assert all("broker text" not in str(e) for e in events)
+    fee = events[-1]
+    assert fee["kind"] == "commission" and fee["executionId"] == "known-fill"
+    assert fee["commission"] == 1.09 and fee["currency"] == "USD"

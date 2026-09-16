@@ -95,6 +95,11 @@ class PaperTransport(TwsPaperClient):
         self.emit("commission", executionId=report.execId, commission=float(report.commission),
                   currency=report.currency)
 
+    def commissionAndFeesReport(self, report):
+        # Current official SDK replaces commissionReport with this callback.
+        self.emit("commission", executionId=report.execId,
+                  commission=float(report.commissionAndFees), currency=report.currency)
+
     def historicalData(self, reqId, bar):
         if reqId == 9401:
             self.daily_bars.append({"date": bar.date, "high": float(bar.high), "low": float(bar.low), "close": float(bar.close)})
@@ -118,10 +123,10 @@ class PaperTransport(TwsPaperClient):
         finally:
             self.cancelHistoricalData(9401)
 
-    def error(self, req_id, error_code, error_string, advanced=""):
-        super().error(req_id, error_code, error_string, advanced)
-        # Do not persist arbitrary broker text or account-bearing advanced JSON.
-        self.emit("broker-error", orderId=req_id, code=error_code)
+    def error(self, req_id, *details):
+        super().error(req_id, *details)
+        # Both supported SDK callback signatures are normalized by the base client.
+        self.emit("broker-error", orderId=req_id, code=self._api_error_codes[-1])
 
     def connectionClosed(self):
         super().connectionClosed()
@@ -157,6 +162,10 @@ class PaperTransport(TwsPaperClient):
         request = ExecutionFilter()
         request.acctCode = self.authorized_account
         request.clientId = self.config.client_id
+        # Current TWS needs an explicit day window; the old date filter alone
+        # returned no prior-local-day executions even with Trade Log open.
+        if hasattr(request, "lastNDays") and (self.serverVersion() or 0) >= 200:
+            request.lastNDays = 7
         # Explicit UTC history avoids losing an open campaign at local midnight.
         request.time = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y%m%d-%H:%M:%S")
         self.execution_end.clear()

@@ -57,3 +57,10 @@ A detached disposable worktree reproduced the active staged, unstaged, and eligi
 - `docs/testing/local-verification.md` — documents runtimes, isolation, stages, and limitations.
 
 This list records the original Step 2 implementation, not pending work. The verification command itself does not change branch protection, global instructions, hooks, lint, plugins, application source, or deployment configuration.
+
+
+## Connected paper execution SDK
+
+The isolated paper checkout uses the official IBKR Python API **10.50.2**, with protobuf 5.29.5, installed from IBKR's official API distribution into `services/eod/.venv`. Do not substitute the obsolete package on PyPI. Keep installation scoped to that checkout; no global or protected-checkout SDK changes.
+
+TWS server protocol 200+ supports `ExecutionFilter.lastNDays`; the paper transport requests seven days explicitly while retaining its exact account/client and UTC-time filters. A read-only comparison on September 17 (Singapore time) returned no executions with API 10.30.1 but recovered the original NVDA execution with this explicit window and API 10.50.2. API 10.50's timestamped error callback and `commissionAndFeesReport` are normalized into the existing ledger events. Older SDK callbacks remain accepted, but older-client history is not assumed complete for recovery.
