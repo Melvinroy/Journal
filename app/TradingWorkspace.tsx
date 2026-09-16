@@ -263,6 +263,7 @@ function positionNumbers(item: DemoPosition) {
 function protectionLabel(item: DemoPosition, openQuantity: number) {
   if (openQuantity === 0)
     return item.status === "Working entry" ? item.protection.state : "Complete";
+  if (item.paperSummary && item.protection.state === "Unknown") return "Protection unconfirmed";
   const uncovered = Math.max(0, openQuantity - item.protection.quantity);
   if (uncovered)
     return item.protection.quantity
@@ -1652,16 +1653,16 @@ const PositionDetail = ({
   onJournal: () => void;
 }) => {
   const risk = numbers.risk;
+  const executionTime = numbers.campaign?.executions[0]?.occurredAt;
+  const riskTime = executionTime && Number.isFinite(Date.parse(executionTime)) ? executionTime : item.simulated ? "2026-09-08T14:00:00Z" : null;
       const frozen =
-        numbers.averageEntry && item.fixedInitialStop && item.fixedInitialStop > 0
+        numbers.averageEntry && item.fixedInitialStop && item.fixedInitialStop > 0 && riskTime
       ? freezeRiskReference({
           basis: "Execution",
           direction: item.direction,
           entryPrice: numbers.averageEntry,
           fixedStopPrice: item.fixedInitialStop,
-          frozenAt:
-            numbers.campaign?.executions[0]?.occurredAt ??
-            "2026-09-08T14:00:00Z",
+          frozenAt: riskTime,
         })
       : null;
   return (
@@ -1761,7 +1762,7 @@ const PositionDetail = ({
           </span>
           <span>
             <small>Confirmed-stop downside</small>
-            <b>{risk ? money(risk.confirmedStopRisk, 2) : "Unavailable"}</b>
+            <b>{item.paperSummary && item.protection.state === "Unknown" ? "Unavailable" : risk ? money(risk.confirmedStopRisk, 2) : "Unavailable"}</b>
           </span>
           <span>
             <small>Total remaining risk</small>
@@ -1771,7 +1772,7 @@ const PositionDetail = ({
                 : money(risk.totalRemainingRisk, 2)}
             </b>
             <i>
-              {risk?.unprotectedQuantity
+              {item.paperSummary && item.protection.state === "Unknown" ? "Protection requires reconciliation" : risk?.unprotectedQuantity
                 ? `${risk.unprotectedQuantity} unprotected shares`
                 : "Confirmed stops only"}
             </i>
@@ -1940,7 +1941,7 @@ const PositionDetail = ({
       <small className="simulation-label">
         {item.simulated
           ? "Simulation · not broker confirmation. No broker submission path is enabled."
-          : "Read-only position snapshot · historical fills, realized P&L and protection remain unavailable unless separately recorded. No broker submission path is enabled."}
+          : item.paperSummary ? "Paper execution ledger · broker protection and managed-exit status are shown separately." : "Read-only position snapshot · historical fills, realized P&L and protection remain unavailable unless separately recorded. No broker submission path is enabled."}
       </small>
     </aside>
   );

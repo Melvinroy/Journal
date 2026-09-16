@@ -1,0 +1,231 @@
+"""Durable, authenticated paper acceptance sessions; never a second broker client."""
+from copy import deepcopy
+from datetime import datetime, timezone
+import math
+import uuid
+
+from .ibkr_tws import PaperSafetyError
+from .paper_domain import summarize
+
+SYMBOLS = ("F", "SOFI", "INTC", "BAC", "XLF", "T", "PFE", "C", "UBER")
+LIMITS = {"sharesPerCampaign": 3, "campaigns": 2, "entryNotional": 500, "plannedRiskPerCampaign": 10, "totalPlannedRisk": 20}
+SCENARIOS = ("Limit", "Normal", "Breakout", "one target", "two targets", "one runner", "two runners", "breakeven", "amendment", "entry cancellation", "bounded closure", "reconnection")
+
+
+def now(): return datetime.now(timezone.utc)
+def age(value): return (now() - datetime.fromisoformat(value)).total_seconds()
+
+
+def session_ticket(instrument, index, session_id):
+    """Fixed approval policy. Every resulting exact ticket is separately persisted."""
+    q, contract = instrument["quote"], instrument["contract"]
+    bid, ask, tick = q.get("bid"), q.get("ask"), contract["minimumTick"]
+    if not instrument["executable"] or q.get("marketDataType") != 1 or not 0 <= age(instrument["observedAt"]) <= 15:
+        raise PaperSafetyError("Fresh executable session quotes are unavailable.")
+    if not bid or not ask or bid <= 0 or ask < bid or ask - bid > max(.02, ask * .001):
+        raise PaperSafetyError("Candidate spread exceeds the approved test bound.")
+    up = lambda n: round(math.ceil((n - 1e-9) / tick) * tick, 8)
+    down = lambda n: round(math.floor((n + 1e-9) / tick) * tick, 8)
+    cap = up(ask + 2 * tick)
+    stop = down(bid - max(10 * tick, bid * .005))
+    target = {"id": "T1", "role": "Target", "allocationPercent": 100, "target": {"mode": "R", "multipleR": .5}}
+    modes = [{"mode": "Dollar", "distance": max(tick, round(bid * .002, 2))}, {"mode": "Percentage", "percent": .2},
+             {"mode": "SMA", "period": 10}, {"mode": "SMA", "period": 20}, {"mode": "SMA", "period": 50},
+             {"mode": "Day extreme"}, {"mode": "Manual", "stopPrice": stop}]
+    runner = {"id": "A", "role": "Runner", "allocationPercent": 50, "activationR": .5, "trailing": modes[(index // 5) % len(modes)]}
+    shape = index % 5
+    legs = [target]
+    if shape == 1: legs = [dict(target, allocationPercent=50), dict(target, id="T2", allocationPercent=50, target={"mode": "R", "multipleR": 1})]
+    if shape == 2: legs = [dict(target, allocationPercent=50), runner]
+    if shape == 3: legs = [dict(target, allocationPercent=35), dict(target, id="T2", allocationPercent=35), dict(runner, allocationPercent=30)]
+    if shape == 4: legs = [dict(target, allocationPercent=35), dict(runner, allocationPercent=35), dict(runner, id="B", allocationPercent=30, trailing=modes[((index // 5) + 1) % len(modes)])]
+    quantity = len(legs)
+    if stop <= 0 or quantity * cap > 245 or quantity * (cap - stop) > 10:
+        raise PaperSafetyError("Candidate cannot fit the approved quantity, notional and stop-risk bounds.")
+    method = ("Limit", "Normal", "Breakout")[index % 3]
+    cancellation = index > 0 and index % 11 == 0
+    if cancellation:
+        method = "Breakout"
+        cap = up(ask + max(3 * tick, ask * .001) + 2 * tick)
+        if quantity * cap > 245 or quantity * (cap - stop) > 10:
+            raise PaperSafetyError("Cancellation ticket exceeds the approved bounds.")
+    result = {"planId": session_id, "planRevision": str(index), "planningSource": "IBKR TWS snapshot",
+              "symbol": contract["symbol"], "direction": "Long", "method": method, "quantity": quantity,
+              "planningPrice": ask, "hardCap": cap, "stopPrice": stop, "cleanupFloor": stop,
+              "sessionMode": "Regular", "duration": "DAY", "protectionOrderType": "STP",
+              "exitPlan": {"schemaVersion": 1, "legs": legs, "breakeven": {"activationR": .5, "favorableOffset": {"unit": "Dollar", "value": 0}}}}
+    if method == "Breakout": result["triggerPrice"] = up(cap - 2 * tick) if cancellation else up(ask + tick)
+    return result, cancellation
+
+
+class PaperTestSessions:
+    def __init__(self, service): self.s = service
+
+    def save(self, session):
+        with self.s.store.transaction() as db: self.s.store.put(db, "test-session", session["id"], session)
+
+    def status(self):
+        sessions = self.s.store.all("test-session")
+        if not sessions: return None
+        session = deepcopy(sessions[-1])
+        session.pop("userId", None)
+        return session
+
+    def start(self, command_id, target=200):
+        s = self.s
+        s._connected()
+        if not s.operator_id or not s.operator_deadline or now() >= s.operator_deadline:
+            raise PaperSafetyError("A current authenticated paper operator is required.")
+        for prior in s.store.all("test-session"):
+            if prior["id"] == command_id:
+                if prior["userId"] != s.operator_id or prior["target"] != target:
+                    raise PaperSafetyError("Session command identity was reused.")
+                return self.status()
+            if prior["state"] != "Complete": raise PaperSafetyError("An existing test session must be reconciled before creating another.")
+        if not s.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are locked.")
+        s.reconcile()
+        if any(c["state"] not in {"Closed", "Cancelled"} for c in s.store.all("campaign")):
+            raise PaperSafetyError("Recover and close the existing pilot before starting a test session.")
+        if any(not q.get("resolved") for q in s.store.all("quarantine")):
+            raise PaperSafetyError("Quarantined broker evidence blocks a test session.")
+        if not isinstance(target, int) or not 1 <= target <= 200: raise PaperSafetyError("Session target must be 1–200 completed round trips.")
+        session = {"id": command_id, "userId": s.operator_id, "accountBinding": s.client.config.binding(), "sourceIdentity": s.source(),
+                   "approvedAt": now().isoformat(), "target": target, "state": "Running", "message": "Approved; waiting for first protected campaign",
+                   "limits": LIMITS, "scenarios": SCENARIOS, "symbols": SYMBOLS, "attempts": [], "completed": 0, "checkpoints": [], "connectionId": s.connection_id}
+        with s.store.transaction() as db:
+            s.store.event(db, "session-approval:" + command_id, deepcopy(session))
+            s.store.put(db, "test-session", command_id, session)
+        return self.status()
+
+    def pause(self):
+        sessions = self.s.store.all("test-session")
+        if sessions:
+            session = sessions[-1]
+            if session["state"] == "Running":
+                session["state"] = "Draining"; session["message"] = "New entries paused; finishing owned cleanup"
+                self.save(session)
+        return self.status()
+
+    def resume(self):
+        s = self.s
+        sessions = s.store.all("test-session")
+        if not sessions: raise PaperSafetyError("No approved test session exists.")
+        session = sessions[-1]
+        s._connected()
+        if s.operator_id != session["userId"] or not s.operator_deadline or now() >= s.operator_deadline:
+            raise PaperSafetyError("Sign into the approved operator account.")
+        if session["accountBinding"] != s.client.config.binding() or session["sourceIdentity"] != s.source():
+            raise PaperSafetyError("Session binding or source changed; reconcile its approval before resuming.")
+        if session["state"] == "Complete": return self.status()
+        session["state"] = "Running"; session["message"] = "Resuming approved session after fresh reconciliation"
+        self.save(session)
+        return self.status()
+
+    def halt(self, session, reason):
+        session["state"] = "Halted"; session["message"] = reason
+        self.save(session)
+        self.s.disarm()
+
+    def act(self, session, attempt, campaign, action, payload=None):
+        key = action + (":" + str(campaign["revision"]) if action in {"save-amendment", "apply-amendment"} else "")
+        if key in attempt.setdefault("actions", {}): return
+        command = str(uuid.uuid4())
+        attempt["actions"][key] = {"commandId": command, "revision": campaign["revision"], "state": "pending"}
+        self.save(session)  # No retry if interruption leaves this operation uncertain.
+        operation = self.s.action if action == "save-amendment" else self.s.review_action
+        operation(campaign["id"], campaign["revision"], command, action, payload)
+        attempt["actions"][key]["state"] = "accepted"
+        self.save(session)
+
+    def step(self):
+        s = self.s
+        sessions = s.store.all("test-session")
+        if not sessions or sessions[-1]["state"] not in {"Running", "Draining"}: return
+        session = sessions[-1]
+        if not s.operator_id or not s.operator_deadline or now() >= s.operator_deadline: return
+        try:
+            s._connected()
+            if session["userId"] != s.operator_id or session["accountBinding"] != s.client.config.binding() or session["sourceIdentity"] != s.source():
+                raise PaperSafetyError("Session user, account or verified source changed.")
+            if not s.client.config.submissions_enabled: raise PaperSafetyError("Server submissions are locked.")
+            if any(not q.get("resolved") for q in s.store.all("quarantine")): raise PaperSafetyError("Broker callback conflict requires reconciliation.")
+            s.reconcile()
+            campaigns = {c["id"]: c for c in s.store.all("campaign")}
+            owned_ids = {a["campaignId"] for a in session["attempts"]}
+            if any(c["state"] not in {"Closed", "Cancelled"} and c["id"] not in owned_ids for c in campaigns.values()):
+                raise PaperSafetyError("Another campaign requires attention before session continuation.")
+            completed, active = 0, []
+            for attempt in session["attempts"]:
+                c = campaigns.get(attempt["campaignId"])
+                if c is None: raise PaperSafetyError("Persisted submission has no confirmed campaign; no retry is permitted.")
+                result = summarize(c)
+                if c["state"] in {"Needs reconciliation", "Unprotected"}: raise PaperSafetyError(c.get("message") or "Campaign protection failed.")
+                if any(a["state"] == "pending" for a in attempt.get("actions", {}).values()): raise PaperSafetyError("Session action outcome requires reconciliation.")
+                if c["state"] == "Closed":
+                    if not result["costsComplete"]:
+                        raise PaperSafetyError("Closed campaign is missing accounting evidence; await fees before continuing.")
+                    if result["entered"] > 0 and result["entered"] == result["exited"] and result["openQuantity"] == 0:
+                        completed += 1
+                        attempt["result"] = {"state": "broker-observed round trip", "executionIds": [e["executionId"] for e in c["executions"]], "summary": result}
+                    continue
+                if c["state"] == "Cancelled":
+                    attempt["result"] = {"state": "cancelled entry; not a round trip"}; continue
+                active.append((attempt, c))
+            session["completed"] = completed
+            for checkpoint in (1, 10, 50, 100, 200):
+                if completed >= checkpoint and checkpoint not in session["checkpoints"]: session["checkpoints"].append(checkpoint)
+            if completed >= session["target"] or session["state"] == "Draining":
+                if not active:
+                    session["state"] = "Complete" if completed >= session["target"] else "Paused"
+                    session["message"] = "Owned campaigns flat and cleared; submissions locked"
+                    self.save(session); s.disarm(); return
+            if session["connectionId"] != s.connection_id:
+                # Standing approval covers only this session's exact owned campaigns.
+                for attempt, c in active:
+                    s.review_action(c["id"], c["revision"], str(uuid.uuid4()), "resume")
+                session["connectionId"] = s.connection_id
+                session.setdefault("reconciledConnections", []).append({"at": now().isoformat(), "connectionId": s.connection_id})
+            self.save(session)
+            for attempt, c in active:
+                if age(c["createdAt"]) > 180: raise PaperSafetyError("Campaign exceeded its bounded completion window; inspect protected exposure.")
+                if not c.get("entryFinal") and age(c["createdAt"]) > 20:
+                    self.act(session, attempt, c, "cancel-entry"); return
+                if c.get("entryFinal") and summarize(c)["openQuantity"]:
+                    if age(c["createdAt"]) > 45 or session["state"] == "Draining":
+                        self.act(session, attempt, c, "cleanup"); return
+                    if attempt["index"] % 7 == 6 and not c.get("cleanup"):
+                        if "cancel-exits" not in attempt["actions"]:
+                            self.act(session, attempt, c, "cancel-exits"); return
+                        if any(slot.get("exit") and slot["exit"]["status"] not in {"Filled", "Cancelled", "ApiCancelled", "Inactive"} for slot in c["slots"]): return
+                        if not any(key.startswith("save-amendment") for key in attempt["actions"]):
+                            if summarize(c)["openQuantity"] < len(c["ticket"]["exitPlan"]["legs"]): continue
+                            amendment = deepcopy(c["ticket"]["exitPlan"])
+                            amendment["breakeven"]["activationR"] = .75
+                            self.act(session, attempt, c, "save-amendment", amendment); return
+                        if c.get("draft"):
+                            self.act(session, attempt, c, "apply-amendment", {"digest": c["draft"]["digest"]}); return
+                        if "resume" not in attempt["actions"]:
+                            self.act(session, attempt, c, "resume"); return
+            capacity = 1 if completed == 0 else 2
+            if session["state"] != "Running" or len(active) >= capacity or completed + len(active) >= session["target"]: return
+            if len(session["attempts"]) >= session["target"] * 3: raise PaperSafetyError("Attempt limit reached; unfilled entries do not count as completed tests.")
+            index = len(session["attempts"])
+            unavailable = {str(p.get("symbol", "")).upper() for p in [*s.snapshot.position_rows, *s.snapshot.open_order_rows]}
+            reasons = []
+            for symbol in SYMBOLS[index % len(SYMBOLS):] + SYMBOLS[:index % len(SYMBOLS)]:
+                if symbol in unavailable: continue
+                try:
+                    ticket, cancellation = session_ticket(s.quote(symbol), index, session["id"])
+                    batch = s.prepare_batch([ticket])
+                except PaperSafetyError as exc:
+                    reasons.append(f"{symbol}: {exc}"); continue
+                attempt = {"index": index, "batchId": batch["id"], "campaignId": batch["id"] + ":0", "ticket": ticket,
+                           "cancellationCase": cancellation, "commandId": str(uuid.uuid4()), "createdAt": now().isoformat(), "actions": {}}
+                session["attempts"].append(attempt); self.save(session)
+                s.approve(batch["id"], batch["digest"], str(uuid.uuid4()))
+                s.submit(batch["id"], 0, attempt["commandId"])
+                session["message"] = f"{completed}/{session['target']} completed; exact protected ticket submitted"
+                self.save(session); return
+            raise PaperSafetyError("No eligible candidate: " + "; ".join(reasons))
+        except Exception as exc:
+            self.halt(session, str(exc) if isinstance(exc, PaperSafetyError) else "Session operation failed; reconcile before any retry.")

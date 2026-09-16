@@ -69,7 +69,7 @@ class CampaignRequest(StrictBody):
     connectionId: str | None = None
     revision: int = Field(ge=1)
     commandId: str = Field(min_length=1, max_length=128)
-    action: Literal["save-amendment", "apply-amendment", "cancel-entry", "cancel-exits", "cleanup", "resume"]
+    action: Literal["save-amendment", "apply-amendment", "cancel-entry", "cancel-exits", "cleanup", "resume", "recover"]
     payload: dict | None = None
 
 
@@ -134,3 +134,23 @@ def action(campaign_id: str, body: CampaignRequest, s: PaperService = Depends(ex
         raise HTTPException(409, "Connection changed. Review the current position before applying an action.")
     operation = s.action if body.action == "save-amendment" else s.review_action
     return call(operation, campaign_id, body.revision, body.commandId, body.action, body.payload)
+
+
+class TestSessionRequest(StrictBody):
+    commandId: str = Field(min_length=1, max_length=128)
+    target: int = Field(default=200, ge=1, le=200)
+
+
+@router.post("/test-session/start")
+def start_test_session(body: TestSessionRequest, s: PaperService = Depends(execution_service)):
+    with s.lock: return call(s.test_sessions.start, body.commandId, body.target)
+
+
+@router.post("/test-session/pause")
+def pause_test_session(s: PaperService = Depends(execution_service)):
+    with s.lock: return call(s.test_sessions.pause)
+
+
+@router.post("/test-session/resume")
+def resume_test_session(s: PaperService = Depends(execution_service)):
+    with s.lock: return call(s.test_sessions.resume)

@@ -1,6 +1,6 @@
 """Owned-client TWS callbacks and command transport for the durable paper service."""
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import threading
 import uuid
 
@@ -15,6 +15,7 @@ class PaperTransport(TwsPaperClient):
         self.event_lock = threading.Lock()
         self.execution_end = threading.Event()
         self.execution_ids = set()
+        self.completed_end = threading.Event()
         self.history_end = threading.Event()
         self.daily_bars = []
         self.order_id_lock = threading.Lock()
@@ -47,14 +48,14 @@ class PaperTransport(TwsPaperClient):
                     parentId, lastFillPrice, clientId, whyHeld, mktCapPrice=0):
         self.observe_order_id(orderId)
         self.emit("order-status", orderId=orderId, status=status, filled=float(filled),
-                  remaining=float(remaining), clientId=clientId, whyHeld=whyHeld)
+                  remaining=float(remaining), clientId=clientId, whyHeld=whyHeld, permId=permId, parentId=parentId)
 
     def openOrder(self, order_id, contract, order, order_state):
         self.observe_order_id(order_id)
         super().openOrder(order_id, contract, order, order_state)
         fields = {key: getattr(order, key, None) for key in
                   ("account", "action", "orderType", "lmtPrice", "auxPrice", "parentId",
-                   "ocaGroup", "ocaType", "orderRef", "clientId", "outsideRth", "tif")}
+                   "ocaGroup", "ocaType", "orderRef", "clientId", "outsideRth", "tif", "permId")}
         fields["totalQuantity"] = float(order.totalQuantity)
         self.emit("open-order", orderId=order_id, conId=int(contract.conId),
                   status=order_state.status, fields=fields)
@@ -68,10 +69,27 @@ class PaperTransport(TwsPaperClient):
                   clientId=execution.clientId, account=execution.acctNumber,
                   conId=int(contract.conId), side=execution.side,
                   quantity=float(execution.shares), price=float(execution.price),
-                  executedAt=execution.time, orderRef=execution.orderRef)
+                  executedAt=execution.time, orderRef=execution.orderRef, permId=execution.permId)
 
     def execDetailsEnd(self, reqId):
         if reqId == 9301: self.execution_end.set()
+
+    def completedOrder(self, contract, order, orderState):
+        # This SDK's completed-order wire message does not carry API order/client IDs.
+        # Do not present their default zero values as broker identity evidence.
+        self.emit("completed-order", conId=int(contract.conId), status=orderState.status,
+                  fields={key: getattr(order, key, None) for key in
+                          ("account", "orderRef", "permId", "action", "orderType", "lmtPrice", "auxPrice", "tif")},
+                  quantity=float(order.totalQuantity), filledQuantity=float(order.filledQuantity))
+
+    def completedOrdersEnd(self):
+        self.completed_end.set()
+
+    def completed_order_snapshot(self, timeout=10):
+        self.completed_end.clear()
+        self.reqCompletedOrders(True)
+        if not self.completed_end.wait(timeout):
+            raise PaperSafetyError("Completed-order identity reconciliation did not complete.")
 
     def commissionReport(self, report):
         self.emit("commission", executionId=report.execId, commission=float(report.commission),
@@ -138,6 +156,9 @@ class PaperTransport(TwsPaperClient):
         from ibapi.execution import ExecutionFilter
         request = ExecutionFilter()
         request.acctCode = self.authorized_account
+        request.clientId = self.config.client_id
+        # Explicit UTC history avoids losing an open campaign at local midnight.
+        request.time = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y%m%d-%H:%M:%S")
         self.execution_end.clear()
         self.execution_ids.clear()
         self.reqExecutions(9301, request)

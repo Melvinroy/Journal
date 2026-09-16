@@ -131,7 +131,28 @@ test("the existing position drawer and Journal share broker executions without f
   await expect(row).toContainText("Not reviewed");
   await expect(row).not.toContainText("Grade C");
   await expect(row).toHaveCount(1);
+  await expect(page.getByText("BROKER-CONFIRMED PAPER EXECUTIONS", {exact:true})).toBeVisible();
+  await expect(page.getByText("SIMULATED · NOT BROKER CONFIRMED", {exact:true})).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "TEST position details" })).toHaveCount(0);
+});
+
+test("missing execution timestamps and reconciliation do not crash the position drawer", async ({ page }) => {
+  const plan = { schemaVersion: 1, legs: [{ id: "T1", role: "Target", allocationPercent: 100, target: { mode: "R", multipleR: 2 } }], breakeven: { activationR: 1, favorableOffset: { unit: "Dollar", value: 0 } } };
+  const c = { id: "confirmed-campaign", batchId: "batch", revision: 1, symbol: "TEST", direction: "Long", state: "Needs reconciliation", message: "Protection identity needs reconciliation",
+    automation: "Paused — review before resuming", createdAt: new Date().toISOString(), accountBinding: "opaque-account", contract: { conId: 42, currency: "USD" },
+    ticket: { planId: "saved-plan", planRevision: "saved-revision", symbol: "TEST", direction: "Long", method: "Limit", quantity: 3, planningPrice: 100, hardCap: 100, stopPrice: 98, cleanupFloor: 98, sessionMode: "Regular", duration: "DAY", protectionOrderType: "STP", exitPlan: plan }, activeExitPlan: plan,
+    summary: { entered: 3, exited: 1, openQuantity: 2, averageEntry: 100, grossRealized: 2, netRealized: null, fees: null, finalNetR: null, initialRisk: 6, costsComplete: false }, draft: null,
+    executions: [0,1,2,3].map(i => ({ executionId: `fill-${i}`, orderId: i, effect: i===3 ? "exit" : "entry", role: i===3 ? "target" : "entry", quantity: 1, price: i===3 ? 102 : 100, occurredAt: "", commission: null })),
+    slots: [0,1,2].map(i => ({ id: String(i), open: i===0 ? 0 : 1, entryStatus: "Filled", stopStatus: i===0 ? "Cancelled" : "Submitted", confirmedStop: 98, whyHeld: "trigger", exitStatus: i===0 ? "Filled" : null, exitPrice: i===0 ? 102 : null, leg: { ...plan.legs[0], quantity: 1 } })) };
+  await signIn(page, { ...empty, campaigns: [c] });
+  await page.getByRole("button", { name: "Open TEST position details" }).click();
+  const drawer = page.getByRole("dialog", { name: "TEST position details" });
+  await expect(drawer).toContainText("2/2 confirmed");
+  await expect(drawer.getByText("IBKR paper execution", { exact: true })).toHaveCount(4);
+  await expect(drawer).toContainText("Protection identity needs reconciliation");
+  await expect(drawer.getByRole("button", {name:"Reconcile owned campaign",exact:true})).toBeEnabled();
+  await drawer.getByRole("button", {name:"Reconcile owned campaign",exact:true}).click();
+  await expect(drawer).toContainText("This sends no orders");
 });
 
 
@@ -217,4 +238,19 @@ test("QC derived stop precision and symbol/source filters preserve the existing 
     await page.setViewportSize({width,height:900});
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
+});
+
+
+test("fresh broker quote updates only the draft and approved session controls retain server locks", async ({page}) => {
+  let submissions=0;
+  await page.route("**/v1/ibkr/paper/submit", route => {submissions++; return route.fulfill({json:{}});});
+  await page.route("**/v1/ibkr/paper/quote/*", route => route.fulfill({json:{contract:{symbol:"NVDA"},observedAt:new Date().toISOString(),executable:true,error:null,quote:{bid:99.98,ask:100.02}}}));
+  await signIn(page);
+  await page.getByLabel("Stock symbol",{exact:true}).fill("NVDA");
+  await page.getByRole("button",{name:"Use fresh ask in draft"}).click();
+  await expect(page.getByLabel("Entry price cap",{exact:true})).toHaveValue("100.02");
+  await expect(page.getByRole("button",{name:"Review paper order",exact:true})).toBeDisabled();
+  await page.getByText("Paper test session · not started",{exact:true}).click();
+  await expect(page.getByRole("button",{name:"Start approved 200-trade paper session"})).toBeDisabled();
+  expect(submissions).toBe(0);
 });

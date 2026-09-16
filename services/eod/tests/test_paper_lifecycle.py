@@ -138,6 +138,77 @@ def opened(s):
     return s.store.all("campaign")[0]
 
 
+def test_utc_execution_and_legacy_replay_are_idempotent(service):
+    from brontide_eod.paper_service import execution_time
+    assert execution_time("20260916-15:23:43") == "2026-09-16T15:23:43+00:00"
+    assert execution_time("20260916 11:23:43 America/New_York") == "2026-09-16T15:23:43+00:00"
+    assert execution_time("ambiguous") == ""
+    c = opened(service)
+    original = deepcopy(service.client.fills[0])
+    original["executedAt"] = "20260916-15:23:43"
+    with service.store.transaction() as db:
+        db.execute("DELETE FROM events WHERE id=?", ("exec-v1:" + original["executionId"],))
+        service.store.event(db, "exec:" + original["executionId"], original)
+        c["executions"][0]["occurredAt"] = ""
+        service.store.put(db, "campaign", c["id"], c)
+    replay = {**original, "eventId": "fresh-replay", "executedAt": "20260916 11:23:43 America/New_York", "quantity": 1.0, "permId": 123}
+    service.client.events.append(replay); service._events()
+    recovered = service.store.all("campaign")[0]
+    assert len(recovered["executions"]) == 3
+    assert recovered["executions"][0]["occurredAt"] == "2026-09-16T15:23:43+00:00"
+    service.client.events.append({**replay, "eventId": "conflicting-replay", "price": 101}); service._events()
+    assert service.store.all("campaign")[0]["state"] == "Needs reconciliation"
+    assert len(service.store.all("quarantine")) == 1
+    assert len(service.store.all("campaign")[0]["executions"]) == 3
+
+
+def test_broker_bracket_group_requires_exact_parent_permanent_identity(service):
+    b = approved(service); service.submit(b["id"], 0, "entry-command")
+    c = service.store.all("campaign")[0]; slot = c["slots"][0]
+    # Reproduce TWS assigning the parent's permanent ID as the child's OCA group.
+    for event in service.client.events:
+        if event["orderId"] == slot["entry"]["orderId"]: event["fields"]["permId"] = 560287590
+        if event["orderId"] == slot["stop"]["orderId"]: event["fields"].update(ocaGroup="560287590", lmtPrice=1.7976931348623157e308)
+    service._events()
+    bound = service.store.all("campaign")[0]["slots"][0]
+    assert bound["requestedGroup"] == slot["group"]
+    assert bound["brokerGroup"] == "560287590"
+    assert bound["stop"]["confirmed"]["auxPrice"] == 98
+    event = {"kind": "open-order", "orderId": slot["stop"]["orderId"], "conId": 42, "status": "PreSubmitted",
+             "fields": {**bound["stop"]["confirmed"], "ocaGroup": "unrelated"}}
+    service.client.events.append(event); service._events()
+    assert service.store.all("campaign")[0]["state"] == "Needs reconciliation"
+
+
+def test_trigger_wait_is_protection_but_child_wait_is_not(service):
+    from brontide_eod.paper_service import stop_is_protective
+    c = opened(service)
+    stop = c["slots"][0]["stop"]
+    stop.update(status="PreSubmitted", whyHeld="trigger")
+    assert stop_is_protective(stop)
+    stop["whyHeld"] = "child,trigger"
+    assert not stop_is_protective(stop)
+    stop["whyHeld"] = "locate"
+    assert not stop_is_protective(stop)
+
+
+def test_audited_recovery_does_not_enable_entry_or_change_original_source(service):
+    c = opened(service)
+    c["state"] = "Needs reconciliation"; c["message"] = "Changed in IBKR: quantity or protection relationship differs."
+    service._save(c)
+    service.authenticated("verified-user")
+    service.source = lambda: "fixed-source"
+    before = len(service.client.writes)
+    result = service.recover(c["id"], c["revision"], "recover-once")
+    assert result["state"] == "Open"
+    assert len(service.client.writes) == before
+    batch = service._batch(c["batchId"])
+    assert batch["sourceIdentity"] == "reviewed-source"
+    assert service.management_source(batch) == "fixed-source"
+    assert service.recover(c["id"], c["revision"], "recover-once")["state"] == "Open"
+    with pytest.raises(PaperSafetyError): service._authority(batch, entry=True)
+
+
 def test_three_independently_protected_shares_and_no_duplicate_submission(service):
     b = approved(service)
     first = service.submit(b["id"], 0, "entry-command")
@@ -444,3 +515,72 @@ def test_transport_ids_exceed_observed_orders_and_never_regress(monkeypatch):
     transport._order_id_ready.clear()
     with pytest.raises(PaperSafetyError, match="unavailable"):
         transport.reserve(1)
+
+
+def test_malformed_owned_callback_is_quarantined_without_losing_other_fees(service):
+    c = opened(service)
+    service.client.events.extend([
+        {"kind": "execution", "orderId": c["slots"][0]["entry"]["orderId"], "eventId": "malformed"},
+        {"kind": "commission", "executionId": c["executions"][0]["executionId"], "commission": 1.25, "currency": "USD", "eventId": "late-fee"},
+    ])
+    service._events()
+    result = service.store.all("campaign")[0]
+    assert result["state"] == "Needs reconciliation"
+    assert result["executions"][0]["commission"] == 1.25
+    assert len(service.store.all("quarantine")) == 1
+    assert service.pending_events == []
+
+
+def test_execution_snapshot_filters_owned_client_and_explicit_utc_history(service, monkeypatch):
+    from brontide_eod.paper_transport import PaperTransport
+    from datetime import timedelta
+    transport = PaperTransport(service.client.config, service.client.verification)
+    transport.authorized_account = service.client.authorized_account
+    captured = {}
+    def request(request_id, filters):
+        captured.update(client=filters.clientId, account=filters.acctCode, time=filters.time)
+        transport.execution_end.set()
+    monkeypatch.setattr(transport, "reqExecutions", request)
+    transport.execution_snapshot()
+    assert captured["client"] == 71
+    assert captured["account"] == service.client.authorized_account
+    since = datetime.strptime(captured["time"], "%Y%m%d-%H:%M:%S").replace(tzinfo=timezone.utc)
+    assert timedelta(days=6, hours=23, minutes=59) < datetime.now(timezone.utc) - since < timedelta(days=7, minutes=1)
+
+
+def test_completed_parent_identity_requires_recorded_client_and_exact_reference(service):
+    batch = approved(service); service.submit(batch["id"], 0, "entry-command")
+    for event in service.client.events:
+        if event["fields"]["orderType"] == "STP": event["fields"]["ocaGroup"] = "560287590"
+    service._events()
+    c = service.store.all("campaign")[0]; slot = c["slots"][0]
+    completed = {"kind": "completed-order", "conId": 42, "status": "Filled", "quantity": 1, "filledQuantity": 1,
+                 "fields": {**slot["entry"]["fields"], "permId": 560287590}}
+    service.client.events.append({**completed, "fields": {**completed["fields"], "orderRef": "unrelated"}})
+    service._events()
+    assert service.store.all("campaign")[0]["slots"][0]["entry"].get("permId") is None
+    service.client.events.append(completed)
+    stop = deepcopy(slot["stop"]["fields"]); stop.update(ocaGroup="560287590", clientId=71)
+    service.client.events.append({"kind": "open-order", "orderId": slot["stop"]["orderId"], "conId": 42, "fields": stop, "status": "PreSubmitted"})
+    service._events()
+    c = service.store.all("campaign")[0]
+    assert c["slots"][0]["entry"]["permId"] == 560287590
+    assert c["slots"][0]["stop"]["confirmed"]["ocaGroup"] == "560287590"
+    assert c["executions"] == []  # A completed-order acknowledgement is never a fill.
+
+
+def test_audited_recovery_rebuilds_missing_timestamp_from_preserved_fill(service, monkeypatch):
+    c = opened(service)
+    original = deepcopy(service.client.fills[0]); original["executedAt"] = "20260916-15:23:43"
+    with service.store.transaction() as db:
+        db.execute("DELETE FROM events WHERE id=?", ("exec-v1:" + original["executionId"],))
+        service.store.event(db, "exec:" + original["executionId"], original)
+        c["executions"][0]["occurredAt"] = ""
+        c["state"] = "Needs reconciliation"
+        service.store.put(db, "campaign", c["id"], c)
+    monkeypatch.setattr(service.client, "execution_snapshot", lambda: set())
+    service.authenticated("verified-owner")
+    recovered = service.recover(c["id"], c["revision"], "audited-history")
+    assert recovered["executions"][0]["occurredAt"] == "2026-09-16T15:23:43+00:00"
+    assert len(recovered["executions"]) == 3
+    assert recovered["state"] == "Open"

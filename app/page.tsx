@@ -323,6 +323,12 @@ function formatMoney(value: number, showPlus = true) {
   return `${sign}$${Math.abs(Math.round(value)).toLocaleString()}`;
 }
 
+function recordMoney(id: string, value: number, showPlus = true, maximumFractionDigits = 2) {
+  if (!id.startsWith("paper:")) return formatMoney(value, showPlus);
+  const sign = value < 0 ? "−" : showPlus ? "+" : "";
+  return `${sign}$${Math.abs(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits})}`;
+}
+
 function formatR(value: number) {
   if (!Number.isFinite(value)) return "—";
   return `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(value % 1 === 0 ? 1 : 2)}R`;
@@ -2239,12 +2245,12 @@ export default function Home() {
                       </span>
                       <span><i className="status-pill">{trade.status ?? "Closed"}</i></span>
                       <span className="journal-setup-source" title={`${trade.setup} · ${trade.provenance ?? "Manual"}${trade.simulated ? " · Simulation" : ""}`}>{trade.setup} · {trade.provenance ?? "Manual"}{trade.simulated ? " · Simulation" : ""}</span>
-                      <span>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : formatMoney(trade.risk, false)}</span>
+                      <span>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : recordMoney(trade.id, trade.risk, false)}</span>
                       <span>{trade.fixedTargetCoverage === 100 ? `1:${trade.plannedR.toFixed(1)}` : `${trade.fixedTargetCoverage ?? 0}% fixed · incomplete`}</span>
                       <span
                         className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.realizedAvailable !== false))}
                       >
-                        {trade.realizedAvailable === false ? <MissingValue reason="Realized P&L unavailable" /> : `${formatMoney(trade.pnl)}${trade.costsComplete === false ? " provisional" : ""}`}
+                        {trade.realizedAvailable === false ? <MissingValue reason="Realized P&L unavailable" /> : `${recordMoney(trade.id, trade.pnl)}${trade.costsComplete === false ? " provisional" : ""}`}
                       </span>
                       <span className={journalSemanticClass(journalSemanticTone(trade.r, trade.finalRAvailable !== false && trade.status === "Closed"))}>
                         {trade.finalRAvailable === false || trade.status !== "Closed" ? <MissingValue reason="Final Net R unavailable until eligible closure" /> : formatR(trade.r)}
@@ -2266,23 +2272,23 @@ export default function Home() {
                               {trade.status ?? "Closed"} · {trade.openQuantity ?? 0} shares open
                             </span>
                           </div>
-                          <i>SIMULATED · NOT BROKER CONFIRMED</i>
+                          <i>{trade.id.startsWith("paper:") ? "BROKER-CONFIRMED PAPER EXECUTIONS" : trade.simulated ? "SIMULATED · NOT BROKER CONFIRMED" : "HISTORICAL / MANUAL RECORD"}</i>
                         </header>
                         {trade.historyStatus && (
                           <p className="workspace-notice">{trade.historyStatus}</p>
                         )}
                         <div className="journal-detail-grid">
-                          <span><small>Planned entry / size</small><b>{trade.journalSnapshot?.plannedEntry ? `${formatMoney(trade.journalSnapshot.plannedEntry, false)} · ${trade.journalSnapshot.plannedQuantity ?? "—"} sh` : <MissingValue reason="Planned entry unavailable" />}</b></span>
-                          <span><small>Actual weighted entry</small><b>{trade.weightedEntry ? formatMoney(trade.weightedEntry, false) : <MissingValue reason="Entry execution history unavailable" />}</b></span>
-                          <span><small>Original / current stop</small><b>{trade.journalSnapshot?.originalStop ? <>{formatMoney(trade.journalSnapshot.originalStop, false)} / {trade.journalSnapshot.currentConfirmedStop ? formatMoney(trade.journalSnapshot.currentConfirmedStop, false) : <MissingValue reason="Current confirmed stop unavailable" />}</> : <MissingValue reason="Original stop unavailable" />}</b></span>
-                          <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : formatMoney(trade.risk, false)}</b></span>
+                          <span><small>Planned entry / size</small><b>{trade.journalSnapshot?.plannedEntry ? `${recordMoney(trade.id, trade.journalSnapshot.plannedEntry, false, 6)} · ${trade.journalSnapshot.plannedQuantity ?? "—"} sh` : <MissingValue reason="Planned entry unavailable" />}</b></span>
+                          <span><small>Actual weighted entry</small><b>{trade.weightedEntry ? recordMoney(trade.id, trade.weightedEntry, false, 6) : <MissingValue reason="Entry execution history unavailable" />}</b></span>
+                          <span><small>Original / current stop</small><b>{trade.journalSnapshot?.originalStop ? <>{recordMoney(trade.id, trade.journalSnapshot.originalStop, false, 6)} / {trade.journalSnapshot.currentConfirmedStop ? recordMoney(trade.id, trade.journalSnapshot.currentConfirmedStop, false, 6) : <MissingValue reason="Current confirmed stop unavailable" />}</> : <MissingValue reason="Original stop unavailable" />}</b></span>
+                          <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : recordMoney(trade.id, trade.risk, false)}</b></span>
                           <span><small>Entered / exited / remaining</small><b>{trade.enteredQuantity ?? "—"} / {trade.exitedQuantity ?? "—"} / {trade.openQuantity ?? "—"}</b></span>
-                          <span><small>Weighted exit</small><b>{trade.weightedExit ? formatMoney(trade.weightedExit, false) : <MissingValue reason="Exit execution history unavailable" />}</b></span>
-                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && trade.status === "Closed" && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${formatMoney(trade.grossRealized)} / ${trade.costs == null ? "provisional" : formatMoney(trade.costs)} / ${trade.status === "Closed" && trade.costs != null ? formatMoney(trade.pnl) : "Unavailable"}`}</b></span>
+                          <span><small>Weighted exit</small><b>{trade.weightedExit ? recordMoney(trade.id, trade.weightedExit, false, 6) : <MissingValue reason="Exit execution history unavailable" />}</b></span>
+                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && (trade.status === "Closed" || (trade.id.startsWith("paper:") && trade.realizedAvailable !== false)) && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${recordMoney(trade.id, trade.grossRealized)} / ${trade.costs == null ? "provisional" : recordMoney(trade.id, trade.costs)} / ${(trade.status === "Closed" || (trade.id.startsWith("paper:") && trade.realizedAvailable !== false)) && trade.costs != null ? recordMoney(trade.id, trade.pnl) : "Unavailable"}`}</b></span>
                           <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : trade.status === "Closed" ? "Closure time unavailable" : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
                         </div>
                         <div className="journal-plan-detail">
-                          <div><strong>Planned exits</strong><p>{trade.journalSnapshot?.plannedTargets?.map(target => `${target.label} ${target.allocationPercent}%${target.multipleR ? ` @ ${target.multipleR}R` : target.price ? ` @ ${formatMoney(target.price, false)}` : ""}`).join(" · ") || "Unavailable"}</p><p>{trade.journalSnapshot?.plannedRunners?.map(runner => `${runner.label} ${runner.allocationPercent}% · ${runner.rule}`).join(" · ") || "No planned runners"}</p>{trade.planId && <button className="text-button" onClick={() => selectView("Trade")}>Open linked Plan &amp; Position</button>}</div>
+                          <div><strong>Planned exits</strong><p>{trade.journalSnapshot?.plannedTargets?.map(target => `${target.label} ${target.allocationPercent}%${target.multipleR ? ` @ ${target.multipleR}R` : target.price ? ` @ ${recordMoney(trade.id, target.price, false)}` : ""}`).join(" · ") || "Unavailable"}</p><p>{trade.journalSnapshot?.plannedRunners?.map(runner => `${runner.label} ${runner.allocationPercent}% · ${runner.rule}`).join(" · ") || "No planned runners"}</p>{trade.planId && <button className="text-button" onClick={() => selectView("Trade")}>Open linked Plan &amp; Position</button>}</div>
                           <div><strong>Confirmed amendments</strong><p>{trade.confirmedAmendments?.map(item => item.description).join(" · ") || "None confirmed"}</p><p>{trade.feeAdjustments?.length ? `${trade.feeAdjustments.length} late fee adjustment included` : "No late fee adjustments"}</p></div>
                         </div>
                         <div className="journal-fill-head">
@@ -2308,10 +2314,10 @@ export default function Home() {
                               {execution.quantity}
                             </span>
                             <span data-label="Price">
-                              {formatMoney(execution.price, false)}
+                              {recordMoney(trade.id, execution.price, false, 6)}
                             </span>
                             <span data-label="Fee">
-                              {execution.feeAvailable === false ? <MissingValue reason="Fee unavailable" /> : formatMoney(execution.fee, false)}
+                              {execution.feeAvailable === false ? <MissingValue reason="Fee unavailable" /> : recordMoney(trade.id, execution.fee, false)}
                             </span>
                             <span data-label="Time">
                               {execution.occurredAt ? new Date(execution.occurredAt).toLocaleString() : "Broker time unavailable"}

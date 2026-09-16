@@ -43,3 +43,13 @@ test('Paper planner explains unsupported cases and nonzero exit allocation befor
  assert.ok(paper.paperTicketBlockers({...t,quantity:4}).some(x=>x.includes('1–3')));
  assert.ok(paper.paperTicketBlockers({...t,exitPlan:{...t.exitPlan,legs:[{...t.exitPlan.legs[0],allocationPercent:50},{...t.exitPlan.legs[0],id:'T2',allocationPercent:50}]}}).some(x=>x.includes('at least one share')));
 });
+
+
+test('Trigger-held protection remains confirmed while reconciliation and unknown protection remain distinct', () => {
+ const c=campaign(); c.slots[0].stopStatus='PreSubmitted'; c.slots[0].whyHeld='trigger'; c.state='Needs reconciliation';
+ assert.equal(paper.paperPosition(c,true).protection.state,'Working');
+ c.slots[0].confirmedStop=null;
+ assert.equal(paper.paperPosition(c,true).protection.state,'Unknown');
+ c.state='Open'; c.slots[0].confirmedStop=98; c.slots[0].whyHeld='child,trigger';
+ assert.equal(paper.paperPosition(c,true).protection.state,'Unprotected');
+});

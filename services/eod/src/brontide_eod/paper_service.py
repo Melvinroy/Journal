@@ -35,6 +35,12 @@ def parsed(value):
 def execution_time(value):
     """Preserve economic fills; ambiguous broker clock values remain unavailable."""
     from zoneinfo import ZoneInfo
+    if not isinstance(value, str): return ""
+    try:
+        # IBKR's hyphenated execution timestamp is UTC, not the TWS login zone.
+        return datetime.strptime(value, "%Y%m%d-%H:%M:%S").replace(tzinfo=timezone.utc).isoformat()
+    except ValueError:
+        pass
     try:
         return parsed(value).astimezone(timezone.utc).isoformat()
     except (ValueError, PaperSafetyError):
@@ -43,6 +49,19 @@ def execution_time(value):
             return datetime.strptime(date + " " + clock, "%Y%m%d %H:%M:%S").replace(tzinfo=ZoneInfo(zone)).astimezone(timezone.utc).isoformat()
         except (ValueError, KeyError):
             return ""
+
+
+def economic_execution(event):
+    """Versioned economic identity; callback envelope and formatting are not fills."""
+    return {"schemaVersion": 1, **{k: event.get(k) for k in
+            ("executionId", "account", "clientId", "conId", "orderId", "orderRef", "side")},
+            "quantity": float(event["quantity"]), "price": float(event["price"]),
+            "executedAt": execution_time(event.get("executedAt", "")) or event.get("executedAt", "")}
+
+
+def stop_is_protective(order):
+    held = {part.strip() for part in order.get("whyHeld", "").split(",") if part.strip()}
+    return order.get("status") in WORKING and bool(order.get("confirmed")) and held <= {"trigger"}
 
 
 def source_identity():
@@ -87,6 +106,8 @@ class PaperService:
         self.management_only = False
         self.reviewed_campaigns = set()
         self.authorized_batches = set()
+        from .paper_test_session import PaperTestSessions
+        self.test_sessions = PaperTestSessions(self)
 
     def authenticated(self, user_id):
         with self.lock:
@@ -121,7 +142,7 @@ class PaperService:
                     "account": mask_account_id(self.client.authorized_account) if connected else None,
                     "connectionId": self.connection_id, "lastReconciled": self.last_reconciled,
                     "error": self.error, "readiness": self.readiness(connected, campaigns),
-                    "broker": self.broker_view, "quote": self.last_quote,
+                    "broker": self.broker_view, "quote": self.last_quote, "testSession": self.test_sessions.status(),
                     "campaigns": [self.public_campaign(c) for c in campaigns],
                     "batches": [self.public_batch(b) for b in self.store.all("batch")],
                     "blocked": ["Short entry fill bounds", "Opening auction", "Overnight sessions"],
@@ -223,6 +244,8 @@ class PaperService:
 
     def review_action(self, campaign_id, revision, command_id, action, payload=None):
         with self.lock:
+            if action == "recover":
+                return self.recover(campaign_id, revision, command_id)
             with self.store.transaction() as db:
                 prior = db.execute("SELECT request, campaign FROM commands WHERE id=?", (command_id,)).fetchone()
             if prior:
@@ -233,7 +256,7 @@ class PaperService:
             if c["revision"] != revision: raise PaperSafetyError("Position changed. Review the current revision.")
             if c["state"] == "Needs reconciliation": raise PaperSafetyError("Resolve reconciliation before a broker action.")
             batch = self._batch(c["batchId"])
-            if self.source() != batch["sourceIdentity"]: raise PaperSafetyError("The reviewed execution source changed; operator reconciliation is required.")
+            if self.source() != self.management_source(batch): raise PaperSafetyError("The reviewed execution source changed; operator reconciliation is required.")
             if not self.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are locked.")
             if not self.operator_id or self.operator_deadline <= utcnow(): raise PaperSafetyError("Sign in to review the position.")
             if action == "apply-amendment":
@@ -255,10 +278,66 @@ class PaperService:
     def quote(self, symbol):
         with self.lock: return self._instrument(symbol)
 
+    def management_source(self, batch):
+        with self.store.transaction() as db:
+            row = db.execute("SELECT body FROM objects WHERE kind='source-recovery' AND id=?", (batch["id"],)).fetchone()
+        receipt = json.loads(row[0]) if row else {}
+        if (self.operator_id and receipt.get("userId") == self.operator_id
+            and receipt.get("accountBinding") == batch["accountBinding"]):
+            return receipt["sourceIdentity"]
+        return batch["sourceIdentity"]
+
+    def recover(self, campaign_id, revision, command_id):
+        """Read-only broker recovery; never edits original tickets or raw callbacks."""
+        self._connected()
+        if not self.operator_id or not self.operator_deadline or self.operator_deadline <= utcnow():
+            raise PaperSafetyError("Sign in before reviewing recovery.")
+        with self.store.transaction() as db:
+            prior = db.execute("SELECT campaign,request FROM commands WHERE id=?", (command_id,)).fetchone()
+            c = self.store.get(db, "campaign", campaign_id)
+            if prior:
+                if prior[0] != campaign_id or json.loads(prior[1]) != {"action": "recover", "revision": revision}:
+                    raise PaperSafetyError("Recovery command identity was reused.")
+                return self.public_campaign(c)
+            if c["revision"] != revision: raise PaperSafetyError("Campaign changed; refresh recovery review.")
+        self.reconcile()
+        # Rebuild missing projection fields from the preserved economic evidence.
+        # This is explicitly a ledger replay, never a new broker confirmation.
+        with self.store.transaction() as db:
+            historical = [(row[0], json.loads(row[1])) for row in db.execute("SELECT id,body FROM events WHERE id LIKE 'exec:%'")]
+        for identity, event in historical:
+            if event.get("orderId") in {order["orderId"] for slot in c["slots"] for role in ("entry", "stop", "exit") if (order := slot.get(role))}:
+                self.pending_events.append({**event, "kind": "execution", "eventId": str(uuid.uuid4()), "replayOf": identity})
+        self._events()
+        with self.store.transaction() as db:
+            c = self.store.get(db, "campaign", campaign_id)
+            quarantined = [json.loads(r[0]) for r in db.execute("SELECT body FROM objects WHERE kind='quarantine'")]
+            if any(q.get("campaignId") == campaign_id and not q.get("resolved") for q in quarantined):
+                raise PaperSafetyError("Conflicting economic evidence requires operator reconciliation.")
+            if c["accountBinding"] != self.client.config.binding(): raise PaperSafetyError("Recovery account mismatch.")
+            total = summarize(c)
+            quantity = sum(p["quantity"] for p in self.snapshot.position_rows if p["conId"] == c["contract"]["conId"])
+            if quantity != total["openQuantity"]: raise PaperSafetyError("Broker position differs from owned executions.")
+            for slot in c["slots"]:
+                if slot["entry"]["status"] not in TERMINAL: raise PaperSafetyError("Entry remains uncertain; recovery cannot retransmit it.")
+                open_quantity = sum(e["quantity"] * (1 if e["effect"] == "entry" else -1) for e in c["executions"] if e["slotId"] == slot["id"])
+                if open_quantity and not stop_is_protective(slot["stop"]): raise PaperSafetyError("Exact broker protection is not confirmed.")
+            before = {"state": c["state"], "message": c.get("message"), "revision": c["revision"]}
+            c["state"] = "Sync pending"; c["message"] = None
+            self._derive(c)
+            if c["state"] in {"Needs reconciliation", "Unprotected"}: raise PaperSafetyError("Recovery invariants are unresolved.")
+            c["automation"] = "Recovered; managed exits paused until review"
+            source = self.source()
+            self.store.command(db, command_id, campaign_id, {"action": "recover", "revision": revision})
+            self.store.event(db, "recovery:" + command_id, {"campaignId": campaign_id, "before": before, "sourceIdentity": source, "at": stamp()})
+            self.store.put(db, "source-recovery", c["batchId"], {"sourceIdentity": source, "userId": self.operator_id, "accountBinding": c["accountBinding"]})
+            self._save(c, db)
+        return self.public_campaign(c)
+
     def _validate_ticket(self, ticket):
         account = self._connected()
         ticket = deepcopy(ticket)
-        if self.operator_id and ticket.get("planningSource") not in {"Manual", "Local EOD close"}:
+        if self.operator_id and ticket.get("planningSource") not in {"Manual", "Local EOD close", "IBKR TWS snapshot"}:
             raise PaperSafetyError("Simulation and legacy pricing cannot enter paper execution; capture a new plan.")
         if self.operator_id and any(not isinstance(ticket.get(k), str) or not ticket[k].strip() or len(ticket[k]) > 128 for k in ("planId", "planRevision")):
             raise PaperSafetyError("Save the planner revision before reviewing an order.")
@@ -346,6 +425,8 @@ class PaperService:
             if not parsed(batch["createdAt"]) <= parsed(receipt["approvedAt"]) <= utcnow() < parsed(batch["validUntil"]):
                 raise PaperSafetyError("Batch approval is expired or has an invalid timestamp.")
             self.reconcile()
+            if any(not q.get("resolved") for q in self.store.all("quarantine")):
+                raise PaperSafetyError("Resolve quarantined broker evidence before arming.")
             if any(c["state"] == "Needs reconciliation" for c in self.store.all("campaign")):
                 raise PaperSafetyError("Resolve outstanding campaign reconciliation before arming.")
             self.armed = batch_id
@@ -374,7 +455,7 @@ class PaperService:
         if entry and self.management_only: raise PaperSafetyError("Position review cannot approve a new entry.")
         if (batch["id"] not in self.authorized_batches if self.operator_id else self.armed != batch["id"]) or batch["accountBinding"] != self.client.config.binding():
             raise PaperSafetyError("This exact paper batch is not armed for this connection.")
-        if not self.client.config.submissions_enabled or self.source() != batch["sourceIdentity"]:
+        if not self.client.config.submissions_enabled or self.source() != (batch["sourceIdentity"] if entry else self.management_source(batch)):
             self.armed = None
             raise PaperSafetyError("Submission lock or reviewed source changed.")
         if entry and utcnow() >= parsed(batch["validUntil"]): raise PaperSafetyError("The entry approval window has expired.")
@@ -467,63 +548,161 @@ class PaperService:
         if not events: return
         with self.store.transaction() as db:
             campaigns = [json.loads(r[0]) for r in db.execute("SELECT body FROM objects WHERE kind='campaign'")]
-            for e in events:
-                found = self._find_order(campaigns, e.get("orderId"))
-                if e["kind"] == "commission":
-                    # Fees can precede execution replay; retain them without inventing fills.
-                    if math.isfinite(e["commission"]) and abs(e["commission"]) < 1_000_000:
-                        self.store.put(db, "fee", e["executionId"], e)
-                        self.store.event(db, "callback:" + e.setdefault("eventId", str(uuid.uuid4())), e)
+            owned_orders = {}
+            for campaign in campaigns:
+                for slot in campaign["slots"]:
+                    for role in ("entry", "stop", "exit"):
+                        if role in slot:
+                            order = slot[role]
+                            owned_orders[order["orderId"]] = (campaign, slot, role, order)
+                    for retired in slot.get("retired", []):
+                        order = retired["order"]
+                        owned_orders[order["orderId"]] = (campaign, slot, retired["role"], order)
+            # Permanent IDs may arrive on execution replay after the parent leaves
+            # the open-order snapshot. Only exact owned identities may establish them.
+            for event in events:
+                if event.get("kind") == "completed-order":
+                    fields = event.get("fields", {})
+                    matches = [value for value in owned_orders.values() if value[2] == "entry"
+                        and value[0]["contract"]["conId"] == event.get("conId")
+                        and value[3]["fields"].get("orderRef") == fields.get("orderRef")]
+                    if len(matches) == 1:
+                        campaign, _, _, owned = matches[0]
+                        recorded = owned.get("confirmed", {})
+                        if (fields.get("account") == self.client.authorized_account
+                            and recorded.get("account") == self.client.authorized_account
+                            and recorded.get("clientId") == self.client.config.client_id
+                            and event.get("status") == "Filled" and event.get("quantity") == event.get("filledQuantity") == 1
+                            and all(fields.get(k) == owned["fields"].get(k) for k in ("action", "orderType", "lmtPrice", "tif") if k in owned["fields"])
+                            and isinstance(fields.get("permId"), int) and fields["permId"] > 0):
+                            if owned.get("permId", fields["permId"]) != fields["permId"]:
+                                self.store.put(db, "quarantine", str(uuid.uuid4()), {"campaignId": campaign["id"], "event": event,
+                                    "reason": "Completed permanent identity conflict", "resolved": False})
+                                campaign["state"] = "Needs reconciliation"
+                            else:
+                                owned["permId"] = fields["permId"]
+                                owned["permanentIdentitySource"] = "Completed order matched to recorded account/client/contract/reference"
                     continue
-                if not found: continue  # Never bind or amend an unrelated order.
-                self.store.event(db, "callback:" + e.setdefault("eventId", str(uuid.uuid4())), e)
-                c, slot, role, order = found
-                if e.get("clientId", self.client.config.client_id) != self.client.config.client_id: continue
-                if e["kind"] == "execution":
-                    if e["account"] != self.client.authorized_account or e["conId"] != c["contract"]["conId"] or e["orderRef"] != order["fields"]["orderRef"]:
-                        c["state"] = "Needs reconciliation"; c["message"] = "Execution identity mismatch."; continue
-                    quantity, price = e["quantity"], e["price"]
-                    if quantity != 1 or not math.isfinite(price) or price <= 0 or e["side"] != ("BOT" if order["fields"]["action"] == "BUY" else "SLD"):
-                        c["state"] = "Needs reconciliation"; c["message"] = "Unexpected execution quantity, price or side."; continue
-                    economic = {k: v for k, v in e.items() if k not in {"eventId", "observedAt"}}
-                    if not self.store.event(db, "exec:" + e["executionId"], economic): continue
-                    c["executions"].append({"executionId": e["executionId"], "orderId": order["orderId"],
-                        "slotId": slot["id"], "effect": "entry" if role == "entry" else "exit", "role": order.get("role", role),
-                        "quantity": 1, "price": price, "occurredAt": execution_time(e["executedAt"]), "commission": None})
-                    order["status"] = "Filled"
-                    order["filled"] = 1
-                elif e["kind"] == "open-order":
-                    fields = e["fields"]
-                    if fields.get("account") != self.client.authorized_account or fields.get("clientId") != self.client.config.client_id or fields.get("orderRef") != order["fields"]["orderRef"] or e["conId"] != c["contract"]["conId"]:
-                        c["state"] = "Needs reconciliation"; c["message"] = "Broker order identity mismatch."; continue
-                    if fields.get("totalQuantity") != 1 or fields.get("action") != order["fields"]["action"] or (role != "entry" and (fields.get("ocaGroup") != slot["group"] or fields.get("ocaType") != 1)):
-                        c["state"] = "Needs reconciliation"; c["message"] = "Changed in IBKR: quantity or protection relationship differs."; continue
-                    old = order.get("confirmed")
-                    invariant_fields = {"action", "orderType", "outsideRth", "tif", "parentId", "ocaGroup", "ocaType"}
-                    if any(fields.get(k) != order["fields"].get(k) for k in invariant_fields if k in order["fields"]):
-                        c["state"] = "Needs reconciliation"; c["message"] = "Changed in IBKR: order type, session or parent relationship differs."; continue
-                    if role == "stop" and old and fields.get("auxPrice") != old.get("auxPrice") and not order.get("pendingCommand"):
-                        if fields["auxPrice"] < old["auxPrice"]:
-                            c["state"] = "Needs reconciliation"; c["message"] = "Changed in IBKR: stop was loosened."
-                        else: c["message"] = "Changed in IBKR: tighter stop retained."
-                    order["confirmed"] = fields
-                    if order.get("status") not in TERMINAL: order["status"] = e["status"]
-                elif e["kind"] == "order-status":
-                    if order.get("status") not in TERMINAL or e["status"] == "Filled": order["status"] = e["status"]
-                    order["filled"] = max(order.get("filled", 0), e["filled"])
-                    order["whyHeld"] = e.get("whyHeld", "")
-                elif e["kind"] == "broker-error":
-                    if e["code"] == 201: order["status"] = "Inactive"
-                    elif e["code"] not in {202, 2104, 2106, 2158}:
-                        c["state"] = "Needs reconciliation"; c["message"] = f"Broker code {e['code']}; action outcome requires reconciliation."
-                pending = order.get("pendingCommand")
-                confirmed = order.get("confirmed", {})
-                matches = all(confirmed.get(k) == v for k, v in order["fields"].items()
-                              if k in {"auxPrice", "lmtPrice", "totalQuantity", "outsideRth", "tif", "parentId", "ocaGroup", "ocaType"})
-                if pending and ((order.get("pendingCancel") and order["status"] in TERMINAL) or (not order.get("pendingCancel") and (matches or order["status"] in TERMINAL))):
-                    db.execute("UPDATE commands SET state='confirmed' WHERE id=?", (pending,))
-                    order.pop("pendingCommand", None)
-                    order.pop("pendingCancel", None)
+                found = owned_orders.get(event.get("orderId"))
+                if not found or event.get("kind") not in {"execution", "open-order", "completed-order"}: continue
+                campaign, _, _, owned = found
+                fields = event.get("fields", event)
+                if not isinstance(fields, dict): continue
+                if (fields.get("account") == self.client.authorized_account
+                    and fields.get("clientId") == self.client.config.client_id
+                    and event.get("conId") == campaign["contract"]["conId"]
+                    and fields.get("orderRef") == owned["fields"]["orderRef"]
+                    and isinstance(fields.get("permId"), int) and fields["permId"] > 0):
+                    if owned.get("permId", fields["permId"]) != fields["permId"]:
+                        campaign["state"] = "Needs reconciliation"
+                        campaign["message"] = "Broker permanent order identity changed."
+                        self.store.put(db, "quarantine", str(uuid.uuid4()), {"campaignId": campaign["id"], "event": event,
+                            "reason": "Broker permanent order identity changed", "resolved": False})
+                    else: owned["permId"] = fields["permId"]
+            for e in events:
+                found = owned_orders.get(e.get("orderId"))
+                try:
+                    if e["kind"] == "completed-order":
+                        self.store.event(db, "callback:" + e.setdefault("eventId", str(uuid.uuid4())), e)
+                        continue
+                    if e["kind"] == "commission":
+                        # Fees can precede execution replay; retain them without inventing fills.
+                        if math.isfinite(e["commission"]) and abs(e["commission"]) < 1_000_000:
+                            self.store.put(db, "fee", e["executionId"], e)
+                            self.store.event(db, "callback:" + e.setdefault("eventId", str(uuid.uuid4())), e)
+                        else:
+                            raise PaperSafetyError("Invalid broker commission value.")
+                        continue
+                    if not found: continue  # Never bind or amend an unrelated order.
+                    self.store.event(db, "callback:" + e.setdefault("eventId", str(uuid.uuid4())), e)
+                    c, slot, role, order = found
+                    if e.get("clientId", self.client.config.client_id) != self.client.config.client_id: continue
+                    if e["kind"] == "execution":
+                        if e["account"] != self.client.authorized_account or e["conId"] != c["contract"]["conId"] or e["orderRef"] != order["fields"]["orderRef"]:
+                            raise PaperSafetyError("Execution identity mismatch.")
+                        quantity, price = e["quantity"], e["price"]
+                        if quantity != 1 or not math.isfinite(price) or price <= 0 or e["side"] != ("BOT" if order["fields"]["action"] == "BUY" else "SLD"):
+                            raise PaperSafetyError("Unexpected execution quantity, price or side.")
+                        economic = economic_execution(e)
+                        legacy = db.execute("SELECT body FROM events WHERE id=?", ("exec:" + e["executionId"],)).fetchone()
+                        prior = db.execute("SELECT body FROM events WHERE id=?", ("exec-v1:" + e["executionId"],)).fetchone()
+                        previous = json.loads(prior[0]) if prior else economic_execution(json.loads(legacy[0])) if legacy else None
+                        if previous is not None and previous != economic:
+                            self.store.put(db, "quarantine", e["eventId"], {"campaignId": c["id"], "event": e, "reason": "Conflicting economic execution", "resolved": False})
+                            c["state"] = "Needs reconciliation"; c["message"] = "Conflicting broker execution requires reconciliation."; continue
+                        if not prior: self.store.event(db, "exec-v1:" + e["executionId"], economic)
+                        existing = next((x for x in c["executions"] if x["executionId"] == e["executionId"]), None)
+                        if existing:
+                            if not existing.get("occurredAt"):
+                                existing["occurredAt"] = execution_time(e["executedAt"])
+                            existing.setdefault("rawExecutedAt", e["executedAt"])
+                            continue
+                        c["executions"].append({"executionId": e["executionId"], "orderId": order["orderId"],
+                            "slotId": slot["id"], "effect": "entry" if role == "entry" else "exit", "role": order.get("role", role),
+                            "quantity": 1, "price": price, "occurredAt": execution_time(e["executedAt"]), "rawExecutedAt": e["executedAt"], "commission": None})
+                        order["status"] = "Filled"
+                        order["filled"] = 1
+                    elif e["kind"] == "open-order":
+                        fields = e["fields"]
+                        if fields.get("account") != self.client.authorized_account or fields.get("clientId") != self.client.config.client_id or fields.get("orderRef") != order["fields"]["orderRef"] or e["conId"] != c["contract"]["conId"]:
+                            c["state"] = "Needs reconciliation"; c["message"] = "Broker order identity mismatch."; continue
+                        parent_perm = slot["entry"].get("permId")
+                        if (role == "stop" and not order.get("confirmed") and not slot.get("exit")
+                            and not slot.get("brokerGroup") and parent_perm
+                            and fields.get("ocaGroup") == str(parent_perm)
+                            and fields.get("parentId") == slot["entry"]["orderId"]
+                            and fields.get("ocaType") == 1 and fields.get("totalQuantity") == 1
+                            and all(fields.get(k) == order["fields"].get(k) for k in ("action", "orderType", "auxPrice", "lmtPrice", "outsideRth", "tif") if k in order["fields"])):
+                            slot["requestedGroup"] = slot["group"]
+                            slot["brokerGroup"] = fields["ocaGroup"]
+                            slot["group"] = fields["ocaGroup"]
+                            order.setdefault("requestedFields", deepcopy(order["fields"]))
+                            order["fields"]["ocaGroup"] = fields["ocaGroup"]
+                            self.store.event(db, "group-binding:" + c["id"] + ":" + slot["id"],
+                                {"requested": slot["requestedGroup"], "confirmed": slot["group"], "parentPermId": parent_perm, "stopOrderId": order["orderId"]})
+                        if fields.get("totalQuantity") != 1 or fields.get("action") != order["fields"]["action"] or (role != "entry" and (fields.get("ocaGroup") != slot["group"] or fields.get("ocaType") != 1)):
+                            c["state"] = "Needs reconciliation"; c["message"] = "Changed in IBKR: quantity or protection relationship differs."; continue
+                        old = order.get("confirmed")
+                        invariant_fields = {"action", "orderType", "outsideRth", "tif", "parentId", "ocaGroup", "ocaType"}
+                        if any(fields.get(k) != order["fields"].get(k) for k in invariant_fields if k in order["fields"]):
+                            c["state"] = "Needs reconciliation"; c["message"] = "Changed in IBKR: order type, session or parent relationship differs."; continue
+                        if role == "stop" and old and fields.get("auxPrice") != old.get("auxPrice") and not order.get("pendingCommand"):
+                            if fields["auxPrice"] < old["auxPrice"]:
+                                c["state"] = "Needs reconciliation"; c["message"] = "Changed in IBKR: stop was loosened."
+                            else: c["message"] = "Changed in IBKR: tighter stop retained."
+                        order["confirmed"] = fields
+                        if order.get("status") not in TERMINAL: order["status"] = e["status"]
+                    elif e["kind"] == "order-status":
+                        if order.get("status") not in TERMINAL or e["status"] == "Filled": order["status"] = e["status"]
+                        order["filled"] = max(order.get("filled", 0), e["filled"])
+                        order["whyHeld"] = e.get("whyHeld", "")
+                    elif e["kind"] == "broker-error":
+                        if e["code"] == 201: order["status"] = "Inactive"
+                        elif e["code"] not in {202, 2104, 2106, 2158}:
+                            c["state"] = "Needs reconciliation"; c["message"] = f"Broker code {e['code']}; action outcome requires reconciliation."
+                    pending = order.get("pendingCommand")
+                    confirmed = order.get("confirmed", {})
+                    matches = all(confirmed.get(k) == v for k, v in order["fields"].items()
+                                  if k in {"auxPrice", "lmtPrice", "totalQuantity", "outsideRth", "tif", "parentId", "ocaGroup", "ocaType"})
+                    if pending and ((order.get("pendingCancel") and order["status"] in TERMINAL) or (not order.get("pendingCancel") and (matches or order["status"] in TERMINAL))):
+                        db.execute("UPDATE commands SET state='confirmed' WHERE id=?", (pending,))
+                        order.pop("pendingCommand", None)
+                        order.pop("pendingCancel", None)
+                except (KeyError, TypeError, ValueError, PaperSafetyError) as exc:
+                    # Preserve the bad callback without rolling back healthy account events.
+                    receipt = str(uuid.uuid4())
+                    try:
+                        canonical(e)
+                        evidence = e
+                    except (ValueError, TypeError):
+                        evidence = {"rawRepresentation": repr(e)}
+                    self.store.put(db, "quarantine", receipt, {"campaignId": found[0]["id"] if found else None,
+                        "event": evidence, "reason": str(exc), "resolved": False})
+                    if found:
+                        found[0]["state"] = "Needs reconciliation"
+                        found[0]["message"] = "Conflicting or malformed broker callback requires reconciliation."
+                    self.error = "A broker callback is quarantined; affected state requires reconciliation."
+                    self.armed = None
             for c in campaigns:
                 for execution in c["executions"]:
                     row = db.execute("SELECT body FROM objects WHERE kind='fee' AND id=?", (execution["executionId"],)).fetchone()
@@ -566,7 +745,7 @@ class PaperService:
         if final and total["entered"] == total["exited"]:
             cleared = all(o["status"] in TERMINAL for s in c["slots"] for role in ("entry", "stop", "exit") if (o := s.get(role)))
             c["state"] = ("Closed" if total["entered"] else "Cancelled") if cleared else "Closing"
-        elif any(s.get("open") and (s["stop"]["status"] not in WORKING or not s["stop"].get("confirmed") or s["stop"].get("whyHeld")) for s in c["slots"]): c["state"] = "Unprotected"
+        elif any(s.get("open") and not stop_is_protective(s["stop"]) for s in c["slots"]): c["state"] = "Unprotected"
         elif total["entered"]: c["state"] = "Open" if final else "Partially filled"
         else: c["state"] = "Pending entry"
 
@@ -579,6 +758,7 @@ class PaperService:
                 view_builder._last_success = self.broker_view
                 self.broker_view = view_builder._build_success(self.client.authorized_account, self.snapshot)
             self.client.execution_snapshot()
+            if hasattr(self.client, "completed_order_snapshot"): self.client.completed_order_snapshot()
             self._events()
             positions = {p["conId"]: p["quantity"] for p in self.snapshot.position_rows}
             open_ids = {o["orderId"] for o in self.snapshot.open_order_rows if o.get("clientId") == self.client.config.client_id}
@@ -591,7 +771,7 @@ class PaperService:
                     missing = [o for s in c["slots"] for role in ("entry", "stop", "exit") if (o := s.get(role)) and o["status"] not in TERMINAL and o["orderId"] not in open_ids]
                     if missing:
                         c["state"] = "Needs reconciliation"; c["message"] = "Order absent from open snapshot without terminal evidence; no retry is allowed."
-                    elif c["state"] == "Needs reconciliation" and c.get("message", "").startswith(("Bracket transmission", "Order absent", "Changed in IBKR: position differs", "Broker execution quantity conflict")):
+                    elif c["state"] == "Needs reconciliation" and (c.get("message") or "").startswith(("Bracket transmission", "Order absent", "Changed in IBKR: position differs", "Broker execution quantity conflict")):
                         c["state"] = "Sync pending"
                         self._derive(c)
                 self._save(c)
@@ -706,7 +886,7 @@ class PaperService:
                 slot["stop"] = stop
                 self._write(c, stop, "protection-retry", str(uuid.uuid4()))
                 continue
-            if stop["status"] not in WORKING or not stop.get("confirmed") or stop.get("whyHeld"):
+            if not stop_is_protective(stop):
                 c["automation"] = "Unprotected — operator reconciliation required"; continue
             if not c.get("entryFinal"): continue
             current = stop["confirmed"]["auxPrice"]
@@ -778,6 +958,7 @@ class PaperService:
                     if self.armed:
                         for c in self.store.all("campaign"):
                             if (c["id"] in self.reviewed_campaigns if self.operator_id else c["batchId"] == self.armed): self._automate(c)
+                    self.test_sessions.step()
                 except Exception as exc:
                     self.error = str(exc) if isinstance(exc, PaperSafetyError) else "Paper service failed; reconcile before resuming."
                     self.disarm()

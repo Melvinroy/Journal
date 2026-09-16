@@ -22,7 +22,8 @@ export type PaperBrokerView = { mode: "read-only"; source: "IBKR TWS"; connectio
   account: { id: string; maskedId: string; value: number | null; currency: string | null; source: string; observedAt: string; available: boolean } | null;
   positions: import("../app/TradingWorkspace").UnlinkedPositionInput[];
   openOrders: { id: string; symbol: string; action: string; quantity: number; orderType: string; timeInForce: string; status: string }[] };
-export type PaperStatus = { connected: boolean; account: string | null; connectionId: string | null; armedBatch: string | null;
+export type PaperTestSession = { id: string; target: number; completed: number; state: string; message: string; sourceIdentity: string; checkpoints: number[]; attempts: { campaignId: string; index: number; ticket: PaperTicket }[] };
+export type PaperStatus = { testSession?: PaperTestSession | null; connected: boolean; account: string | null; connectionId: string | null; armedBatch: string | null;
   submissionsEnabled: boolean; lastReconciled: string | null; error: string | null; campaigns: PaperCampaign[]; batches: PaperBatch[];
   readiness: { state: "disconnected" | "blocked" | "ready" | "error"; message: string }; broker: PaperBrokerView | null };
 
@@ -97,20 +98,20 @@ export function exitDescriptions(plan: ExitPlanDefinition, quantity: number) {
 }
 
 export function paperPosition(c: PaperCampaign, connected: boolean): DemoPosition {
-  const protectedSlots = c.slots.filter(s => s.open > 0 && ["Submitted", "PreSubmitted"].includes(s.stopStatus) && s.confirmedStop != null && !s.whyHeld);
+  const protectedSlots = c.slots.filter(s => s.open > 0 && ["Submitted", "PreSubmitted"].includes(s.stopStatus) && s.confirmedStop != null && (s.whyHeld ?? "").split(",").every(reason => !reason.trim() || reason.trim() === "trigger"));
   const protectedQuantity = protectedSlots.reduce((n, s) => n + s.open, 0);
   return { campaignId: c.id, accountId: c.accountBinding, instrumentId: `IBKR-STK:${c.contract.conId}`, positionRevision: String(c.revision),
     planId: c.ticket.planId, symbol: c.symbol, direction: c.direction,
     status: c.state === "Closed" || c.state === "Cancelled" ? "Closed" : c.state === "Pending entry" ? "Working entry" :
       c.state === "Open" || c.state === "Partially filled" || c.state === "Unprotected" ? c.state : "Needs Review",
     plannedQuantity: c.ticket.quantity, filledQuantity: c.summary.entered, openQuantity: c.summary.openQuantity,
-    averageEntry: c.summary.averageEntry ?? undefined, plannedEntry: c.ticket.planningPrice, plannedRisk: c.summary.initialRisk ?? undefined,
+    averageEntry: c.summary.averageEntry ?? undefined, plannedEntry: c.ticket.planningPrice, plannedRisk: c.ticket.quantity * Math.abs(c.ticket.hardCap - c.ticket.stopPrice),
     fixedInitialStop: c.ticket.stopPrice, entryLabel: "Broker-confirmed executions", simulated: false, stale: !connected,
-    protection: { state: c.summary.openQuantity === 0 ? "Staged" : protectedQuantity === c.summary.openQuantity ? "Working" : "Unprotected",
+    protection: { state: c.summary.openQuantity === 0 ? "Staged" : protectedQuantity === c.summary.openQuantity ? "Working" : c.state === "Needs reconciliation" || !connected ? "Unknown" : "Unprotected",
       quantity: protectedQuantity, stop: protectedSlots.length ? (c.direction === "Long" ? Math.min : Math.max)(...protectedSlots.map(s => s.confirmedStop!)) : undefined,
-      confirmed: protectedQuantity > 0, source: connected ? "TWS confirmed protection by share" : "Last TWS confirmation · stale" },
+      confirmed: protectedQuantity > 0, source: connected ? protectedQuantity > 0 ? "TWS confirmed protection by share" : "Broker order reconciliation pending" : "Last TWS confirmation · stale" },
     targets: c.slots.flatMap(s => s.leg?.role === "Target" && s.exitPrice != null ? [{ label: `${s.leg.id} · share ${Number(s.id)+1}`,
       quantity: 1, price: s.exitPrice, state: s.exitStatus === "Filled" ? "Filled" as const : ["Submitted", "PreSubmitted"].includes(s.exitStatus ?? "") ? "Working" as const : "Staged" as const }] : []),
-    exitPlan: c.activeExitPlan, price: { source: "Disconnected source", status: "Unavailable" }, campaign: paperDomainCampaign(c),
+    exitPlan: c.activeExitPlan, price: { source: connected ? "IBKR snapshot" : "Disconnected source", status: "Unavailable" }, campaign: paperDomainCampaign(c),
     paperSummary: c.summary };
 }

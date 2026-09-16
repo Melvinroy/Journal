@@ -39,6 +39,8 @@ import {
 import type { MarketContext } from "../lib/workspace-state";
 import { useModalAccessibility } from "./useModalAccessibility";
 import { BrokerConnection } from "./BrokerConnection";
+import { PaperTestSessionPanel } from "./PaperTestSessionPanel";
+import { PaperQuote } from "./PaperQuote";
 import { PaperOrderReview } from "./PaperOrderReview";
 import type { PaperExecution } from "./usePaperExecution";
 import type { PaperTicket } from "../lib/paper-execution";
@@ -68,7 +70,7 @@ type SavedSettings = {
 type CapturedEntrySource = {
   observedAt: string;
   sessionDate?: string;
-  source: "Local EOD close" | "Manual" | "Simulated fixture" | "Legacy";
+  source: "Local EOD close" | "Manual" | "Simulated fixture" | "Legacy" | "IBKR TWS snapshot";
 };
 
 type PlannerDraft = Partial<SavedSettings> & {
@@ -689,6 +691,11 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
       </section>
 
       {paper && !demo ? <>
+        <PaperTestSessionPanel paper={paper} />
+        <PaperQuote paper={paper} symbol={symbol.trim().toUpperCase()} onApply={(value, observedAt) => {
+          editPlan(); entryEdited.current = true; setEntryPrice(value); setHardCap(value);
+          setCapturedEntrySource({source: "IBKR TWS snapshot", observedAt});
+        }} />
         <div className="broker-execution-fields">
           <label>Order method<select aria-label="Order method" value={executionMethod} onChange={e => { editPlan(); setExecutionMethod(e.target.value as PaperTicket["method"]); }}><option value="Limit">Limit</option><option value="Normal">Capped midpoint</option><option value="Breakout">Stop-limit breakout</option></select></label>
           <label>Requested shares<input aria-label="Requested shares" type="number" min="1" step="1" placeholder={`Calculated: ${result.shares}`} value={executionQuantity || ""} onChange={e => { editPlan(); setExecutionQuantity(safeNumber(e.target.value)); }} /></label>
