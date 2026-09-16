@@ -938,7 +938,7 @@ test("mobile workspaces do not create document-level horizontal scrolling", asyn
     await expectContained(page, selector, true);
   await page.getByRole("button", { name: "Journal", exact: true }).click();
   await expect(
-    page.getByText("Open a symbol for all trade metrics and execution details."),
+    page.getByText("Scroll across for all columns. Open a symbol for execution details and review."),
   ).toBeVisible();
   const table = page.getByRole("region", {
     name: /Recent trades; scroll vertically/,
@@ -1056,7 +1056,7 @@ test("Journal stays within viewport and clipping bounds through wide-narrow-wide
   await navigateTo(page, "Trading");
   await page.getByRole("button", { name: "Journal", exact: true }).click();
 
-  await page.getByRole("button", { name: /Distribution and setup analysis/ }).click();
+  await expect(page.getByRole("heading", { name: "Realized R distribution" })).toBeVisible();
   const chartSizes: Array<{ width: number; height: number }> = [];
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -1120,7 +1120,7 @@ test("Journal stays within viewport and clipping bounds through wide-narrow-wide
   }
 
   expect(chartSizes[1].width).toBeLessThan(chartSizes[0].width);
-  expect(chartSizes[1].height).toBeLessThan(chartSizes[0].height);
+  expect(chartSizes[1].height).toBe(chartSizes[0].height);
   expect(
     Math.abs(chartSizes[2].width - chartSizes[0].width),
   ).toBeLessThanOrEqual(1);
@@ -1398,7 +1398,7 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   await expect(table.locator(".journal-execution-details")).toBeVisible();
   expect(await table.evaluate(element => element.clientHeight)).toBeGreaterThanOrEqual(initial.clientHeight);
 
-  const unavailableR = rows.filter({ hasText: "MSFT" }).locator(":scope > span").nth(7);
+  const unavailableR = rows.filter({ hasText: "MSFT" }).locator(":scope > span").nth(8);
   await expect(unavailableR).toContainText("Final Net R unavailable");
   await expect(unavailableR).toHaveClass(/journal-semantic-unavailable/);
 
@@ -1434,7 +1434,7 @@ test("Journal filters, drawdown, review persistence and expanded rows remain res
   await page.getByLabel("Direction cohort").selectOption("Long");
   await page.getByLabel("Trade row status").selectOption("closed");
   await expect(page.locator('[data-journal-trade-id="journal-amd"]')).toBeVisible();
-  await page.getByRole("button", { name: "Drawdown", exact: true }).click();
+  await page.getByLabel("Equity chart view", { exact: true }).selectOption("drawdown");
   await expect(page.getByRole("img", { name: /drawdown within selected period/i })).toBeVisible();
   await page.locator('[data-journal-trade-id="journal-amd"] button').click();
   await page.getByLabel("AMD Market suitable?").selectOption("Partly");

@@ -838,7 +838,24 @@ function SetupScreen({
   );
 }
 
+function useJournalChartSize() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 760, height: 260 });
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setSize({ width, height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, ...size };
+}
+
 function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode; view: EquityView }) {
+  const { ref, width, height } = useJournalChartSize();
   const ordered = [...trades].sort(
     (a, b) =>
       (a.closedAt ?? a.date).localeCompare(b.closedAt ?? b.date) ||
@@ -860,9 +877,7 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
   if (!cumulative.length)
     return <div className="empty-chart">No trades in this period.</div>;
 
-  const width = 760;
-  const height = 220;
-  const left = 46;
+  const left = 64;
   const right = 14;
   const top = 15;
   const bottom = 30;
@@ -886,7 +901,7 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
   );
 
   return (
-    <div className="equity-chart">
+    <div className="equity-chart" ref={ref}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -914,8 +929,8 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
               className="axis-label"
             >
               {mode === "dollar"
-                ? `$${Math.round(tick / 100) / 10}k`
-                : `${tick.toFixed(0)}R`}
+                ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(tick)
+                : `${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(tick)}R`}
             </text>
           </g>
         ))}
@@ -971,6 +986,7 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
 }
 
 function DistributionChart({ trades }: { trades: Trade[] }) {
+  const { ref, width, height } = useJournalChartSize();
   if (!trades.length)
     return <div className="empty-chart">No outcomes in this period.</div>;
   const values = trades.map((trade) => trade.r);
@@ -995,13 +1011,11 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
     bins[Math.max(0, Math.min(raw, bins.length - 1))].count += 1;
   });
 
-  const width = 560;
-  const height = 300;
-  const left = 24;
-  const right = 4;
+  const left = 32;
+  const right = 18;
   const top = 40;
-  const chartBottom = 182;
-  const rugTop = 238;
+  const chartBottom = height - 100;
+  const rugTop = height - 42;
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
   const plotWidth = width - left - right;
   const xValue = (value: number) =>
@@ -1016,7 +1030,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
   );
 
   return (
-    <div className="distribution-chart">
+    <div className="distribution-chart" ref={ref}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -1691,6 +1705,7 @@ export default function Home() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+        table.style.setProperty("--journal-detail-width", `${table.clientWidth}px`);
         const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
         const visibleRows =
           viewportWidth <= 480 || viewportHeight < 620
@@ -1717,6 +1732,7 @@ export default function Home() {
     const observer = new ResizeObserver(sizeTableViewport);
     observer.observe(header);
     observer.observe(row);
+    observer.observe(table);
     window.addEventListener("resize", sizeTableViewport, { passive: true });
     window.visualViewport?.addEventListener("resize", sizeTableViewport, {
       passive: true,
@@ -2073,26 +2089,12 @@ export default function Home() {
                   <h2>{equityView === "equity" ? "Equity curve" : "Drawdown"}</h2>
                   <p>{equityView === "equity" ? "Cumulative closed-trade performance" : "Within selected period · starts at zero"} · {rangeLabel}</p>
                 </div>
-                <div
-                  className="segmented-control"
-                  aria-label="Equity chart view and unit"
-                >
-                  <button className={equityView === "equity" ? "selected" : ""} onClick={() => setEquityView("equity")}>Curve</button>
-                  <button className={equityView === "drawdown" ? "selected" : ""} onClick={() => { setEquityView("drawdown"); setEquityMode("dollar"); }}>Drawdown</button>
-                  <button
-                    className={equityMode === "dollar" ? "selected" : ""}
-                    onClick={() => setEquityMode("dollar")}
-                  >
-                    $
-                  </button>
-                  <button
-                    className={equityMode === "r" ? "selected" : ""}
-                    onClick={() => { setEquityMode("r"); setEquityView("equity"); }}
-                  >
-                    R
-                  </button>
+                <div className="journal-chart-controls">
+                  <label>View<select aria-label="Equity chart view" value={equityView} onChange={event => { setEquityView(event.target.value as EquityView); if (event.target.value === "drawdown") setEquityMode("dollar"); }}><option value="equity">Equity curve</option><option value="drawdown">Drawdown</option></select></label>
+                  {equityView === "equity" && <label>Unit<select aria-label="Equity chart unit" value={equityMode} onChange={event => setEquityMode(event.target.value as EquityMode)}><option value="dollar">Dollars</option><option value="r">Risk units (R)</option></select></label>}
                 </div>
               </div>
+              {equityView === "drawdown" ? <p className="journal-chart-explanation">Decline from the highest cumulative closed-trade profit in this period, in dollars.</p> : equityMode === "r" ? <p className="journal-chart-explanation">1R equals a trade’s initial planned risk. This curve adds the eligible trades’ net R results.</p> : null}
               <div className="chart-summary">
                 <strong>
                   {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length === 0 ? "Unavailable" : equityView === "drawdown"
@@ -2103,13 +2105,71 @@ export default function Home() {
                         rMeasuredTrades.reduce((sum, trade) => sum + trade.r, 0),
                       )}
                 </strong>
-                <span>{measuredTrades.length} measured trades in view</span>
+                <span>{(equityMode === "r" ? rMeasuredTrades : measuredTrades).length} measured trades in view</span>
               </div>
               {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length ? <EquityChart trades={equityMode === "r" ? rMeasuredTrades : measuredTrades} mode={equityMode} view={equityView} /> : <p className="chart-empty-note">{filteredTrades.length ? "No eligible completed trades for this measurement." : "No records in this selection."}</p>}
             </article>
 
 
+<article className="panel distribution-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>Realized R distribution</h2>
+                  <p>Where trades finished</p>
+                </div>
+                <span className="trade-count">
+                  {rMeasuredTrades.length} measured trades
+                </span>
+              </div>
+              <div className="distribution-summary">
+                <span>
+                  Average{" "}
+                  <b className={journalSemanticClass(journalSemanticTone(stats.avgR, rMeasuredTrades.length > 0))}>
+                    {rMeasuredTrades.length ? formatR(stats.avgR) : <MissingValue reason="No eligible closed trades with known initial risk" />}
+                  </b>
+                </span>
+                <span>
+                  Median{" "}
+                  <b>
+                    {rMeasuredTrades.length ? formatR(median(rMeasuredTrades.map((trade) => trade.r))) : <MissingValue reason="No eligible closed trades with known initial risk" />}
+                  </b>
+                </span>
+              </div>
+              {rMeasuredTrades.length ? <DistributionChart trades={rMeasuredTrades} /> : <p className="chart-empty-note">No completed trades with known initial risk.</p>}
+            </article>
           </section>
+
+<article className="panel setup-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>Setup performance</h2>
+                  <p>Average realized R</p>
+                </div>
+                <span className="panel-meta">
+                  {setupPerformance.length} setups
+                </span>
+              </div>
+              <div className="setup-table">
+                <div className="setup-row setup-head">
+                  <span>Setup</span>
+                  <span>Closed</span>
+                  <span>Net P&amp;L</span>
+                  <span>Win rate</span>
+                  <span>Avg Net R</span>
+                </div>
+                {setupPerformance.map((item) => (
+                  <div className="setup-row" key={item.setup}>
+                    <span>{item.setup}</span>
+                    <span>{item.count}</span>
+                    <span className={item.netPnl >= 0 ? "positive" : "negative"}>{formatMoney(item.netPnl)}</span>
+                    <span>{item.winRate.toFixed(1)}%</span>
+                    <b className={item.avgR >= 0 ? "positive" : "negative"}>
+                      {formatR(item.avgR)} <small>({item.rCount})</small>
+                    </b>
+                  </div>
+                ))}
+              </div>
+            </article>
 
           <section className="lower-grid journal-flow">
             <article className="panel trades-panel">
@@ -2128,7 +2188,7 @@ export default function Home() {
                 </label>
               </div>
               <p className="table-scroll-hint">
-                Open a symbol for all trade metrics and execution details.
+                Scroll across for all columns. Open a symbol for execution details and review.
               </p>
               <div
                 className="trade-table"
@@ -2142,8 +2202,9 @@ export default function Home() {
                   <span>Symbol</span>
                   <span>Side</span>
                   <span>Status</span>
+                  <span>Setup / source</span>
                   <span>Initial risk $</span>
-                  <span>Planned reward/risk</span>
+                  <span title="Planned reward/risk">Planned R:R</span>
                   <span>Realized P&amp;L $</span>
                   <span>Final Net R</span>
                   <span>Review</span>
@@ -2170,11 +2231,6 @@ export default function Home() {
                         >
                           {trade.symbol}
                         </button>
-                        <small>
-                          {trade.setup}
-                          {trade.simulated ? " · Simulation" : ""}
-                        </small>
-                        <small>{trade.provenance ?? "Manual"}</small>
                       </span>
                       <span>
                         <i className={`side-pill ${trade.side.toLowerCase()}`}>
@@ -2182,6 +2238,7 @@ export default function Home() {
                         </i>
                       </span>
                       <span><i className="status-pill">{trade.status ?? "Closed"}</i></span>
+                      <span className="journal-setup-source" title={`${trade.setup} · ${trade.provenance ?? "Manual"}${trade.simulated ? " · Simulation" : ""}`}>{trade.setup} · {trade.provenance ?? "Manual"}{trade.simulated ? " · Simulation" : ""}</span>
                       <span>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : formatMoney(trade.risk, false)}</span>
                       <span>{trade.fixedTargetCoverage === 100 ? `1:${trade.plannedR.toFixed(1)}` : `${trade.fixedTargetCoverage ?? 0}% fixed · incomplete`}</span>
                       <span
@@ -2204,6 +2261,7 @@ export default function Home() {
                         <header>
                           <div>
                             <strong>{trade.symbol} execution detail</strong>
+                            <span>{trade.setup} · {trade.provenance ?? "Manual"}{trade.simulated ? " · Simulation" : ""}</span>
                             <span>
                               {trade.status ?? "Closed"} · {trade.openQuantity ?? 0} shares open
                             </span>
@@ -2213,7 +2271,7 @@ export default function Home() {
                         {trade.historyStatus && (
                           <p className="workspace-notice">{trade.historyStatus}</p>
                         )}
-                        <div className="journal-mobile-metrics"><span>Initial risk <b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : formatMoney(trade.risk, false)}</b></span><span>Planned R:R <b>{trade.fixedTargetCoverage === 100 ? `1:${trade.plannedR.toFixed(1)}` : `${trade.fixedTargetCoverage ?? 0}% fixed · incomplete`}</b></span><span>Final Net R <b>{trade.finalRAvailable === false || trade.status !== "Closed" ? <MissingValue reason="Final Net R unavailable until eligible closure" /> : formatR(trade.r)}</b></span><span>Review <b>{reviewStore.value[trade.id] ? "Reviewed" : `Grade ${trade.grade}`}</b></span></div><div className="journal-detail-grid">
+                        <div className="journal-detail-grid">
                           <span><small>Planned entry / size</small><b>{trade.journalSnapshot?.plannedEntry ? `${formatMoney(trade.journalSnapshot.plannedEntry, false)} · ${trade.journalSnapshot.plannedQuantity ?? "—"} sh` : <MissingValue reason="Planned entry unavailable" />}</b></span>
                           <span><small>Actual weighted entry</small><b>{trade.weightedEntry ? formatMoney(trade.weightedEntry, false) : <MissingValue reason="Entry execution history unavailable" />}</b></span>
                           <span><small>Original / current stop</small><b>{trade.journalSnapshot?.originalStop ? <>{formatMoney(trade.journalSnapshot.originalStop, false)} / {trade.journalSnapshot.currentConfirmedStop ? formatMoney(trade.journalSnapshot.currentConfirmedStop, false) : <MissingValue reason="Current confirmed stop unavailable" />}</> : <MissingValue reason="Original stop unavailable" />}</b></span>
@@ -2289,62 +2347,7 @@ export default function Home() {
 
 
           </section>
-<Disclosure title="Distribution and setup analysis" name="journal-analysis" scope={demoMode ? "demo" : session?.user.id ?? "account"}><div className="journal-secondary-analysis">            <article className="panel distribution-panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Realized R distribution</h2>
-                  <p>Where trades finished</p>
-                </div>
-                <span className="trade-count">
-                  {rMeasuredTrades.length} measured trades
-                </span>
-              </div>
-              <div className="distribution-summary">
-                <span>
-                  Average{" "}
-                  <b className={journalSemanticClass(journalSemanticTone(stats.avgR, rMeasuredTrades.length > 0))}>
-                    {rMeasuredTrades.length ? formatR(stats.avgR) : <MissingValue reason="No eligible closed trades with known initial risk" />}
-                  </b>
-                </span>
-                <span>
-                  Median{" "}
-                  <b>
-                    {rMeasuredTrades.length ? formatR(median(rMeasuredTrades.map((trade) => trade.r))) : <MissingValue reason="No eligible closed trades with known initial risk" />}
-                  </b>
-                </span>
-              </div>
-              {rMeasuredTrades.length ? <DistributionChart trades={rMeasuredTrades} /> : <p className="chart-empty-note">No completed trades with known initial risk.</p>}
-            </article>            <article className="panel setup-panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Setup performance</h2>
-                  <p>Average realized R</p>
-                </div>
-                <span className="panel-meta">
-                  {setupPerformance.length} setups
-                </span>
-              </div>
-              <div className="setup-table">
-                <div className="setup-row setup-head">
-                  <span>Setup</span>
-                  <span>Closed</span>
-                  <span>Net P&amp;L</span>
-                  <span>Win rate</span>
-                  <span>Avg Net R</span>
-                </div>
-                {setupPerformance.map((item) => (
-                  <div className="setup-row" key={item.setup}>
-                    <span>{item.setup}</span>
-                    <span>{item.count}</span>
-                    <span className={item.netPnl >= 0 ? "positive" : "negative"}>{formatMoney(item.netPnl)}</span>
-                    <span>{item.winRate.toFixed(1)}%</span>
-                    <b className={item.avgR >= 0 ? "positive" : "negative"}>
-                      {formatR(item.avgR)} <small>({item.rCount})</small>
-                    </b>
-                  </div>
-                ))}
-              </div>
-            </article></div></Disclosure>
+
         </div>
       </section>
 

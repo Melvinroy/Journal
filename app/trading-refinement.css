@@ -124,23 +124,49 @@
 .journal-content .metric-value {font-size:22px;line-height:1.2;overflow-wrap:anywhere;}
 .journal-empty-state {padding:12px 16px;border:1px solid var(--line);border-radius:8px;background:var(--surface,#fff);margin-bottom:12px;font-size:14px;}
 .journal-empty-state p {font-size:13px;margin:4px 0 0;line-height:1.5;}
-.journal-content .analytics-grid,.journal-content .lower-grid {display:block;min-width:0;}
-.journal-content .equity-panel {margin:12px 0;min-height:0;padding:12px;}
+.journal-content .analytics-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;min-width:0;margin:12px 0 16px;}
+.journal-content .lower-grid {display:block;min-width:0;margin-top:16px;}
+.journal-content .equity-panel {margin:0;min-height:0;padding:12px;}
 .journal-content .equity-panel.is-empty {min-height:0;height:auto;}
 .journal-content .chart-empty-note {margin:12px 0 0;font-size:13px;color:var(--muted);}
 .journal-content .equity-panel.is-empty .chart-summary {display:none;}
-.journal-content .journal-secondary-analysis {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;}
 .journal-content :is(.distribution-panel,.setup-panel,.trades-panel) {min-width:0;min-height:0;height:auto;padding:12px;}
-.journal-content .trade-row {font-size:13px;line-height:1.4;}
+.journal-content .analytics-grid>.panel {display:flex;flex-direction:column;}
+.journal-content .analytics-grid .panel-heading {flex-wrap:wrap;gap:8px;}
+.journal-chart-controls {display:flex;flex-wrap:wrap;gap:8px;}
+.journal-chart-controls label {display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);}
+.journal-chart-controls select {min-height:34px;max-width:150px;border:1px solid var(--line);border-radius:5px;background:var(--surface,#fff);color:var(--ink);padding:4px;font:inherit;}
+.journal-chart-explanation {font-size:12px;line-height:1.4;margin:8px 0 0;color:var(--muted);}
+.journal-content .analytics-grid :is(.equity-chart,.distribution-chart) {height:260px;flex:none;margin-top:auto;padding-top:8px;box-sizing:content-box;}
+.journal-content .analytics-grid svg {display:block;}
+.journal-content .analytics-grid :is(.axis-title,.reference-label) {font-size:12px;}
+.journal-content :is(.distribution-summary span,.distribution-summary b,.panel-meta) {font-size:12px;}
+.journal-content .setup-table {display:grid;grid-template-columns:minmax(160px,240px) 64px repeat(3,max-content);column-gap:16px;overflow:auto;}
+.journal-content .setup-row {display:grid;grid-template-columns:subgrid;grid-column:1/-1;min-width:0;min-height:36px;font-size:13px;}
+.journal-content .setup-row>:not(:first-child) {text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.journal-content .setup-row small,.journal-content .setup-head {font-size:12px;}
+@container journal-content (width < 960px) {.journal-content .analytics-grid {grid-template-columns:minmax(0,1fr);}}
+.journal-content .trade-table {position:relative;display:grid;grid-template-columns:64px max-content 58px max-content minmax(180px,240px) repeat(5,max-content);column-gap:10px;container-type:inline-size;margin-inline:0;}
+.journal-content .journal-trade-group {display:grid;grid-template-columns:subgrid;grid-column:1/-1;min-width:0;}
+.journal-content .trade-row {display:grid;grid-template-columns:subgrid;grid-column:1/-1;min-width:0;min-height:38px;padding:4px 0;font-size:13px;line-height:1.4;background:var(--surface,#fff);}
+.journal-content .trade-row.simulated {background:#fffdf6;}
+.journal-content .trade-row>span {white-space:nowrap;}
+.journal-content .trade-row>span:nth-child(n+6):nth-child(-n+9) {text-align:right;font-variant-numeric:tabular-nums;}
+.journal-content .trade-row>.symbol-cell {position:sticky;left:0;z-index:1;min-width:80px;padding-right:8px;background:inherit;}
+.journal-content .trade-row.table-head {position:sticky;top:0;z-index:3;min-height:32px;}
+.journal-content .trade-row.table-head>span:nth-child(2) {position:sticky;left:0;z-index:4;background:inherit;}
+.journal-content .journal-setup-source {overflow:hidden;text-overflow:ellipsis;color:var(--muted);}
+.journal-content .table-scroll-hint {display:block;margin:8px 0 0;}
+.journal-content .trade-table>.position-empty {grid-column:1/-1;}
 .journal-content .trade-row :is(small,i),.journal-content .table-head {font-size:12px;line-height:1.4;}
-.journal-content .symbol-cell>small {white-space:normal;overflow-wrap:anywhere;}
-.journal-content .journal-execution-details {padding:12px;font-size:13px;}
+.journal-content .journal-execution-details {grid-column:1/-1;position:sticky;left:0;width:var(--journal-detail-width,100cqi);min-width:0;box-sizing:border-box;margin:0 0 8px;padding:12px;font-size:13px;}
+.journal-content .journal-execution-details>header strong {font-size:14px;line-height:1.4;}
+.journal-content .journal-execution-details>header i {font-size:12px;line-height:1.4;}
 .journal-content :is(.journal-detail-grid,.journal-plan-detail,.journal-review-form,.journal-fill-row,.journal-execution-details) :is(small,label,p,span,input,select,button,i) {font-size:12px;line-height:1.5;}
 .journal-content :is(.journal-detail-grid,.journal-plan-detail,.journal-review-form) :is(b,strong) {font-size:13px;line-height:1.5;}
 .journal-content .journal-review-form :is(input,select,button) {min-height:36px;}
 .journal-content .journal-review-form {gap:12px;}
 .journal-content .journal-detail-grid {gap:12px;}
-.journal-mobile-metrics {display:none;}
 @media(max-width:700px) {
  .consolidated-trading .trade-planner {padding:12px 10px;}
  .consolidated-trading .broker-account-summary {grid-template-columns:minmax(0,1fr);padding:12px;}
@@ -157,25 +183,14 @@
  .journal-record-controls label {flex:1 1 140px;}
 }
 @media(max-width:639px) {
- .journal-content .trade-table {overflow:visible;max-height:none;}
- .journal-content .trade-row:not(.table-head) {min-width:0;grid-template-columns:1fr auto;gap:6px;padding:12px 0;}
- .journal-content .trade-row.table-head {display:none;}
- .journal-content .trade-row>span:nth-child(1) {grid-column:2;grid-row:1;}
- .journal-content .trade-row>.symbol-cell {grid-column:1;grid-row:1/3;}
- .journal-content .trade-row>span:nth-child(3) {grid-column:2;grid-row:2;}
- .journal-content .trade-row>span:nth-child(4) {grid-column:1;grid-row:3;}
- .journal-content .trade-row>span:nth-child(7) {grid-column:2;grid-row:3;}
- .journal-content .trade-row>span:nth-child(5),.journal-content .trade-row>span:nth-child(6),.journal-content .trade-row>span:nth-child(8),.journal-content .trade-row>span:nth-child(9) {display:none;}
- .journal-mobile-metrics {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px;font-size:12px;}
- .journal-mobile-metrics span {display:grid;gap:4px;}
- .journal-content .journal-execution-details {min-width:0;}
+ .journal-content .analytics-grid :is(.equity-chart,.distribution-chart) {height:220px;}
+ .journal-content .trade-row {min-height:44px;}
  .journal-content .journal-fill-row>span::before {font-size:12px;}
  .journal-content .setup-table {overflow:auto;}
 }
 .consolidated-trading .broker-blocker {grid-column:1/-1;margin:0;font-size:13px;line-height:1.5;color:#80521d;overflow-wrap:anywhere;}
 .journal-content .journal-record-controls .range-control {display:grid;justify-content:stretch;}
 .journal-record-controls .secondary-button {display:inline-flex;align-items:center;min-height:36px;}
-.journal-content .equity-chart {height:min(240px,30dvh);}
 .journal-content .workspace-disclosure {margin:4px 0;}
 .journal-content .journal-eligibility-summary {margin:4px 0;}
 @media(max-width:700px){.journal-record-controls .secondary-button,.consolidated-trading .trade-side-control button{min-height:44px;}}
