@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import uuid
 
 from .ibkr_tws import PaperSafetyError
 
@@ -20,6 +21,7 @@ class PaperStore:
     @contextmanager
     def transaction(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        existed = self.path.exists()
         db = sqlite3.connect(self.path, timeout=5)
         db.row_factory = sqlite3.Row
         try:
@@ -27,6 +29,11 @@ class PaperStore:
             db.execute("CREATE TABLE IF NOT EXISTS objects (kind TEXT, id TEXT, body TEXT NOT NULL, PRIMARY KEY(kind,id))")
             db.execute("CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, campaign TEXT, request TEXT NOT NULL, state TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, body TEXT NOT NULL)")
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version > 1: raise PaperSafetyError("Paper database version is newer than this application.")
+            if version == 0:
+                if existed: self.backup(self.path.with_name(self.path.name + ".pre-v1." + uuid.uuid4().hex + ".bak"))
+                db.execute("PRAGMA user_version=1")
             db.execute("BEGIN IMMEDIATE")
             yield db
             db.commit()
@@ -35,6 +42,18 @@ class PaperStore:
             raise
         finally:
             db.close()
+
+    def backup(self, destination):
+        """SQLite's backup API captures a consistent database, including WAL data."""
+        destination = Path(destination)
+        if destination.exists(): raise PaperSafetyError("Backup destination already exists.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True) as source:
+            with sqlite3.connect(destination) as target:
+                source.backup(target)
+                if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise PaperSafetyError("Backup integrity verification failed.")
+        return destination
 
     @staticmethod
     def put(db, kind, identity, value):

@@ -29,5 +29,5 @@ export function useBrowserStore<T>(key: string, fallback: T, validate?: (value:u
     }
     catch { setError("Could not save. Browser storage may be full or disabled."); return false; }
   }, [key, ready, loadedKey, value]);
-  return { value, save, ready: ready && loadedKey === key, error };
+  return { value: loadedKey === key ? value : fallback, save, ready: ready && loadedKey === key, error };
 }

@@ -23,18 +23,22 @@ export type PaperBrokerView = { mode: "read-only"; source: "IBKR TWS"; connectio
   positions: import("../app/TradingWorkspace").UnlinkedPositionInput[];
   openOrders: { id: string; symbol: string; action: string; quantity: number; orderType: string; timeInForce: string; status: string }[] };
 export type PaperTestSession = { id: string; target: number; completed: number; state: string; message: string; sourceIdentity: string; checkpoints: number[]; attempts: { campaignId: string; index: number; ticket: PaperTicket }[] };
-export type PaperStatus = { testSession?: PaperTestSession | null; connected: boolean; account: string | null; connectionId: string | null; armedBatch: string | null;
+export type PaperCapabilities = { version: number; environment: "paper"; liveEnabled: false; directions: string[]; methods: string[]; durations: string[]; sessions: string[]; excludedSymbols: string[]; limits: { sharesPerCampaign: number; campaigns: number; entryNotional: number; plannedRiskPerCampaign: number; totalPlannedRisk: number } };
+export type PaperStatus = { capabilities?: PaperCapabilities; accountBinding?: string; testSession?: PaperTestSession | null; connected: boolean; account: string | null; connectionId: string | null; armedBatch: string | null;
   submissionsEnabled: boolean; lastReconciled: string | null; error: string | null; campaigns: PaperCampaign[]; batches: PaperBatch[];
   readiness: { state: "disconnected" | "blocked" | "ready" | "error"; message: string }; broker: PaperBrokerView | null };
 
-export function paperTicketBlockers(t: PaperTicket): string[] {
+export function paperTicketBlockers(t: PaperTicket, policy?: PaperCapabilities): string[] {
   const reasons: string[] = [];
-  if (t.direction !== "Long") reasons.push("Short execution is not supported in this paper pilot.");
-  if (!["Regular", "RegularExtended"].includes(t.sessionMode)) reasons.push("Overnight execution is not supported in this paper pilot.");
-  if (t.duration !== "DAY") reasons.push("The paper pilot supports DAY entries only.");
-  if (!Number.isInteger(t.quantity) || t.quantity < 1 || t.quantity > 3) reasons.push("Choose 1–3 whole shares for the paper pilot.");
-  if (t.quantity * t.hardCap > 500) reasons.push("Entry notional exceeds the $500 paper limit.");
-  if (t.quantity * (t.hardCap - t.stopPrice) > 10) reasons.push("Planned stop risk exceeds the $10 campaign limit.");
+  const limits = policy?.limits ?? { sharesPerCampaign: 3, campaigns: 2, entryNotional: 500, plannedRiskPerCampaign: 10, totalPlannedRisk: 20 };
+  if (!(policy?.directions ?? ["Long"]).includes(t.direction)) reasons.push("Short execution is not supported in this paper pilot.");
+  if (!(policy?.methods ?? ["Limit", "Normal", "Breakout"]).includes(t.method)) reasons.push("This entry method is available for planning only.");
+  if (!(policy?.sessions ?? ["Regular", "RegularExtended"]).includes(t.sessionMode)) reasons.push("Overnight execution is not supported in this paper pilot.");
+  if (!(policy?.durations ?? ["DAY"]).includes(t.duration)) reasons.push("The paper pilot supports DAY entries only.");
+  if ((policy?.excludedSymbols ?? ["PL", "AMD"]).includes(t.symbol)) reasons.push("This symbol is excluded by the account execution policy.");
+  if (!Number.isInteger(t.quantity) || t.quantity < 1 || t.quantity > limits.sharesPerCampaign) reasons.push(`Choose 1–${limits.sharesPerCampaign} whole shares for the paper pilot.`);
+  if (t.quantity * t.hardCap > limits.entryNotional) reasons.push(`Entry notional exceeds the $${limits.entryNotional} paper limit.`);
+  if (t.quantity * (t.hardCap - t.stopPrice) > limits.plannedRiskPerCampaign) reasons.push(`Planned stop risk exceeds the $${limits.plannedRiskPerCampaign} campaign limit.`);
   if (t.sessionMode === "RegularExtended" && (t.method !== "Limit" || t.protectionOrderType !== "STP LMT")) reasons.push("Extended hours require a limit entry and stop-limit protection.");
   try {
     const shares = allocateExitShares(t.quantity, t.exitPlan.legs.map(l => l.allocationPercent));
@@ -107,9 +111,9 @@ export function paperPosition(c: PaperCampaign, connected: boolean): DemoPositio
     plannedQuantity: c.ticket.quantity, filledQuantity: c.summary.entered, openQuantity: c.summary.openQuantity,
     averageEntry: c.summary.averageEntry ?? undefined, plannedEntry: c.ticket.planningPrice, plannedRisk: c.ticket.quantity * Math.abs(c.ticket.hardCap - c.ticket.stopPrice),
     fixedInitialStop: c.ticket.stopPrice, entryLabel: "Broker-confirmed executions", simulated: false, stale: !connected,
-    protection: { state: c.summary.openQuantity === 0 ? "Staged" : protectedQuantity === c.summary.openQuantity ? "Working" : c.state === "Needs reconciliation" || !connected ? "Unknown" : "Unprotected",
+    protection: { state: c.summary.openQuantity === 0 ? (c.state === "Closed" || c.state === "Cancelled" ? "Complete" : "Staged") : !connected ? "Unknown" : protectedQuantity === c.summary.openQuantity ? "Working" : c.state === "Needs reconciliation" || !connected ? "Unknown" : "Unprotected",
       quantity: protectedQuantity, stop: protectedSlots.length ? (c.direction === "Long" ? Math.min : Math.max)(...protectedSlots.map(s => s.confirmedStop!)) : undefined,
-      confirmed: protectedQuantity > 0, source: connected ? protectedQuantity > 0 ? "TWS confirmed protection by share" : "Broker order reconciliation pending" : "Last TWS confirmation · stale" },
+      confirmed: connected && protectedQuantity > 0, source: c.state === "Closed" || c.state === "Cancelled" ? `Flat · orders cleared · accounting ${c.summary.costsComplete ? "complete" : "incomplete"}` : connected ? protectedQuantity > 0 ? "TWS confirmed protection by share" : "Broker order reconciliation pending" : "Last TWS confirmation · stale" },
     targets: c.slots.flatMap(s => s.leg?.role === "Target" && s.exitPrice != null ? [{ label: `${s.leg.id} · share ${Number(s.id)+1}`,
       quantity: 1, price: s.exitPrice, state: s.exitStatus === "Filled" ? "Filled" as const : ["Submitted", "PreSubmitted"].includes(s.exitStatus ?? "") ? "Working" as const : "Staged" as const }] : []),
     exitPlan: c.activeExitPlan, price: { source: connected ? "IBKR snapshot" : "Disconnected source", status: "Unavailable" }, campaign: paperDomainCampaign(c),

@@ -18,6 +18,11 @@
 .consolidated-trading .trade-commandbar {min-height:36px;gap:12px;margin-bottom:8px;}
 .consolidated-trading .trade-commandbar h1 {font-size:22px;}
 .consolidated-trading .trade-actionbar {flex-wrap:wrap;margin-bottom:12px;gap:8px;}
+.planner-order-review {display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;font-size:12px;}
+.planner-order-review details {max-width:420px;}
+.planner-order-review li {overflow-wrap:anywhere;}
+.consolidated-trading .trade-execution-state {white-space:normal;overflow-wrap:anywhere;}
+.trade-commandbar a {font-size:12px;}
 .consolidated-trading .trade-action-button {height:36px;padding:0 12px;font-size:13px;border-radius:6px;}
 .consolidated-trading .trade-risk-banner {font-size:13px;gap:8px;padding:6px 8px;}
 .consolidated-trading .trade-risk-banner button {min-height:32px;font-size:12px;}

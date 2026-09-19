@@ -11,8 +11,8 @@ async function signIn(page: Page, status: Record<string, unknown> = empty) {
     access_token: "test-access-token", refresh_token: "test-refresh-token", expires_in: 3600, token_type: "bearer",
     user: { id: "00000000-0000-0000-0000-000000000001", email: "test@example.com", email_confirmed_at: new Date().toISOString(), aud: "authenticated" }
   } : [] }));
-  await page.route("**/v1/ibkr/paper/identity", r => r.fulfill({ json: { userId: "test-user", email: "test@example.com", linked: true } }));
-  await page.route("**/v1/ibkr/paper/status", r => r.fulfill({ json: status }));
+  await page.route("**/v1/ibkr/paper/identity", r => r.fulfill({ json: { userId: "test-user", email: "test@example.com", linked: true, accountBinding: "test-binding", environment: "paper" } }));
+  await page.route("**/v1/ibkr/paper/status", r => r.fulfill({ json: { ...status, lastReconciled: status.lastReconciled === empty.lastReconciled ? new Date().toISOString() : status.lastReconciled } }));
   await navigate(page);
   await page.getByLabel("Email address").fill("test@example.com");
   await page.getByLabel("Password", { exact: true }).fill("test-only-password");
@@ -24,10 +24,10 @@ test("paper compatibility link requires sign-in and opens the existing planner",
   await signIn(page);
   await expect(page.getByRole("heading", { name: "Paper Plan & Position" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Open.*demo|separate/i })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Review paper order" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Review order" })).toBeDisabled();
   for (const width of [1440, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    const status = page.getByLabel("TWS connection: Paper connection blocked");
+    const status = page.getByLabel("TWS connection: Paper connected");
     await status.focus(); await status.press("Enter");
     await expect(page.getByText(empty.readiness.message, { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -48,7 +48,7 @@ test("draft saving never submits; exact review errors remain in the planner", as
   await page.getByRole("button", { name: "Save plan", exact: true }).click();
   await page.getByRole("button", { name: "Save exits", exact: true }).click();
   expect(writes).toBe(0);
-  await page.getByRole("button", { name: "Review paper order" }).click();
+  await page.getByRole("button", { name: "Review order" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "10197" })).toBeVisible();
   expect(writes).toBe(0);
 });
@@ -74,12 +74,12 @@ test("exact confirmation, keyboard dismissal, and double-click submit guard", as
   await page.route("**/v1/ibkr/paper/batches/batch/approve", async r => { approvals++; await r.fulfill({ json: {} }); });
   await page.route("**/v1/ibkr/paper/submit", async r => { submissions++; await r.fulfill({ json: {} }); });
   await mockReview(page); await signIn(page, { ...empty, submissionsEnabled: true }); await savePlan(page);
-  await page.getByRole("button", { name: "Review paper order" }).click();
+  await page.getByRole("button", { name: "Review order" }).click();
   const dialog = page.getByRole("dialog", { name: "Review TEST paper order" });
   await expect(dialog).toContainText("3 shares"); await expect(dialog).toContainText("initial stop $98.00");
   await dialog.press("Escape"); await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Review paper order" })).toBeFocused();
-  await page.getByRole("button", { name: "Review paper order" }).click();
+  await expect(page.getByRole("button", { name: "Review order" })).toBeFocused();
+  await page.getByRole("button", { name: "Review order" }).click();
   await dialog.getByRole("button", { name: "Confirm and submit paper order" }).click({ clickCount: 2 });
   await expect(page.getByText("Order request recorded.", { exact: false })).toBeVisible();
   expect(approvals).toBe(1); expect(submissions).toBe(1);
@@ -92,7 +92,7 @@ test("automatic connection uses one service and reconnect invalidates an open re
   await mockReview(page); await signIn(page, { ...empty, connected: false });
   await expect.poll(() => connects).toBeGreaterThan(0);
   await page.route("**/v1/ibkr/paper/status", r => r.fulfill({ json: empty }));
-  await savePlan(page); await page.getByRole("button", { name: "Review paper order" }).click();
+  await savePlan(page); await page.getByRole("button", { name: "Review order" }).click();
   await expect(page.getByRole("dialog", { name: "Review TEST paper order" })).toBeVisible();
   await page.route("**/v1/ibkr/paper/status", r => r.fulfill({ json: { ...empty, connectionId: "reconnected" } }));
   await expect(page.getByRole("dialog", { name: "Review TEST paper order" })).toHaveCount(0, { timeout: 10000 });
@@ -105,7 +105,7 @@ test("simulation stays on the existing planner and never accesses paper APIs", a
   await page.goto("/?demo=1"); await page.getByRole("button", { name: "Workspace navigation" }).click();
   await page.getByRole("button", { name: "Trading", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Trade planner", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Review paper order" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Review order" })).toHaveCount(0);
   expect(paperCalls).toBe(0);
 });
 
@@ -167,6 +167,11 @@ test("missing execution timestamps and reconciliation do not crash the position 
   }
   await drawer.getByRole('button',{name:'Cancel action review'}).press('Enter');
   await expect(drawer.getByRole('group',{name:'Confirm paper position action'})).toHaveCount(0);
+  // A live socket is not fresh protection evidence after a failed reconciliation.
+  await page.route("**/v1/ibkr/paper/status", r => r.fulfill({ json: { ...empty, campaigns: [c], lastReconciled: "2020-01-01T00:00:00Z", error: "Snapshot incomplete" } }));
+  await page.reload();
+  await page.getByRole("button", { name: "Open TEST position details" }).click();
+  await expect(page.getByRole("dialog", { name: "TEST position details" })).toContainText("Protection unconfirmed");
 });
 
 
@@ -263,8 +268,9 @@ test("fresh broker quote updates only the main draft and testing remains a progr
   await page.getByLabel("Stock symbol",{exact:true}).fill("NVDA");
   await page.getByRole("button",{name:"Use ask in draft"}).click();
   await expect(page.getByLabel("Entry price cap",{exact:true})).toHaveValue("100.02");
-  await expect(page.getByRole("button",{name:"Review paper order",exact:true})).toBeDisabled();
-  await page.getByText("Testing · no session record",{exact:true}).click();
+  await expect(page.getByRole("button",{name:"Review order",exact:true})).toBeDisabled();
+  await expect(page.getByRole("link", { name: "Verification", exact: true })).toBeVisible();
+  await expect(page.getByText("Testing · no session record",{exact:true})).toHaveCount(0);
   await expect(page.getByRole("button",{name:/Start approved|Resume approved/})).toHaveCount(0);
   expect(submissions).toBe(0);
 });
@@ -294,7 +300,7 @@ test("quotes and execution fields stay inside trade setup across resizing withou
   await setup.getByRole("button", {name:"Use ask in draft"}).click();
   await expect(page.getByLabel("Captured planning entry price")).toHaveValue("100.02");
   await expect(page.getByLabel("Entry price cap")).toHaveValue("100.02");
-  await expect(page.getByRole("button",{name:"Review paper order",exact:true})).toBeDisabled();
+  await expect(page.getByRole("button",{name:"Review order",exact:true})).toBeDisabled();
   await page.getByLabel("Order method",{exact:true}).selectOption("Breakout");
   await expect(setup.getByLabel("Entry trigger",{exact:true})).toBeVisible();
   await expect(setup.locator(".trade-session-static")).toContainText("Stop-limit breakout");
@@ -334,4 +340,26 @@ test("changing symbol while a quote is pending cannot apply the previous symbol'
   release();
   await expect(page.getByRole("region",{name:"Executable broker quote"}).getByRole("alert")).toContainText("Symbol or side changed");
   await expect(page.getByLabel("Captured planning entry price")).not.toHaveValue("102");
+});
+
+
+test("failed startup connection retains recorded account evidence and accurate Journal empty state", async ({ page }) => {
+  await page.route("**/v1/ibkr/paper/connect", r => r.fulfill({status:409,json:{detail:"TWS is unavailable"}}));
+  await signIn(page, {...empty,connected:false,broker:{mode:"read-only",source:"IBKR TWS",connectionStatus:"disconnected",dataStatus:"stale",lastSuccessfulUpdate:"2026-09-17T12:00:00Z",error:null,account:{id:"fixture",maskedId:"DU••10",value:12345,currency:"USD",source:"IBKR accountSummary",observedAt:"2026-09-17T12:00:00Z",available:true},positions:[],openOrders:[]}});
+  await expect(page.getByText("TWS is unavailable",{exact:true})).toBeVisible();
+  await expect(page.getByText("12,345 USD · Stale",{exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Journal",exact:true}).click();
+  await expect(page.getByText("Local paper records are unavailable.",{exact:false})).toHaveCount(0);
+  await expect(page.getByText("No records yet",{exact:true})).toBeVisible();
+});
+
+test("ordinary planner saves account-scoped records without replacing legacy data", async ({ page }) => {
+  await signIn(page);
+  await page.evaluate(() => localStorage.setItem("journal.trade-planner.draft.v1", JSON.stringify({symbol:"LEGACY"})));
+  await savePlan(page);
+  const keys = await page.evaluate(() => Object.keys(localStorage).filter(k=>k.startsWith("journal.trade-planner.draft.v1")));
+  expect(keys.some(k=>k.includes("scope:paper:") && k.endsWith(":test-binding"))).toBe(true);
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem("journal.trade-planner.draft.v1")!).symbol)).toBe("LEGACY");
+  await expect(page.getByRole("region",{name:"Quick trade actions"}).getByRole("button",{name:"Review order",exact:true})).toBeVisible();
+  await expect(page.getByText("TWS paper execution",{exact:true})).toHaveCount(0);
 });

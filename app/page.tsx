@@ -1264,23 +1264,26 @@ export default function Home() {
   const [greeting, setGreeting] = useState("Welcome back, Melvin");
   const [demoMode, setDemoMode] = useState(false);
   const paper = usePaperExecution(session?.access_token, localWorkspace && !demoMode);
+  const tradingScope = demoMode ? "demo" : paper.enabled ? `paper:${paper.identity?.userId ?? `pending-${session?.user.id ?? "signed-out"}`}:${paper.identity?.accountBinding ?? "unlinked"}` : `planning:${session?.user.id ?? "signed-out"}`;
+  const tradingStorageKey = (key: string) => demoMode ? demoStorageKey(key, true) : `${key}:scope:${tradingScope}`;
   const positionCampaignStore = useBrowserStore<TradeCampaign[]>(
-    demoStorageKey("brontide-position-campaigns-v1", demoMode),
+    tradingStorageKey("brontide-position-campaigns-v1"),
     EMPTY_POSITION_CAMPAIGNS,
     validSnapshotCampaigns,
   );
   const journalCampaignStore = useBrowserStore<TradeCampaign[]>(
-    demoStorageKey("brontide-journal-campaigns-v1", demoMode),
+    tradingStorageKey("brontide-journal-campaigns-v1"),
     EMPTY_POSITION_CAMPAIGNS,
     validJournalCampaigns,
   );
   const reviewStore = useBrowserStore<Record<string, JournalReview>>(
-    demoStorageKey("brontide-journal-reviews-v1", demoMode),
+    tradingStorageKey("brontide-journal-reviews-v1"),
     EMPTY_REVIEWS,
     validReviews,
   );
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, JournalReview>>({});
   const [reviewMessage, setReviewMessage] = useState<Record<string, string>>({});
+  useEffect(() => { setReviewDrafts({}); setReviewMessage({}); }, [tradingScope]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupPreview, setSetupPreview] = useState(false);
   const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
@@ -1909,7 +1912,7 @@ export default function Home() {
           <CatalystDashboard demo={demoMode} onChart={openChart} />
         </div>
         <div hidden={active !== "Trade"}>
-          <TradingWorkspace
+          <TradingWorkspace key={tradingScope} storageScope={tradingScope}
             demo={demoMode}
             paper={localWorkspace && !demoMode ? paper : undefined}
             context={planContext}
@@ -2069,7 +2072,7 @@ export default function Home() {
             <button type="button" className="secondary-button" onClick={() => { setRange("30"); setSetupFilter("all"); setDirectionFilter("all"); setJournalSearch(""); setJournalSource("all"); setStatusFilter("all"); }}>Clear filters</button><span>{filteredTrades.length} records{paper.enabled ? " · Paper executions stay on this computer" : ""}</span>
           </div>
           {paper.enabled && !paper.status && <p className="workspace-notice" role="status">Local paper records are unavailable. Totals include loaded records only.</p>}
-          {measuredTrades.length === 0 && <div className="journal-empty-state" role="status"><strong>{journalTrades.length === 0 ? "No records yet" : filteredTrades.length === 0 ? "No records match these filters" : "No eligible closed trades"}</strong><p>{journalTrades.length === 0 ? "Log a trade or review a confirmed paper execution to begin." : filteredTrades.length === 0 ? "Clear or adjust filters to see your records." : "Your records are below. Performance requires completed trades with execution history and known costs; R metrics also require initial risk."}</p></div>}
+          {measuredTrades.length === 0 && !(paper.enabled && !paper.status && journalTrades.length === 0) && <div className="journal-empty-state" role="status"><strong>{journalTrades.length === 0 ? "No records yet" : filteredTrades.length === 0 ? "No records match these filters" : "No eligible closed trades"}</strong><p>{journalTrades.length === 0 ? "Log a trade or review a confirmed paper execution to begin." : filteredTrades.length === 0 ? "Clear or adjust filters to see your records." : "Your records are below. Performance requires completed trades with execution history and known costs; R metrics also require initial risk."}</p></div>}
           <section className="journal-metric-grid" aria-label="Trading statistics">
             <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? formatMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
             <MetricCard label="Win rate" value={measuredTrades.length ? `${stats.winRate.toFixed(2)}%` : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail={`${stats.wins} wins · ${stats.losses} losses · ${stats.breakevens} flat`} />

@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-type Identity = { userId: string; email: string; linked: boolean; linkState?: string; message?: string };
+type Identity = { userId: string; email: string; linked: boolean; accountBinding?: string; environment?: "paper"; linkState?: string; message?: string };
 import type { PaperStatus } from "../lib/paper-execution";
 
 export function usePaperExecution(token: string | undefined, enabled: boolean) {
@@ -10,6 +10,7 @@ export function usePaperExecution(token: string | undefined, enabled: boolean) {
   const [connecting, setConnecting] = useState(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const paused = useRef(false);
+  const identityScope = useRef("");
   const request = useCallback(async <T,>(path: string, body?: unknown): Promise<T> => {
     if (!enabled || !token) throw new Error("Sign into Brontide to use paper execution.");
     const r = await fetch(`/v1/ibkr/paper/${path}`, { method: body === undefined ? "GET" : "POST", cache: "no-store", signal: AbortSignal.timeout(20000),
@@ -31,9 +32,13 @@ export function usePaperExecution(token: string | undefined, enabled: boolean) {
         const who = await request<Identity>("identity");
         if (!active) return;
         setIdentity(who);
+        const scope = `${who.userId}:${who.accountBinding ?? "unlinked"}:${who.linked}`;
+        if (scope !== identityScope.current) { setStatus(null); identityScope.current = scope; }
         if (!who.linked) throw Object.assign(new Error(who.message ?? "One-time local account link required. See connection details."), { status: who.linkState === "mismatch" ? 403 : 400 });
         let next = await request<PaperStatus>("status");
         if (!active) return;
+        // Recorded history is usable even when the subsequent TWS connection fails.
+        setStatus(next);
         if (!next.connected && !paused.current) {
           setConnecting(true);
           next = await request<PaperStatus>("connect", {});
@@ -46,7 +51,7 @@ export function usePaperExecution(token: string | undefined, enabled: boolean) {
         const code = (e as { status?: number }).status;
         setErrorState(code === 400 ? "blocked" : code === 401 || code === 403 || /account.*mismatch|verification|unexpected.*account/i.test(message) ? "error" : "disconnected");
         setError(message);
-        setStatus(s => s ? { ...s, connected: false, armedBatch: null } : null);
+        setStatus(s => code === 400 || code === 401 || code === 403 ? null : s ? { ...s, connected: false, armedBatch: null } : null);
         retry = Math.min(retry * 2, 30000);
       } finally {
         if (active) { setConnecting(false); timer = setTimeout(() => { void poll(); }, retry); }

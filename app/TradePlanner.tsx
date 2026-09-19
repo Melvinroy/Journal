@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import {
   EXIT_PLAN_SCHEMA_VERSION,
   calculatePositionSize,
@@ -26,7 +27,7 @@ import {
   type TrailingRule,
 } from "../lib/trading-domain";
 import { demoPlanningMarketSnapshot, loadPlanningMarketSnapshot, type PlanningMarketSnapshot } from "../lib/planner-market-data";
-import { demoStorageKey } from "../lib/review-demo";
+import { demoStorageKey as legacyStorageKey } from "../lib/review-demo";
 import {
   resolveExecutionSession,
   sessionDurationOptions,
@@ -39,7 +40,6 @@ import {
 import type { MarketContext } from "../lib/workspace-state";
 import { useModalAccessibility } from "./useModalAccessibility";
 import { BrokerConnection } from "./BrokerConnection";
-import { PaperTestSessionPanel } from "./PaperTestSessionPanel";
 import { PaperQuote } from "./PaperQuote";
 import { PaperOrderReview } from "./PaperOrderReview";
 import type { PaperExecution } from "./usePaperExecution";
@@ -160,7 +160,9 @@ function trailingFromMode(mode: string): TrailingRule {
   return { mode: "Manual", stopPrice: 1 };
 }
 
-export function TradePlanner({ context, onChart, demo=false, paper, positions, positionCount, exposure }: {demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;positions?:ReactNode;positionCount?:number;exposure?:ReactNode}) {
+export function TradePlanner({ storageScope = "unlinked", context, onChart, demo=false, paper, positions, positionCount, exposure }: {storageScope?:string;demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;positions?:ReactNode;positionCount?:number;exposure?:ReactNode}) {
+  const demoStorageKey = (key: string, simulation: boolean) => simulation ? legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
+  const [importEpoch, setImportEpoch] = useState(0);
   const initialSnapshot = demo ? demoPlanningMarketSnapshot("NVDA") : null;
   const [symbol, setSymbol] = useState("NVDA");
   const [side, setSide] = useState<TradeSide>("Long");
@@ -174,6 +176,8 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
   const [marketLoad, setMarketLoad] = useState<MarketLoad>(initialSnapshot ? { state: "ready", snapshot: initialSnapshot } : { state: "loading" });
   const [hydrated, setHydrated] = useState(false);
   const [accountEquity, setAccountEquity] = useState(30000);
+  const brokerEquity = paper?.status?.broker?.account;
+  const sizingEquity = !demo && brokerEquity?.available && brokerEquity.currency === "USD" && brokerEquity.value != null ? brokerEquity.value : accountEquity;
   const [riskPercent, setRiskPercent] = useState(0.5);
   const [maxAllocationPercent, setMaxAllocationPercent] = useState(15);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -270,7 +274,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
     } finally {
       setHydrated(true);
     }
-  }, [demo]);
+  }, [demo, storageScope, importEpoch]);
 
   useEffect(() => {
     if (!hydrated || restoredDraft.current) return;
@@ -338,11 +342,11 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
     const empty = { valid:false,error:"Enter the account, entry and stop values to calculate the trade.",riskBudget:0,riskPerShare:0,sharesByRisk:0,sharesByAllocation:0,shares:0,positionValue:0,plannedRisk:0,accountUsePercent:0,actualRiskPercent:0,oneRPrice:0,twoRPrice:0 };
     try {
       if (stopDerivation.error) throw new Error(stopDerivation.error);
-      const sized=calculatePositionSize({accountBase:accountEquity,riskPercent,allocationPercent:maxAllocationPercent,entryPrice,stopPrice:effectiveStopPrice,direction:side});
+      const sized=calculatePositionSize({accountBase:sizingEquity,riskPercent,allocationPercent:maxAllocationPercent,entryPrice,stopPrice:effectiveStopPrice,direction:side});
       if(!sized.shares)return {...empty,error:"The current limits do not allow at least one share."};
       return {...sized,valid:true,error:"",oneRPrice:targetPrice(entryPrice,effectiveStopPrice,1,side),twoRPrice:targetPrice(entryPrice,effectiveStopPrice,2,side)};
     } catch(error) { return {...empty,error:(error as Error).message}; }
-  }, [accountEquity, riskPercent, maxAllocationPercent, entryPrice, effectiveStopPrice, side, stopDerivation.error]);
+  }, [sizingEquity, riskPercent, maxAllocationPercent, entryPrice, effectiveStopPrice, side, stopDerivation.error]);
 
   const targetCount = exitPlan.legs.filter(leg => leg.role === "Target").length as TargetCount;
   const runnerCount = exitPlan.legs.filter(leg => leg.role === "Runner").length as RunnerCount;
@@ -499,8 +503,11 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
   function stageAfterFill() {
     if (exitState.error) { setExitMessage(exitState.error); return; }
     try {
+      const revision = crypto.randomUUID();
+      const savedEntry = window.localStorage.getItem(demoStorageKey(DRAFT_KEY,demo));
+      if (savedEntry) window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify({ ...JSON.parse(savedEntry), exitPlan, planRevision: revision }));
       window.localStorage.setItem(demoStorageKey(AFTER_FILL_KEY,demo), JSON.stringify({ schemaVersion: EXIT_PLAN_SCHEMA_VERSION, definition: exitPlan, savedAt: new Date().toISOString() }));
-      setPlanRevision(crypto.randomUUID()); setAfterFillStaged(true); setExitPlanDirty(false); setExitMessage("Exit-plan draft saved locally. No broker action was applied.");
+      setPlanRevision(revision); setAfterFillStaged(true); setExitPlanDirty(false); setExitMessage("Exit-plan draft saved locally. No broker action was applied.");
     } catch { setExitMessage("Exit-plan save failed. Your edits remain on screen and the saved plan was not replaced."); }
   }
 
@@ -551,7 +558,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
     <div className="trade-planner">
       <BrokerConnection paper={paper} demo={demo} />
       <header className="trade-commandbar">
-        <div><h1>Trade planner</h1></div>
+        <div><h1>Trade planner</h1><Link href="/verification/" target="_blank" rel="noopener noreferrer" title="Open verification in a new tab; keep this draft open">Verification</Link></div>
         <div className="trade-risk-banner" aria-label="Risk controls">
           <span>Risk <strong>{riskPercent.toFixed(2)}%</strong></span>
           <i aria-hidden="true"/>
@@ -568,10 +575,17 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
         <button type="button" className={`trade-action-button exits ${afterFillStaged && !exitPlanDirty ? "active" : ""}`} disabled={!result.valid} onClick={afterFillStaged && !exitPlanDirty ? cancelAfterFill : stageAfterFill}>
           {afterFillStaged && !exitPlanDirty ? "Unsave exits" : "Save exits"}
         </button>
+        {paper && !demo && <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
+          planId: planIdentity.current, planRevision, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
+          method: executionMethod, quantity: executionQuantity || result.shares, planningPrice: entryPrice, hardCap: hardCap || entryPrice,
+          ...(executionMethod === "Breakout" ? { triggerPrice } : {}), stopPrice: effectiveStopPrice, cleanupFloor: effectiveStopPrice,
+          sessionMode, duration, protectionOrderType, ...(protectionOrderType === "STP LMT" ? { protectionLimitPrice } : {}), exitPlan,
+        }} />}
         <span className="trade-execution-state">{paper ? "Save drafts, then review the exact paper order" : "Draft only · no broker order"}</span>
       </section>
 
-      <PlannerWorkspace positions={positions} count={positionCount} exposure={exposure} scope={demo ? "demo" : paper?.identity?.userId ?? "account"}>
+      {paper && !demo && <p className="trade-execution-state">Sizing basis: {brokerEquity?.available && brokerEquity.currency === "USD" ? `${paper.status?.connected && paper.status.broker?.dataStatus === "fresh" ? "Broker equity" : "Last-known broker equity · draft estimate"} ${money(sizingEquity)}` : `Legacy planning equity ${money(accountEquity)} · estimate only`}. Fresh broker funds are required for review.</p>}
+      <PlannerWorkspace positions={positions} count={positionCount} exposure={exposure} scope={demo ? "demo" : storageScope}>
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
         <div className="trade-ticket-head">
           <div><h2 id="trade-ticket-title">Trade setup</h2></div>
@@ -618,7 +632,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
           </fieldset>
           {(sessionSelection.policy?.blockedReason || sessionSelection.error) && <p className="trade-validation" role="alert">{sessionSelection.policy?.blockedReason || sessionSelection.error}</p>}
           {protectionOrderType === "STP LMT" && <p className="trade-validation">A triggered stop-limit may remain unfilled. Planned risk is not a guaranteed loss cap.</p>}
-          <Disclosure title="Session details" name="session-details" scope={demo ? "demo" : paper?.identity?.userId ?? "account"}>
+          <Disclosure title="Session details" name="session-details" scope={demo ? "demo" : storageScope}>
           <div id="trade-session-summary" className={`trade-session-summary ${sessionSelection.policy?.submissionEligible ? "" : "blocked"}`} role={sessionSelection.policy?.submissionEligible ? "status" : "alert"}>
             <span><b>{brokerIntentCheck.sessionPolicy?.effectiveCoverage ?? sessionSelection.policy?.effectiveCoverage ?? "Session schedule will be verified from the broker contract before submission."}</b>{brokerIntentCheck.sessionPolicy?.expiresAt ? ` · expires ${new Date(brokerIntentCheck.sessionPolicy.expiresAt).toLocaleString()}` : sessionSelection.policy?.expiresAt ? ` · ${sessionSelection.policy.expiresAt}` : ""}</span>
             <span>{(sessionSelection.policy?.blockedReason ?? sessionSelection.error) || `${sessionSelection.policy?.protectionOrderType} protection is ${sessionSelection.policy?.protectionOutsideRth ? "eligible during the selected extended schedule when broker-confirmed" : "eligible only during its verified regular-hours schedule"}.`}</span>
@@ -691,7 +705,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
 
           {(exitState.error||exitMessage)&&<p className={exitState.error?"trade-validation":"trade-exit-message"} role={exitState.error?"alert":"status"}>{exitState.error||exitMessage}</p>}
 
-          <Disclosure title="Exit presets" name="exit-presets" scope={demo ? "demo" : paper?.identity?.userId ?? "account"}><div className="trade-preset-panel">
+          <Disclosure title="Exit presets" name="exit-presets" scope={demo ? "demo" : storageScope}><div className="trade-preset-panel">
             <div><b>Named presets</b><span>Load copies values into this unsaved draft.</span></div>
             <select aria-label="Exit-plan preset" value={selectedPresetId} onChange={event=>setSelectedPresetId(event.target.value)}><option value="">Choose preset</option>{presetStore.presets.filter(item=>item.scope==="General"||item.symbol===symbol.trim().toUpperCase()).map(item=><option key={item.presetId} value={item.presetId}>{item.name} · {item.scope==="Symbol"?item.symbol:"General"}</option>)}</select>
             <button type="button" onClick={loadPreset} disabled={!selectedPresetId}>Load</button>
@@ -705,14 +719,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
         </div>
       </section>
 
-      {paper && !demo ? <>
-        <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
-          planId: planIdentity.current, planRevision, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
-          method: executionMethod, quantity: executionQuantity || result.shares, planningPrice: entryPrice, hardCap: hardCap || entryPrice,
-          ...(executionMethod === "Breakout" ? { triggerPrice } : {}), stopPrice: effectiveStopPrice, cleanupFloor: effectiveStopPrice,
-          sessionMode, duration, protectionOrderType, ...(protectionOrderType === "STP LMT" ? { protectionLimitPrice } : {}), exitPlan,
-        }} />
-      </> : <section className="paper-intent-readiness" aria-labelledby="paper-intent-title">
+      {(!paper || demo) && <section className="paper-intent-readiness" aria-labelledby="paper-intent-title">
         <div>
           <p className="eyebrow">Paper execution · approval locked</p>
           <h2 id="paper-intent-title">Intent readiness</h2>
@@ -727,7 +734,7 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
         <p id="paper-submission-lock" className="paper-intent-lock">TWS Read-Only and Brontide submission lock must remain enabled until the reviewed test batch receives explicit approval.</p>
       </section>}
 
-      {paper && !demo && <PaperTestSessionPanel paper={paper} />}
+
 
       <p className="trade-safety-note"><span>i</span> {paper && !demo ? "Saving keeps a draft. Only exact paper-order confirmation can send an order." : "Plans and exit settings are stored in this browser. Nothing is sent to a broker."}</p>
 
@@ -736,10 +743,11 @@ export function TradePlanner({ context, onChart, demo=false, paper, positions, p
       {settingsOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
         <section ref={settingsRef} tabIndex={-1} className="modal trade-settings-modal" role="dialog" aria-modal="true" aria-labelledby="risk-settings-title" onMouseDown={(event) => event.stopPropagation()}>
           <div className="modal-heading"><div><p className="eyebrow">Trade defaults</p><h2 id="risk-settings-title">Risk settings</h2></div><button className="icon-button" aria-label="Close risk settings" onClick={() => setSettingsOpen(false)}>×</button></div>
-          <label>Account equity<input inputMode="decimal" value={settingsDraft.accountEquity || ""} aria-invalid={Boolean(settingsError)} aria-describedby={settingsError ? "risk-settings-error" : undefined} onChange={(event) => { setSettingsError(""); setSettingsDraft({...settingsDraft,accountEquity:safeNumber(event.target.value)}); }}/></label>
+          <label>{paper && !demo ? "Legacy planning equity" : "Account equity"}<input inputMode="decimal" value={settingsDraft.accountEquity || ""} aria-invalid={Boolean(settingsError)} aria-describedby={settingsError ? "risk-settings-error" : undefined} onChange={(event) => { setSettingsError(""); setSettingsDraft({...settingsDraft,accountEquity:safeNumber(event.target.value)}); }}/></label>
           <fieldset><legend>Maximum risk per trade</legend><div className="trade-setting-options">{RISK_OPTIONS.map((option) => <button type="button" key={option} className={settingsDraft.riskPercent === option ? "active" : ""} onClick={() => setSettingsDraft({...settingsDraft,riskPercent:option})}>{option.toFixed(2)}%</button>)}</div></fieldset>
           <fieldset><legend>Maximum position per symbol</legend><div className="trade-setting-options allocation-options">{ALLOCATION_OPTIONS.map((option) => <button type="button" key={option} className={settingsDraft.maxAllocationPercent === option ? "active" : ""} onClick={() => setSettingsDraft({...settingsDraft,maxAllocationPercent:option})}>{option}%</button>)}</div></fieldset>
           {settingsError && <p className="modal-validation" id="risk-settings-error" role="alert">{settingsError} Defaults were not changed.</p>}
+          {!demo && <details><summary>Import legacy planning data</summary><p>Copy this browser's unscoped saved draft, defaults and presets into the current account. Existing account data is never replaced. Imported values require a new review.</p><button type="button" onClick={() => { try { for (const key of [SETTINGS_KEY, DRAFT_KEY, EXIT_KEY, AFTER_FILL_KEY, EXIT_PRESET_KEY]) { const value = localStorage.getItem(key); const destination = demoStorageKey(key, false); if (value && !localStorage.getItem(destination)) { JSON.parse(value); localStorage.setItem(destination, value); } } setImportEpoch(v => v + 1); setSettingsOpen(false); } catch { setSettingsError("Legacy import failed. Existing records were preserved."); } }}>Import into this account</button></details>}
           <p className="trade-settings-help">The calculator always uses the smaller share count produced by the risk limit and the position-allocation limit.</p>
           <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setSettingsOpen(false)}>Cancel</button><button type="button" className="primary-button" onClick={saveSettings}>Save defaults</button></div>
         </section>

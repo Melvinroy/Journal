@@ -2,13 +2,14 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import math
+import json
 import uuid
 
 from .ibkr_tws import PaperSafetyError
 from .paper_domain import summarize
 
 SYMBOLS = ("F", "SOFI", "INTC", "BAC", "XLF", "T", "PFE", "C", "UBER")
-LIMITS = {"sharesPerCampaign": 3, "campaigns": 2, "entryNotional": 500, "plannedRiskPerCampaign": 10, "totalPlannedRisk": 20}
+from .paper_policy import LIMITS
 SCENARIOS = ("Limit", "Normal", "Breakout", "one target", "two targets", "one runner", "two runners", "breakeven", "amendment", "entry cancellation", "bounded closure", "reconnection")
 CAP_REJECTION = "The refreshed executable quote crossed the saved hard cap."
 
@@ -94,7 +95,35 @@ class PaperTestSessions:
         with self.s.store.transaction() as db:
             return db.execute("SELECT 1 FROM objects WHERE kind='entry-rejection' AND id=?", (attempt["batchId"],)).fetchone() is not None
 
-    def start(self, command_id, target=200):
+    def amend_target(self, session_id, target, command_id):
+        s = self.s
+        scope = s.snapshot_scope()
+        if not scope or not s.operator_deadline or now() >= s.operator_deadline:
+            raise PaperSafetyError("A current authenticated paper operator is required.")
+        with s.store.transaction() as db:
+            session = s.store.get(db, "test-session", session_id)
+            if session["userId"] != s.operator_id or session["accountBinding"] != scope["accountBinding"]:
+                raise PaperSafetyError("Session owner or account differs.")
+            request = {"action": "reduce-target", "target": target, "userId": s.operator_id}
+            prior = db.execute("SELECT request FROM commands WHERE id=?", (command_id,)).fetchone()
+            if prior:
+                s.store.command(db, command_id, session_id, request)
+                return {"id": session_id, "target": session["target"], "state": session["state"]}
+            owned = {a["campaignId"] for a in session.get("attempts", [])}
+            historical = [json.loads(row[0]) for row in db.execute("SELECT body FROM objects WHERE kind='campaign'")]
+            baseline = sum(c["id"] not in owned and c["accountBinding"] == session["accountBinding"] and c["state"] == "Closed" and summarize(c)["entered"] > 0 and summarize(c)["costsComplete"] for c in historical)
+            total = session["completed"] - session.get("baselineCompleted", 0) + baseline
+            if session["state"] not in {"Halted", "Paused"} or isinstance(target, bool) or not isinstance(target, int) or not max(1, total) <= target <= min(30, session["target"]):
+                raise PaperSafetyError("Only a halted or paused session may reduce its target, to at most 30 and no less than completed trades.")
+            receipt = {**request, "sessionId": session_id, "previousTarget": session["target"], "at": now().isoformat(), "accountBinding": scope["accountBinding"]}
+            s.store.command(db, command_id, session_id, request)
+            s.store.event(db, "session-target-amendment:" + command_id, receipt)
+            session.setdefault("approvalAmendments", []).append(receipt)
+            session.update(target=target, baselineCompleted=baseline, completed=total)
+            s.store.put(db, "test-session", session_id, session)
+        return self.status()
+
+    def start(self, command_id, target=30):
         s = self.s
         s._connected()
         if not s.operator_id or not s.operator_deadline or now() >= s.operator_deadline:
@@ -111,7 +140,7 @@ class PaperTestSessions:
             raise PaperSafetyError("Recover and close the existing pilot before starting a test session.")
         if any(not q.get("resolved") for q in s.store.all("quarantine")):
             raise PaperSafetyError("Quarantined broker evidence blocks a test session.")
-        if not isinstance(target, int) or not 1 <= target <= 200: raise PaperSafetyError("Session target must be 1–200 completed round trips.")
+        if not isinstance(target, int) or not 1 <= target <= 30: raise PaperSafetyError("Session target must be 1–30 completed round trips.")
         session = {"id": command_id, "userId": s.operator_id, "accountBinding": s.client.config.binding(), "sourceIdentity": s.source(),
                    "approvedAt": now().isoformat(), "target": target, "state": "Running", "message": "Approved; waiting for first protected campaign",
                    "limits": LIMITS, "scenarios": SCENARIOS, "symbols": SYMBOLS, "attempts": [], "completed": 0, "checkpoints": [], "connectionId": s.connection_id}
@@ -134,6 +163,7 @@ class PaperTestSessions:
         sessions = s.store.all("test-session")
         if not sessions: raise PaperSafetyError("No approved test session exists.")
         session = sessions[-1]
+        if session["target"] > 30: raise PaperSafetyError("Record an authenticated target reduction to at most 30 before resuming.")
         s._connected()
         if s.operator_id != session["userId"] or not s.operator_deadline or now() >= s.operator_deadline:
             raise PaperSafetyError("Sign into the approved operator account.")
@@ -194,6 +224,7 @@ class PaperTestSessions:
         session = sessions[-1]
         if not s.operator_id or not s.operator_deadline or now() >= s.operator_deadline: return
         try:
+            if session["target"] > 30: raise PaperSafetyError("Historical target requires an authenticated reduction to 30 before execution.")
             s._connected()
             if session["userId"] != s.operator_id or session["accountBinding"] != s.client.config.binding() or session["sourceIdentity"] != s.source():
                 raise PaperSafetyError("Session user, account or verified source changed.")
@@ -204,7 +235,7 @@ class PaperTestSessions:
             owned_ids = {a["campaignId"] for a in session["attempts"]}
             if any(c["state"] not in {"Closed", "Cancelled"} and c["id"] not in owned_ids for c in campaigns.values()):
                 raise PaperSafetyError("Another campaign requires attention before session continuation.")
-            completed, active = 0, []
+            completed, active = session.get("baselineCompleted", 0), []
             for attempt in session["attempts"]:
                 if self.rejected(attempt): continue
                 c = campaigns.get(attempt["campaignId"])
@@ -223,7 +254,7 @@ class PaperTestSessions:
                     attempt["result"] = {"state": "cancelled entry; not a round trip"}; continue
                 active.append((attempt, c))
             session["completed"] = completed
-            for checkpoint in (1, 10, 50, 100, 200):
+            for checkpoint in (1, 10, 20, 30):
                 if completed >= checkpoint and checkpoint not in session["checkpoints"]: session["checkpoints"].append(checkpoint)
             if completed >= session["target"] or session["state"] == "Draining":
                 if not active:

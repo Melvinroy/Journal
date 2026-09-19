@@ -23,7 +23,7 @@ import {
   type PositionAssociation,
   type TradeCampaign,
 } from "../lib/trading-domain";
-import { SAMPLE_PLANS, demoStorageKey } from "../lib/review-demo";
+import { SAMPLE_PLANS, demoStorageKey as legacyStorageKey } from "../lib/review-demo";
 import {
   PLANS_KEY,
   appendFill,
@@ -281,6 +281,7 @@ function positionMessageIsError(message: string) {
 }
 
 export function TradingWorkspace({
+  storageScope = "unlinked",
   context,
   onChart,
   onOpenJournalTrade,
@@ -289,6 +290,7 @@ export function TradingWorkspace({
   demo = false,
   paper,
 }: {
+  storageScope?: string;
   paper?: PaperExecution;
   demo?: boolean;
   context?: MarketContext;
@@ -297,6 +299,7 @@ export function TradingWorkspace({
   onCreateJournalTrade?: (item: UnlinkedPositionInput) => string;
   positionCampaigns?: readonly TradeCampaign[];
 }) {
+  const demoStorageKey = (key: string, simulation: boolean) => simulation ? legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
   const store = useBrowserStore<Plan[]>(
     demoStorageKey(PLANS_KEY, demo),
     demo ? SAMPLE_PLANS : [],
@@ -448,7 +451,9 @@ export function TradingWorkspace({
           simulated: demo,
         } satisfies DemoPosition];
       });
-      return [...ownedCampaigns.map(c => paperPosition(c, Boolean(paper?.status?.connected))), ...[...(demo ? DEMO_POSITIONS : []), ...linkedSnapshots].map((item) => {
+      const reconciledAt = Date.parse(paper?.status?.lastReconciled ?? "");
+      const currentEvidence = Boolean(paper?.status?.connected && !paper.status.error && Number.isFinite(reconciledAt) && Date.now() - reconciledAt <= 20000);
+      return [...ownedCampaigns.map(c => paperPosition(c, currentEvidence)), ...[...(demo ? DEMO_POSITIONS : []), ...linkedSnapshots].map((item) => {
         const override = positionOverrides.value[item.campaignId];
         return override
           ? {
@@ -843,7 +848,7 @@ export function TradingWorkspace({
 
   return (
     <section className="consolidated-trading">
-      <TradePlanner demo={demo} paper={paper} context={context} onChart={onChart} positionCount={effectivePositions.filter(item => item.status !== "Closed").length} exposure={<><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
+      <TradePlanner key={storageScope} storageScope={storageScope} demo={demo} paper={paper} context={context} onChart={onChart} positionCount={effectivePositions.filter(item => item.status !== "Closed").length} exposure={<><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
       <section
         className="position-command-center"
         aria-labelledby="position-center-title"

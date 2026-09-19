@@ -78,10 +78,10 @@ class FakeTransport:
         positions = sum(1 if f["side"] == "BOT" else -1 for f in self.fills)
         for oid, order in self.orders.items():
             if order["status"] not in {"Filled", "Cancelled", "Inactive"}: self.echo(oid)
-        return SimpleNamespace(position_rows=([{"conId": 42, "quantity": positions, "symbol": "TEST"}] if positions else []) + self.external,
+        return SimpleNamespace(observed_at=datetime.now(timezone.utc).isoformat(), position_rows=([{"conId": 42, "quantity": positions, "symbol": "TEST"}] if positions else []) + self.external,
             open_order_rows=[{"orderId": oid, "conId": 42, "quantity": 1, "symbol": "TEST", "clientId": 71, "orderRef": o["fields"]["orderRef"]}
                              for oid, o in self.orders.items() if o["status"] not in {"Filled", "Cancelled", "Inactive"}],
-            account_summary=[{"tag": "NetLiquidation", "value": "100000", "currency": "USD"}])
+            account_summary=[{"tag": tag, "value": "100000", "currency": "USD"} for tag in ("NetLiquidation", "AvailableFunds")])
     def execution_snapshot(self):
         self.events.extend(deepcopy(self.fills)); return {f["executionId"] for f in self.fills}
     def echo(self, oid):

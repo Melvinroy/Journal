@@ -18,6 +18,7 @@ from .ibkr_readonly import IbkrReadOnlyService
 from .ibkr_tws import PaperSafetyError, mask_account_id, verify_connected_account
 from .paper_domain import validate_exit_plan, allocations, next_stop, summarize, positive
 from .paper_store import PaperStore, canonical
+from .paper_policy import CAPABILITIES, LIMITS
 from .paper_transport import transport_from_environment
 
 TERMINAL = {"Filled", "Cancelled", "ApiCancelled", "Inactive"}
@@ -102,6 +103,7 @@ class PaperService:
         self.operator_id = None
         self.operator_deadline = None
         self.broker_view = None
+        self.broker_scope = None
         self.last_quote = None
         self.management_only = False
         self.reviewed_campaigns = set()
@@ -135,18 +137,38 @@ class PaperService:
     def status(self):
         with self.lock:
             connected = bool(self.client and self.client.isConnected() and self.client.authorized_account)
+            scope = self.snapshot_scope()
+            if scope != self.broker_scope:
+                self.broker_view = None
+                self.broker_scope = scope
+            if self.broker_view is None and scope:
+                saved = next((v for v in self.store.all("broker-snapshot") if v["scope"] == scope), None)
+                if saved: self.broker_view = saved["view"]
+            view = deepcopy(self.broker_view)
+            if view and (not connected or self.error or not self.last_reconciled or (utcnow() - parsed(self.last_reconciled)).total_seconds() > 20):
+                view.update(dataStatus="stale", connectionStatus="stale" if connected else "disconnected")
+                view["positions"] = [{**p, "stale": True, "associationEligible": False} for p in view["positions"]]
             campaigns = self.store.all("campaign")
+            if scope: campaigns = [c for c in campaigns if c["accountBinding"] == scope["accountBinding"]]
             return {"mode": "paper", "connected": connected, "armedBatch": self.armed,
                     "submissionsEnabled": bool(connected and self.client.config.submissions_enabled),
-                    "accountBinding": self.client.config.binding() if connected else None,
-                    "account": mask_account_id(self.client.authorized_account) if connected else None,
+                    "accountBinding": self.client.config.binding() if connected else (scope or {}).get("accountBinding"),
+                    "account": mask_account_id(self.client.authorized_account) if connected else (view or {}).get("account", {}).get("maskedId"),
                     "connectionId": self.connection_id, "lastReconciled": self.last_reconciled,
                     "error": self.error, "readiness": self.readiness(connected, campaigns),
-                    "broker": self.broker_view, "quote": self.last_quote, "testSession": self.test_sessions.status(),
+                    "broker": view, "quote": self.last_quote, "testSession": self.test_sessions.status(),
                     "campaigns": [self.public_campaign(c) for c in campaigns],
-                    "batches": [self.public_batch(b) for b in self.store.all("batch")],
+                    "batches": [self.public_batch(b) for b in self.store.all("batch") if not scope or b["accountBinding"] == scope["accountBinding"]],
                     "blocked": ["Short entry fill bounds", "Opening auction", "Overnight sessions"],
-                    "limits": {"sharesPerCampaign": 3, "campaigns": 2, "entryNotional": 500, "plannedRiskPerCampaign": 10, "totalPlannedRisk": 20}}
+                    "capabilities": deepcopy(CAPABILITIES), "limits": deepcopy(LIMITS)}
+
+    def snapshot_scope(self):
+        if not self.operator_id: return None
+        from .ibkr_tws import PaperGatewayConfig
+        config = self.client.config if self.client else PaperGatewayConfig.from_environment()
+        try: binding = config.binding()
+        except PaperSafetyError: return None
+        return {"userId": self.operator_id, "accountBinding": binding, "environment": "paper"}
 
     @staticmethod
     def public_batch(batch):
@@ -358,12 +380,14 @@ class PaperService:
         if self.operator_id and any(not isinstance(ticket.get(k), str) or not ticket[k].strip() or len(ticket[k]) > 128 for k in ("planId", "planRevision")):
             raise PaperSafetyError("Save the planner revision before reviewing an order.")
         ticket["symbol"] = str(ticket.get("symbol", "")).strip().upper()
-        if ticket["symbol"] in {"PL", "AMD"}: raise PaperSafetyError("PL and AMD are excluded from paper QC.")
-        if ticket.get("direction") != "Long": raise PaperSafetyError("Short entry remains blocked: both fill bounds cannot be enforced.")
+        if ticket["symbol"] in CAPABILITIES["excludedSymbols"]: raise PaperSafetyError("PL and AMD are excluded from paper QC.")
+        if ticket.get("direction") not in CAPABILITIES["directions"]: raise PaperSafetyError("Short entry remains blocked: both fill bounds cannot be enforced.")
+        if ticket.get("method") not in CAPABILITIES["methods"] or ticket.get("sessionMode", "Regular") not in CAPABILITIES["sessions"]:
+            raise PaperSafetyError("The requested entry method or session is not supported.")
         quantity = ticket.get("quantity")
-        if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= 3:
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or not 1 <= quantity <= LIMITS["sharesPerCampaign"]:
             raise PaperSafetyError("Paper QC permits one to three whole shares per campaign.")
-        if ticket.get("duration", "DAY") != "DAY": raise PaperSafetyError("This bounded acceptance batch uses DAY entries only.")
+        if ticket.get("duration", "DAY") not in CAPABILITIES["durations"]: raise PaperSafetyError("This bounded acceptance batch uses DAY entries only.")
         ticket["exitPlan"] = validate_exit_plan(ticket.get("exitPlan"))
         if any(leg["quantity"] < 1 for leg in allocations(quantity, ticket["exitPlan"])):
             raise PaperSafetyError("Each active exit leg needs at least one share; simplify the exit plan.")
@@ -371,6 +395,17 @@ class PaperService:
         if floor > positive(ticket.get("stopPrice"), "Initial stop"):
             raise PaperSafetyError("Cleanup floor must not exceed the initial protective stop.")
         current = self.client.read_only_snapshot()
+        if self.operator_id:
+            observed = getattr(current, "observed_at", None)
+            if not observed or not 0 <= (utcnow() - parsed(observed)).total_seconds() <= 20:
+                raise PaperSafetyError("Fresh account data is required before order review.")
+            funds = {row["tag"]: row for row in current.account_summary}
+            for tag in ("NetLiquidation", "AvailableFunds"):
+                row = funds.get(tag, {})
+                try: amount = float(row.get("value", "nan"))
+                except (TypeError, ValueError): amount = float("nan")
+                if row.get("currency") != "USD" or positive(amount, tag) < quantity * positive(ticket.get("hardCap"), "Entry cap"):
+                    raise PaperSafetyError("Fresh verified USD equity and available funds must cover the entry.")
         excluded = {str(x.get("symbol", "")).upper() for x in [*current.position_rows, *current.open_order_rows]
                     if x.get("quantity", 0) != 0}
         instrument = self._instrument(ticket["symbol"])
@@ -395,7 +430,7 @@ class PaperService:
         identifiers = {key: "preparation" for key in ("intentId", "idempotencyKey", "planId", "campaignId")}
         prepare_paper_intent({**ticket, **identifiers}, account_id=account, account_binding=self.client.config.binding(),
                              instrument=instrument, existing_symbols=excluded, store=capture)
-        if quantity * ticket["hardCap"] > 500 or quantity * (ticket["hardCap"] - ticket["stopPrice"]) > 10:
+        if quantity * ticket["hardCap"] > LIMITS["entryNotional"] or quantity * (ticket["hardCap"] - ticket["stopPrice"]) > LIMITS["plannedRiskPerCampaign"]:
             raise PaperSafetyError("Ticket exceeds paper notional or planned-stop-risk limits.")
         if abs(floor / instrument["contract"]["minimumTick"] - round(floor / instrument["contract"]["minimumTick"])) > 1e-7:
             raise PaperSafetyError("Cleanup floor is not tick-valid.")
@@ -403,19 +438,30 @@ class PaperService:
 
     def prepare_batch(self, tickets):
         with self.lock:
-            if not isinstance(tickets, list) or not 1 <= len(tickets) <= 2: raise PaperSafetyError("A batch needs one or two tickets.")
+            if not isinstance(tickets, list) or not 1 <= len(tickets) <= LIMITS["campaigns"]: raise PaperSafetyError("A batch needs one or two tickets.")
             identity = self.source()
             validated = [self._validate_ticket(t) for t in tickets]
             frozen = [v[0] for v in validated]
             if len({t["symbol"] for t in frozen}) != len(frozen): raise PaperSafetyError("Batch symbols must be distinct.")
-            if sum(t["quantity"] * t["hardCap"] for t in frozen) > 500 or sum(t["quantity"] * (t["hardCap"] - t["stopPrice"]) for t in frozen) > 20:
+            if sum(t["quantity"] * t["hardCap"] for t in frozen) > LIMITS["entryNotional"] or sum(t["quantity"] * (t["hardCap"] - t["stopPrice"]) for t in frozen) > LIMITS["totalPlannedRisk"]:
                 raise PaperSafetyError("Combined paper limits exceeded.")
             batch = {"id": str(uuid.uuid4()), "sourceIdentity": identity, "connectionId": self.connection_id,
                      "accountBinding": self.client.config.binding(), "createdAt": stamp(),
                      "validUntil": min(v[3]["windowEnd"] for v in validated), "tickets": frozen,
                      "contracts": [v[1]["contract"] for v in validated]}
             batch["digest"] = sha256(canonical(batch).encode()).hexdigest()
-            with self.store.transaction() as db: self.store.put(db, "batch", batch["id"], batch)
+            with self.store.transaction() as db:
+                if self.operator_id:
+                    for ticket in frozen:
+                        revision = {"userId": self.operator_id, "accountBinding": batch["accountBinding"],
+                                    "environment": "paper", "planId": ticket["planId"], "revision": ticket["planRevision"]}
+                        key = sha256(canonical(revision).encode()).hexdigest()
+                        content = {**revision, "ticket": ticket, "contentDigest": sha256(canonical(ticket).encode()).hexdigest()}
+                        row = db.execute("SELECT body FROM objects WHERE kind='plan-revision' AND id=?", (key,)).fetchone()
+                        if row and json.loads(row[0]) != content:
+                            raise PaperSafetyError("Saved plan revision has different content. Save a new revision before review.")
+                        self.store.put(db, "plan-revision", key, content)
+                self.store.put(db, "batch", batch["id"], batch)
             return self.public_batch(batch)
 
     def _batch(self, batch_id):
@@ -494,13 +540,13 @@ class PaperService:
                     return self.public_campaign(c)
             self.reconcile()
             active = [c for c in self.store.all("campaign") if c["state"] not in {"Closed", "Cancelled"}]
-            if len(active) >= 2 or any(c["state"] in {"Needs reconciliation", "Unprotected"} for c in active):
+            if len(active) >= LIMITS["campaigns"] or any(c["state"] in {"Needs reconciliation", "Unprotected"} for c in active):
                 raise PaperSafetyError("Existing paper campaigns block a new entry.")
             ticket, package, instrument, _ = self._validate_ticket(batch["tickets"][ticket_index])
             if package["contract"] != batch["contracts"][ticket_index]: raise PaperSafetyError("Qualified contract changed after review.")
-            if sum(c["ticket"]["quantity"] * c["ticket"]["hardCap"] for c in active) + ticket["quantity"] * ticket["hardCap"] > 500:
+            if sum(c["ticket"]["quantity"] * c["ticket"]["hardCap"] for c in active) + ticket["quantity"] * ticket["hardCap"] > LIMITS["entryNotional"]:
                 raise PaperSafetyError("Simultaneous paper notional exceeded.")
-            if sum(c["ticket"]["quantity"] * (c["ticket"]["hardCap"] - c["ticket"]["stopPrice"]) for c in active) + ticket["quantity"] * (ticket["hardCap"] - ticket["stopPrice"]) > 20:
+            if sum(c["ticket"]["quantity"] * (c["ticket"]["hardCap"] - c["ticket"]["stopPrice"]) for c in active) + ticket["quantity"] * (ticket["hardCap"] - ticket["stopPrice"]) > LIMITS["totalPlannedRisk"]:
                 raise PaperSafetyError("Simultaneous planned risk exceeded.")
             slots = []
             for i in range(ticket["quantity"]):
@@ -771,12 +817,15 @@ class PaperService:
 
     def reconcile(self):
         with self.lock:
+            try: return self._reconcile_complete()
+            except Exception:
+                self.last_reconciled = None
+                raise
+
+    def _reconcile_complete(self):
+        with self.lock:
             self._connected()
             self.snapshot = self.client.read_only_snapshot()
-            if hasattr(self.snapshot, "observed_at"):
-                view_builder = IbkrReadOnlyService()
-                view_builder._last_success = self.broker_view
-                self.broker_view = view_builder._build_success(self.client.authorized_account, self.snapshot)
             self.client.execution_snapshot()
             if hasattr(self.client, "completed_order_snapshot"): self.client.completed_order_snapshot()
             self._events()
@@ -796,7 +845,42 @@ class PaperService:
                         self._derive(c)
                 self._save(c)
             self.last_reconciled = stamp()
+            if hasattr(self.snapshot, "observed_at"):
+                view_builder = IbkrReadOnlyService()
+                campaigns = self.store.all("campaign")
+                closed = {c["id"] for c in campaigns if c["accountBinding"] == self.client.config.binding()
+                          and c["state"] == "Closed" and summarize(c)["openQuantity"] == 0}
+                previous = deepcopy(self.broker_view)
+                if previous:
+                    # Absence alone is not closure. Remove a retained position only
+                    # when it was previously tied to this exact, now-closed campaign.
+                    previous["positions"] = [p for p in previous["positions"] if p.get("ownedCampaignId") not in closed]
+                view_builder._last_success = previous
+                view = view_builder._build_success(self.client.authorized_account, self.snapshot)
+                for position in view["positions"]:
+                    if position.get("snapshotState") != "current": continue
+                    for campaign in campaigns:
+                        if (campaign["accountBinding"] == self.client.config.binding()
+                            and position["instrumentId"] == f"IBKR-STK:{campaign['contract']['conId']}"
+                            and position["quantity"] == summarize(campaign)["openQuantity"] > 0):
+                            position["ownedCampaignId"] = campaign["id"]
+                scope = self.snapshot_scope()
+                if scope:
+                    record = {"schemaVersion": 1, "scope": scope, "capturedAt": self.snapshot.observed_at,
+                              "reconciledAt": self.last_reconciled, "view": view}
+                    with self.store.transaction() as db:
+                        self.store.put(db, "broker-snapshot", sha256(canonical(scope).encode()).hexdigest(), record)
+                self.broker_scope, self.broker_view = scope, view
             return self.status()
+
+    def pause_operations(self):
+        with self.lock:
+            sessions = self.store.all("test-session")
+            if sessions and sessions[-1]["state"] not in {"Complete", "Halted", "Paused"}:
+                session = sessions[-1]
+                session.update(state="Halted", message="Operator paused entries and managed rules; broker-held protection retained.")
+                self.test_sessions.save(session)
+            return self.disarm()
 
     def action(self, campaign_id, revision, command_id, action, payload=None):
         with self.lock:

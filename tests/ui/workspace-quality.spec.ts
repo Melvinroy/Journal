@@ -642,7 +642,7 @@ test("read-only paper snapshots stay isolated, duplicate-free, and recover after
   await page.getByRole("button", { name: "Retry connection" }).click();
   await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
-  await expect(page.locator(".broker-account-status")).toContainText("TWS disconnected");
+  await expect(page.locator(".broker-account-status")).toContainText("Disconnected · last known");
   await expect(unlinked).toHaveCount(2);
   await page.getByRole("button", { name: "Retry connection" }).click();
   for (const width of [1280, 390, 1280]) {

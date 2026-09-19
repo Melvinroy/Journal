@@ -6,7 +6,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from .ibkr_tws import PaperSafetyError
+from .ibkr_tws import PaperSafetyError, PaperGatewayConfig
 from .paper_service import PaperService
 from .paper_auth import verified_user, require_owner, owner_path
 
@@ -39,7 +39,8 @@ def execution_service(user=Depends(current_operator)): return service
 def identity(user=Depends(verified_user)):
     try:
         require_owner(user)
-        return {"userId": user["id"], "email": user["email"], "linked": True}
+        return {"userId": user["id"], "email": user["email"], "linked": True,
+                "accountBinding": PaperGatewayConfig.from_environment().binding(), "environment": "paper"}
     except HTTPException as exc:
         return {"userId": user["id"], "email": user["email"], "linked": False, "linkState": "mismatch" if owner_path().exists() else "unlinked", "message": exc.detail}
 
@@ -115,6 +116,10 @@ def arm(batch_id: str, s: PaperService = Depends(execution_service)): return cal
 def disarm(s: PaperService = Depends(execution_service)): return call(s.disarm)
 
 
+@router.post("/pause")
+def pause(s: PaperService = Depends(execution_service)): return call(s.pause_operations)
+
+
 @router.post("/signout")
 def signout(s: PaperService = Depends(execution_service)):
     from .paper_service import utcnow
@@ -138,7 +143,12 @@ def action(campaign_id: str, body: CampaignRequest, s: PaperService = Depends(ex
 
 class TestSessionRequest(StrictBody):
     commandId: str = Field(min_length=1, max_length=128)
-    target: int = Field(default=200, ge=1, le=200)
+    target: int = Field(default=30, ge=1, le=30)
+
+
+@router.post("/test-session/{session_id}/target")
+def amend_test_target(session_id: str, body: TestSessionRequest, s: PaperService = Depends(execution_service)):
+    with s.lock: return call(s.test_sessions.amend_target, session_id, body.target, body.commandId)
 
 
 @router.post("/test-session/start")

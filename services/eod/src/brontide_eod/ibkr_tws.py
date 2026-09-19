@@ -82,7 +82,8 @@ class PaperGatewayConfig:
     @classmethod
     def from_environment(cls) -> "PaperGatewayConfig":
         """Load private process configuration; order submission defaults off."""
-
+        if os.environ.get("BRONTIDE_EXECUTION_ENVIRONMENT", "paper") != "paper":
+            raise PaperSafetyError("Live execution is not an enabled release mode.")
         enabled = os.environ.get("BRONTIDE_IBKR_SUBMISSIONS_ENABLED", "false").lower() == "true"
         return cls(
             host=os.environ.get("BRONTIDE_IBKR_HOST", "127.0.0.1"),

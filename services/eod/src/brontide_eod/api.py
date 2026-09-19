@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from brontide_eod.security_headers import SecurityHeaders
 
 from brontide_eod.chart_repository import ChartRepository, DuckDBChartRepository
 from brontide_eod.config import Settings
@@ -50,6 +51,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http
                    allow_credentials=False, allow_methods=["GET","POST"], allow_headers=["*"])
 app.include_router(research_router)
 app.include_router(paper_router)
+app.add_middleware(SecurityHeaders)
 
 _ibkr_read_only_service = IbkrReadOnlyService()
 
