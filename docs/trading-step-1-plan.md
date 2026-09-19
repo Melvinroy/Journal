@@ -235,3 +235,36 @@ This checklist distinguishes implemented local controls from evidence that is bl
 - [x] Complete direct frontend verification of the available normal demo controls against served preview `611b72e5+d.3c34d6a8` at `http://127.0.0.1:3000/?demo=1`: desktop/mobile/desktop, draft invalidation and retention, Journal expansion, dialog keyboard dismissal/focus return, responsive overflow and console checks passed.
 - [ ] Directly repeat the cloud error/retry and real user/account-switch paths with disposable authenticated identities. Automated browser regressions cover the visible recovery and stale-response behavior, but no suitable credentials were used for direct inspection.
 - [x] Create the scoped local commit and record its exact SHA in the review handoff. Do not push, merge or deploy without a later exact-SHA approval.
+
+## 10. Local-first closure continuation — September 20, 2026
+
+This section supersedes earlier delivery-state wording without erasing the historical evidence above. Work resumes from merged baseline `f21e8a7ef2eb490d25036356eb66dad3a38fe871` on branch `codex/local-first-security-closure`. The public Pages application is now explicitly out of scope and authorized for removal. Future publishing remains a separate approval.
+
+### Already implemented and retained
+
+- [x] Session-safe Journal reads, one bounded retry for the specific validator-clock read failure, explicit persistent-error recovery, and stale read/write suppression.
+- [x] User/account/environment scoping for browser state and new paper records, plus preservation of unscoped legacy evidence without silent reassignment.
+- [x] Complete version-2 saved-plan evidence, server-side validation and digests, tamper/concurrency rejection, and shared Position/Journal accounting regressions.
+- [x] Submission approval remains locked. The rejected automatic approval, halted session, historical target of 200, two recorded completions and F protection failure remain unchanged.
+
+### Ordered closure work and evidence standard
+
+1. **Remove public hosting first.** Inspect the currently published Pages artifact for private data and privileged credentials; a browser Supabase publishable key is expected public configuration, not by itself a secret leak. Disable the deployment workflow before any other implementation, cancel queued/running deployments, delete the Pages site through the supported GitHub API, and verify both the Pages API and public URL report that hosting is unavailable. Replace automatic `main` deployment and automatic Pages enablement with a manual-only workflow that fails closed unless a later explicit enablement variable and separate approval are present.
+2. **Close cloud identity evidence where access permits.** Use only disposable users and disposable rows for authenticated REST select/insert/update/delete/reassignment, user A/B isolation, revocation and browser transition testing. Preserve real records. Record sanitized token timing and request outcomes without tokens, passwords, emails or full identifiers. Never retry a write and do not relax signature, issuer, expiry or ownership validation. Treat missing dashboard/API entitlement as an external blocker.
+3. **Repeat supported dependency/configuration checks.** Re-run npm and Python audits, dependency consistency, official SDK compatibility evidence and generated-asset secret scans. Apply only vendor-supported changes. Inspect compromised-password protection and surface any paid/account-level change before applying it.
+4. **Perform the private-storage migration operationally.** Use the current interactive Windows identity only after recording it explicitly. Select dedicated literal runtime and backup paths outside the repository and cloud-synchronised locations; preserve the original tree and ACL rollback file. Prove runtime read/write, WAL inheritance, backup integrity/restore and access denial from a genuinely distinct disposable Windows identity. If elevation or a disposable identity is unavailable, stop with that gate open rather than treating an ACL listing as proof.
+5. **Verify the authenticated local application.** Serve the exact intended source and exercise ordinary Plan, Positions and Journal controls with disposable authenticated sessions: user/account transitions, stale responses, disconnected history, draft preservation, review invalidation and accounting agreement. Demo-only evidence is supporting evidence, not an authenticated pass.
+
+### Current checklist
+
+- [x] Published artifact inspected without exposing secret values: the final Pages artifact contained the expected browser publishable key and public research/demo data, but no privileged credentials, JWTs, private-key material, private runtime paths or broker execution records.
+- [x] Pages workflow made manual and fail-closed; automatic `main` deployment and automatic enablement removed. The remote workflow is also `disabled_manually`; future publication requires a separate workflow re-enable, repository enablement variable and approval reference.
+- [x] No queued or running Pages deployment remained to cancel. The GitHub Pages site was deleted through the supported API; the Pages API and a cache-bypassed public request both return 404.
+- [ ] Disposable deployed ownership, account-isolation and revocation matrix completed through the real authentication/REST path.
+- [x] Validator-clock failure retained explicitly as unresolved with sanitized evidence and the bounded read-only mitigation unchanged. Windows reports a successful `time.windows.com` synchronization; five Supabase Date-header samples were within 0.75 seconds of the local midpoint, and two-day Auth, PostgREST and gateway log searches contained no matching error. This rules out a persistent machine-wide offset but does not identify the intermittent cause.
+- [x] JavaScript/Python audits, consistency checks and generated-output secret scan repeated. npm and the repository Python environment are clean; the active official IBKR environment still has the protobuf advisory that cannot be fixed without violating the current SDK pin, so it remains a blocker.
+- [x] Compromised-password protection inspected without mutation. It is disabled and available only on Supabase Pro while this project is on Free; an account upgrade requires separate approval.
+- [ ] Dedicated Windows runtime/backup paths and operating identity recorded; backup/WAL inheritance and restore are proven, but distinct-user access denial and active-service cutover remain open. See the private-storage runbook for the exact partial evidence.
+- [ ] Exact-source authenticated Plan/Positions/Journal browser matrix completed; automated, direct and skipped evidence reported separately.
+- [x] Focused checks and final `npm run verify` passed without baseline updates: 204 Node tests passed with 2 skipped; 269 backend tests passed with 4 skipped and 2 deprecation warnings; TypeScript passed; 66 browser tests passed with 3 skipped; production build passed.
+- [x] Scoped local commit contains this checklist; its exact SHA is reported in the out-of-band review handoff because a commit cannot contain its own identity. Do not push, merge or deploy without later, separate approval.

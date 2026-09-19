@@ -160,7 +160,7 @@ Place Auto Trendline immediately left of the data-status indicator. Support togg
 
 ## Beyond these six phases
 
-Broker integration (likely IBKR), live feeds, alerts, portfolio capital/overlap simulation, scheduling/monitoring and hosted multi-user operations have separate release gates. Trading order management requires fill reconciliation, idempotency and cancel/replace behavior; hosted operation requires authenticated access and tenant isolation. Public GitHub Pages remains a safe static demo. A phone does not gain access to the Windows database through Pages; private connectivity requires an explicit deployment choice.
+Broker integration (likely IBKR), live feeds, alerts, portfolio capital/overlap simulation, scheduling/monitoring and hosted multi-user operations have separate release gates. Trading order management requires fill reconciliation, idempotency and cancel/replace behavior; hosted operation requires authenticated access and tenant isolation. GitHub Pages is unpublished and its workflow is disabled. Private connectivity and any future static publication require separate explicit deployment approval.
 
 ## Progress record
 

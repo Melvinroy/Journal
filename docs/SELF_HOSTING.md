@@ -98,11 +98,13 @@ https://YOUR_USERNAME.github.io/Journal/**
 
 ## 7. Enable GitHub Pages
 
+Upstream publication is intentionally disabled. A fork owner who deliberately chooses public hosting must first review the public-data boundary and accept that this creates an internet-facing application.
+
 1. In your fork, open **Settings → Pages**.
 2. Under **Build and deployment**, choose **GitHub Actions**.
-3. Open **Actions → Deploy Brontide to GitHub Pages**.
-4. Select **Run workflow** if a deployment is not already running.
-5. Wait for both build and deploy to show green checks.
+3. Create the repository variable `BRONTIDE_PAGES_PUBLISH_ENABLED` with the exact value `true`.
+4. Enable **Actions → Deploy Brontide to GitHub Pages** if the workflow is disabled.
+5. Select **Run workflow**, enter the separate approval reference, and wait for both build and deploy to show green checks.
 
 The Owner Setup screen disappears when the repository variables are included in the deployment.
 

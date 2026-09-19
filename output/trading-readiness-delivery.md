@@ -118,3 +118,60 @@ The unauthenticated paper route was also opened and showed the sign-in boundary 
 - The existing skipped tests remain skips, not passes. Passing Step 1 does not authorize paper submission or live trading.
 
 This report is part of the reviewed source. The exact local commit SHA and the clean post-commit preview identifier are recorded in the delivery handoff because a commit cannot contain its own SHA.
+
+---
+
+# Local-first security/data closure — September 20, 2026
+
+## Decision and source
+
+**Still no-go for live trading.** Work started from `f21e8a7ef2eb490d25036356eb66dad3a38fe871` on `codex/local-first-security-closure`. No broker order, paper-submission unlock, historical target amendment, service restart, merge or push occurred. The halted session, rejected automatic approval, target 200, two historical completions and F protection failure remain preserved.
+
+## Public hosting removal
+
+- The remote `Deploy Brontide to GitHub Pages` workflow was disabled before other implementation. No queued or running deployment existed to cancel.
+- The last published artifact (run `35464051997`, artifact `10590742044`) was inspected after extraction: 50 files / 2,820,618 bytes. It contained one expected Supabase publishable-key reference and public research/demo data, but no privileged key, JWT, database credential, private-key material, private runtime path or broker execution record.
+- The Pages site was deleted with the supported GitHub API. The Pages API returns 404 and a cache-bypassed request to `https://melvinroy.github.io/Journal/` returns 404 with no Brontide content.
+- The source workflow no longer runs on `main`, no longer enables Pages, has no embedded project fallback, and is fail-closed behind manual dispatch, `BRONTIDE_PAGES_PUBLISH_ENABLED == 'true'` and a required approval reference. The remote workflow remains disabled.
+
+## Cloud security and clock evidence
+
+- The Supabase project is on Free. Dashboard inspection showed leaked-password protection disabled and explicitly limited to Pro and above. No setting or subscription was changed.
+- The deployed user inventory contains only the real owner account, so the disposable A/B ownership and revocation matrix has not yet run. No real record was used for destructive testing.
+- Windows Time reports a successful `time.windows.com` synchronization. Five read-only Supabase Date-header samples differed from the local request midpoint by -0.75 to +0.07 seconds. Two-day Auth, PostgREST and gateway log searches found no `future` / `JWT issued` match. A persistent local clock offset was not reproduced, but the intermittent validator-clock cause remains unknown; the existing one-read retry and all authentication checks remain unchanged.
+
+## Dependencies and generated output
+
+- `npm audit --omit=dev --audit-level=low`: zero vulnerabilities.
+- Repository Python `pip-audit`: no known vulnerability in auditable packages; the local project is not on PyPI. `pip check`: no broken requirements.
+- Active operator environment: official `ibapi` 10.50.2 still pins protobuf 5.29.5 and reports PYSEC-2026-1805 / CVE-2026-0994. IBKR's current official download remains 10.50. The fixed protobuf versions conflict with the SDK pin, so no unsupported override was applied.
+- Final `out` scan: zero privileged-secret match files, zero private-runtime-path match files and zero broker-evidence match files; one generated file contains the expected browser publishable key.
+
+## Private storage operational evidence
+
+Candidate runtime identity `MELVIN\melvi` and literal paths are recorded in `docs/trading/PRIVATE_STORAGE.md`. The new runtime/backup roots exclude inherited development-platform grants. Online SQLite backup, separate restoration and integrity checks passed with matching 23 objects, 27 commands, 55,395 events and schema version 1. A new database, WAL and SHM inherited only the owner, `SYSTEM` and `Administrators` grants. Original files remain in place.
+
+The active service was not stopped or repointed. A genuinely distinct Windows identity could not be created from the non-elevated shell, so read/write/delete/list denial and the final cutover/reconciliation remain open gates.
+
+## Automated verification
+
+- Focused: 31 Node tests passed; 94 backend tests passed with 4 SDK-dependent skips and 2 deprecation warnings; 19 paper UI tests passed. The long 200-campaign test was left to the full gate.
+- Workflow YAML parsed, required fail-closed job condition was present, the `push` trigger was absent, and `git diff --check` passed.
+- Full `npm run verify` passed all five stages in 1084.1 seconds: 204 Node tests passed / 2 skipped; 269 backend tests passed / 4 skipped / 2 deprecation warnings; TypeScript passed; 66 browser tests passed / 3 skipped; production build passed. No screenshot baseline was updated. Evidence is under `output/trading-local-first-closure/` and `output/trading-local-first-closure-verify.log`.
+
+## Direct browser observations
+
+- Supabase dashboard: project Free plan; one real user; leaked-password control disabled with a Pro-only notice. No cloud setting changed.
+- Supabase logs: two-day Auth, PostgREST and gateway searches showed no matching validator-clock error.
+- The final source candidate was served from the intended checkout on `http://127.0.0.1:3000/`. Through ordinary demo controls, a plan was saved at entry 101 and changing the entry to 102 visibly invalidated the review, retained the draft, and kept validation/submission disabled. The NVDA open-position detail disclosed stale pricing and seven unprotected shares. The AMD closed-position detail and its linked expanded Journal row agreed on 20 entered, 20 exited, zero remaining, weighted exit 168, gross +80, costs +2 and net +79 (rounding from the underlying 78.70). Exiting demo returned to the sign-in boundary. This is direct UI evidence for ordinary controls, not authenticated-flow evidence.
+- The exact-source authenticated Plan/Positions/Journal matrix is still pending disposable identity creation. The automated normal-control flow passed, but it is not substituted for signed-in direct evidence.
+
+## Remaining external or unverified gates
+
+- Disposable cloud identities, deployed A/B ownership/reassignment and revoked-session behavior; authenticated ordinary-control browser transitions and cleanup.
+- Supabase Pro entitlement and separate account-level approval for leaked-password protection.
+- Official IBKR SDK/protobuf compatibility fix.
+- Distinct Windows identity denial, active-service path cutover, read-only reconciliation and rollback-window completion.
+- Fresh broker protection/reconnect/concurrency, owned-flat, owned-orders-cleared and complete-accounting evidence; 30 authenticated audited round trips; live trading. None was attempted or inferred.
+
+The exact local commit SHA and matching post-commit preview identifier are reported in the final handoff; no push, merge or deployment is authorized by this report.

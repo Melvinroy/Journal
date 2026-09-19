@@ -25,4 +25,13 @@ Rollback uses `icacls <approved-parent> /restore <rollback-file> /c` while the s
 
 ## Current gate
 
-The runtime Windows identity and dedicated production/backup directories have not been selected. No ACL mutation is authorized until they are concrete. The September 20 read-only inventory found the owner account, `SYSTEM`, `Administrators` and Codex development-platform grants on the current `%LOCALAPPDATA%\Brontide` tree. That inventory is evidence for the open gate, not a least-privilege pass.
+The September 20 closure run made the candidate identity and paths concrete without cutting over the active service:
+
+- runtime identity: `MELVIN\melvi` (`S-1-5-21-1386659274-518491314-1459396466-1001`)
+- runtime directory: `C:\Users\melvi\AppData\Local\BrontidePrivate\Runtime`
+- backup directory: `C:\Users\melvi\AppData\Local\BrontidePrivate\Backups`
+- source-ACL rollback file: `C:\Users\melvi\AppData\Local\BrontidePrivateAclRollback\source-acl.txt`
+
+The new roots are not reparse points and grant inherited full control only to `MELVIN\melvi`, `SYSTEM` and `Administrators`. Online SQLite copies preserved the active source and produced a runtime ledger plus a separate backup. A restored database passed `integrity_check` and matched the backup at 23 objects, 27 commands, 55,395 events and schema version 1. A disposable SQLite write and its WAL/SHM files inherited the same restricted ACL.
+
+This is partial operational proof, not production signoff. The active service continues to use the original `%LOCALAPPDATA%\Brontide` tree and was not stopped or repointed because it is running from a protected checkout alongside TWS. The current shell is not elevated and no disposable unrelated Windows identity is available, so genuine read/write/delete/list denial has not been demonstrated. Do not treat the ACL listing as denial evidence. Complete the distinct-identity test, service cutover, read-only reconciliation and reviewed rollback window before approving these paths for production.
