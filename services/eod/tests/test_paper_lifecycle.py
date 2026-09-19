@@ -633,6 +633,10 @@ def test_malformed_owned_callback_is_quarantined_without_losing_other_fees(servi
 
 
 def test_execution_snapshot_filters_owned_client_and_explicit_utc_history(service, monkeypatch):
+    pytest.importorskip(
+        "ibapi.execution",
+        reason="Official TWS SDK is operator-installed; never substitute an unofficial client.",
+    )
     from brontide_eod.paper_transport import PaperTransport
     from datetime import timedelta
     transport = PaperTransport(service.client.config, service.client.verification)
@@ -688,6 +692,10 @@ def test_audited_recovery_rebuilds_missing_timestamp_from_preserved_fill(service
 
 
 def test_modern_sdk_history_requests_seven_days_and_normalizes_errors_and_fees(service, monkeypatch):
+    pytest.importorskip(
+        "ibapi.execution",
+        reason="Official TWS SDK is operator-installed; never substitute an unofficial client.",
+    )
     from types import SimpleNamespace
     from brontide_eod.paper_transport import PaperTransport
     from ibapi.execution import ExecutionFilter
