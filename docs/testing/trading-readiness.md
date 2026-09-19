@@ -39,6 +39,7 @@ Outstanding security gates:
 3. Windows ACL inspection found owner/SYSTEM/Administrators plus Codex sandbox grants on private execution files. An owner-only production installation and backup ACL verification remain required; these platform access grants were not silently changed.
 4. Revoked-session behavior must be verified end-to-end. Server getUser validation and a short local lease are not a proof of immediate revocation of every existing JWT.
 5. A broader penetration test, operational alert delivery and complete cloud/private-backup threat review remain outstanding.
+6. Direct signed-in browser inspection reported `JWT issued at future` for cloud Journal loading while local paper history remained available. The public auth endpoint's Date header matched the local UTC clock to the second. The cause is not established; investigate the actual session and REST validation path without weakening token checks. Repeat browser cloud-read and expired/revoked-session tests before release. The SQL ownership checks above do not resolve this error.
 
 ## Recovery procedure
 
