@@ -180,3 +180,15 @@ test('first confirmed execution creates one Journal campaign and later events up
   const replay = domain.upsertJournalCampaignFromExecution({ campaigns: result.campaigns, execution: partialExit, symbol: 'TEST', direction: 'Long', journalTradeId: 'ignored' });
   assert.equal(replay.campaigns.length, 1); assert.equal(replay.ignoredDuplicateCount, 1); assert.equal(domain.rollupCampaign(replay.campaign).executions.length, 2);
 });
+
+
+test('Derived planning stops round conservatively to cents without changing ATR precision', () => {
+  close(domain.roundedPlanningStop(205.4431827154619, 'Long'), 205.44);
+  close(domain.roundedPlanningStop(218.8968172845381, 'Short'), 218.90);
+  close(domain.roundedPlanningStop(98.01, 'Long'), 98.01);
+  close(domain.roundedPlanningStop(98.01, 'Short'), 98.01);
+  assert.throws(() => domain.roundedPlanningStop(0.001, 'Long'));
+  const stop = domain.roundedPlanningStop(domain.deriveStop({method:'ATR',direction:'Long',capturedEntry:212.17,atr14:6.7268172845381,atrMultiplier:1}), 'Long');
+  const result = domain.calculatePositionSize({accountBase:30000,riskPercent:.5,allocationPercent:15,entryPrice:212.17,stopPrice:stop,direction:'Long'});
+  assert.equal(result.shares,21);
+});

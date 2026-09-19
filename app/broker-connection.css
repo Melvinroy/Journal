@@ -1,0 +1,39 @@
+.broker-connection {position:relative; font-size:12px; max-width:100%;}
+.broker-connection summary {cursor:pointer; display:flex; align-items:center; gap:8px; min-height:40px; padding:8px 10px; border:1px solid var(--border); border-radius:8px;}
+.broker-dot {width:9px;height:9px;flex-shrink:0;border-radius:50%;background:#7b8580;}
+.broker-dot.ready {background:#158447;}.broker-dot.blocked,.broker-dot.connecting {background:#af7100;}.broker-dot.error {background:#c63535;}
+.broker-connection-detail {position:absolute;z-index:60;left:0;top:100%;width:min(420px,calc(100vw - 40px));padding:16px;border:1px solid var(--border);border-radius:10px;background:var(--surface,#fff);box-shadow:0 8px 24px #0002;overflow-wrap:anywhere;}
+.broker-connection-detail p {line-height:1.5;}.broker-connection-detail button {min-height:40px;}
+.broker-order-review {width:min(580px,calc(100vw - 32px));max-height:85vh;overflow:auto;}
+.broker-order-review li {margin:8px 0;overflow-wrap:anywhere;}.broker-order-review code {overflow-wrap:anywhere;}
+.broker-execution-fields {display:flex;gap:12px;flex-wrap:wrap;margin:12px 0;}
+.broker-execution-fields label {display:flex;flex-direction:column;gap:6px;min-width:0;flex:0 1 140px;font-size:12px;}
+.broker-execution-fields label:first-child {flex-basis:180px;}
+.broker-execution-fields input,.broker-execution-fields select {width:100%;min-width:0;min-height:36px;padding:0 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface,#fff);color:var(--ink);font-size:14px;}
+.paper-quote {display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 0;margin-top:8px;border-block:1px solid var(--line);font-size:13px;}
+.paper-quote-prices,.paper-quote-actions {display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;min-width:0;}
+.paper-quote-prices {font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.paper-quote-prices>span {white-space:nowrap;}
+.paper-quote-actions button {min-height:36px;padding:6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface,#fff);color:var(--ink);font-size:13px;}
+.paper-quote p {flex-basis:100%;margin:0;line-height:1.5;overflow-wrap:anywhere;}
+.paper-quote-caption {font-size:12px;color:var(--muted);}
+.paper-quote :focus-visible,.broker-execution-fields :focus-visible {outline:3px solid #13875b;outline-offset:3px;}
+.broker-connection :focus-visible,.broker-order-review :focus-visible {outline:3px solid #13875b;outline-offset:3px;}
+.broker-campaign-actions {padding-top:12px;}.broker-campaign-actions button {min-height:40px;}
+.broker-campaign-actions .editor-actions {flex-wrap:wrap;gap:8px;}
+.broker-campaign-actions .editor-actions button {flex:1 1 130px;white-space:normal;min-width:0;}
+@media(max-width:600px){.broker-connection-detail{position:static;width:auto;margin-top:8px;}.broker-connection{width:100%;}.broker-execution-fields label,.broker-execution-fields label:first-child{flex:1 1 130px;}.broker-execution-fields input,.broker-execution-fields select,.paper-quote-actions button{min-height:44px;}.broker-campaign-actions button{display:inline-flex;min-height:44px;}}
+
+.broker-connection {width:fit-content;margin:8px 0;}
+.broker-connection-detail .editor-actions {display:flex;flex-wrap:wrap;gap:8px;}
+.broker-connection-detail button {white-space:normal;min-width:90px;}
+@media(max-width:600px){.trade-commandbar:has(.broker-connection){flex-direction:column;align-items:stretch;}.broker-connection{width:100%;}.broker-connection-detail{width:100%;box-sizing:border-box;}}
+
+.broker-account-summary { width:100%; min-width:0; padding:16px; margin-bottom:20px; border:1px solid var(--line); border-radius:11px; background:var(--surface,#fff); overflow-wrap:anywhere; }
+.broker-account-status { display:flex; align-items:center; gap:8px; }
+.broker-account-summary dl { display:flex; flex-wrap:wrap; gap:16px 40px; margin:14px 0 0; }
+.broker-account-summary dl > div { min-width:0; }
+.broker-account-summary dt { font-size:12px; color:var(--muted); }
+.broker-account-summary dd { margin:4px 0 0; font-size:14px; }
+.broker-account-summary .broker-connection { width:100%; margin-bottom:0; }
+.broker-account-summary .broker-connection-detail { position:static; width:100%; margin-top:8px; box-shadow:none; }

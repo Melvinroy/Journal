@@ -7,6 +7,7 @@ import { CATALYST_PROJECT_URL, OBSERVED_SCHEDULES, VERIFIED_REPORT_SOURCES } fro
 import type { MarketContext } from "../lib/workspace-state";
 import { useModalAccessibility } from "./useModalAccessibility";
 
+import { Disclosure } from "./WorkspacePresentation";
 import { CatalystReports } from "./CatalystReports";
 import { defaultType, reportHistory, type Report as CatalystReport, type Schedule, type Observation } from "../lib/catalyst-reports";
 import { aggregateThemes, candidateThemeReports, THEME_RANGES, THEME_RANGE_LABELS, themeWindow, type ThemeRange } from "../lib/catalyst-theme-aggregation";
@@ -297,15 +298,15 @@ export function CatalystDashboard({onChart,demo=false}:{demo?:boolean;onChart?:(
   return (
     <div className="catalyst-dashboard">
       <header className="catalyst-commandbar">
-        <div><p className="eyebrow">Catalyst intelligence</p><h1>Executive signal board</h1><p>{demo?"Synthetic events for review.":"Ranked, de-duplicated signals from the canonical Catalyst_Table_v2 workflow."}</p></div>
+        <div><h1>Catalysts</h1></div>
         <div className="catalyst-command-actions">
           <button className="secondary-button" type="button" onClick={()=>setRetry(v=>v+1)} disabled={loading||catalogLoading}>Refresh reports</button>
 
         </div>
       </header>
 
-      {demo&&<p className="workspace-notice">Sample catalysts · fictional events, not market news.</p>}
-      <CatalystReports loading={catalogLoading||!selectionReady} reports={data?.reports??[]} type={type} setType={value=>choose({type:value,id:""})} reportId={reportId} setReportId={id=>choose({type,id})} schedules={schedules} observations={observations} now={now} diagnostic={diagnostic} themePanel={<ThemePanel range={themeRange} setRange={setThemeRange} aggregation={aggregatedThemes} loading={themeLoading||(themeRange==="selected"&&loading)} error={themeRange==="selected"?resultsError:themeError} onRetry={()=>setRetry(value=>value+1)}/>}/>
+
+      <CatalystReports loading={catalogLoading||!selectionReady} reports={data?.reports??[]} type={type} setType={value=>choose({type:value,id:""})} reportId={reportId} setReportId={id=>choose({type,id})} schedules={schedules} observations={observations} now={now} diagnostic={diagnostic}/>
       {catalogError && <div className="catalyst-banner" role="status">{catalogError} <button onClick={()=>setRetry(value=>value+1)}>Retry</button></div>}
 
       <div className="catalyst-view-switch" aria-label="Report view">
@@ -322,7 +323,31 @@ export function CatalystDashboard({onChart,demo=false}:{demo?:boolean;onChart?:(
         <article className="catalyst-kpi"><span>Direct</span><strong>{resultsReady?directCount:"—"}</strong><small>{resultsReady?`${rows.length?Math.round((directCount/rows.length)*100):0}% of inventory`:"Results unavailable"}</small></article>
       </section>
 
-      {resultsError?<section className="catalyst-panel catalyst-results-error" role="status"><div><p className="eyebrow">Ticker results unavailable</p><h2>Report commentary is still available</h2><p>The ticker inventory request failed. Retry without leaving this report.</p></div><button className="secondary-button" type="button" onClick={()=>setRetry(value=>value+1)}>Retry results</button></section>:<section className="catalyst-leadership-grid">
+      {resultsError && <section className="catalyst-panel catalyst-results-error" role="status"><div><p className="eyebrow">Ticker results unavailable</p><h2>Report commentary is still available</h2><p>The ticker inventory request failed. Retry without leaving this report.</p></div><button className="secondary-button" type="button" onClick={()=>setRetry(value=>value+1)}>Retry results</button></section>}
+      <section className="catalyst-panel catalyst-table-panel">
+        <div className="catalyst-table-toolbar">
+          <div><h2>Ticker results</h2></div>
+          <div className="catalyst-filterbar">
+            {(["all", "bullish", "bearish", "neutral"] as DirectionFilter[]).map((item) => <button type="button" key={item} className={direction === item ? "active" : ""} onClick={() => setDirection(item)}>{item}</button>)}
+            <input aria-label="Search catalyst inventory" placeholder="Ticker, theme or sector" value={search} onChange={(event) => setSearch(event.target.value)}/>
+          </div>
+        </div>
+        <div className="catalyst-table-wrap">
+          <table className="catalyst-table">
+            <thead><tr><th>Ticker</th><th>Classification</th><th>Catalyst</th><th>Theme</th><th>Move</th><th>Freshness</th><th>Source confidence</th><th>Action</th></tr></thead>
+            <tbody>{filtered.map((row) => <tr key={row.ticker} className={`row-${row.direction}`} tabIndex={0} aria-label={`Open ${row.ticker} catalyst detail`} onClick={() => setSelected(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(row); } }}>
+              <td><button type="button" className="catalyst-ticker" onClick={()=>setSelected(row)} aria-label={`Open ${row.ticker} catalyst detail`}>{row.ticker}</button>{row.appearances > 1 && <small>{row.appearances}×</small>}</td>
+              <td><span className={`catalyst-grade grade-${row.direction}`}>{row.catalyst_quality_direction}</span></td>
+              <td><strong>{row.primary_catalyst_category}</strong><small>{row.direct_sympathy_sector_move}</small></td>
+              <td>{row.theme}</td><td>{row.move_already_done}</td><td>{row.freshness_catalyst_age}</td><td>{row.source_confidence}</td><td>{row.action_priority}</td>
+            </tr>)}</tbody>
+          </table>
+          {(loading||catalogLoading) && <div className="catalyst-empty">Loading catalyst intelligence…</div>}
+          {!loading && !catalogLoading && !filtered.length && <div className="catalyst-empty">{resultsError?"Ticker results unavailable. Report text remains accessible in Full report.":!activeReport?`No ${type} report received.`:rows.length?"No catalysts match these filters.":activeReport.result_count===0?"Published report · zero qualifying results.":resultsReady?"No inventory rows received. Legacy report completeness is not recorded.":"Ticker results unavailable."}</div>}
+        </div>
+      </section>
+      <Disclosure title="Report analysis" name="catalyst-analysis" scope={demo ? "demo" : "account"}><ThemePanel range={themeRange} setRange={setThemeRange} aggregation={aggregatedThemes} loading={themeLoading||(themeRange==="selected"&&loading)} error={themeRange==="selected"?resultsError:themeError} onRetry={()=>setRetry(value=>value+1)}/>
+      {!resultsError&&<section className="catalyst-leadership-grid">
         <article className="catalyst-panel catalyst-leader-panel">
           <div className="catalyst-panel-head"><div><p className="eyebrow">Leadership</p><h2>Bullish priority</h2></div><span className="catalyst-count positive">{bullish.length}</span></div>
           <div className="catalyst-signal-stack" role="region" aria-label="All bullish leadership catalysts" tabIndex={0}>{bullish.map((row) => <SignalCard key={row.ticker} row={row}/>)}</div>
@@ -333,29 +358,7 @@ export function CatalystDashboard({onChart,demo=false}:{demo?:boolean;onChart?:(
         </article>
       </section>}
 
-      <section className="catalyst-panel catalyst-table-panel">
-        <div className="catalyst-table-toolbar">
-          <div><p className="eyebrow">Canonical inventory</p><h2>Signal scanner</h2></div>
-          <div className="catalyst-filterbar">
-            {(["all", "bullish", "bearish", "neutral"] as DirectionFilter[]).map((item) => <button type="button" key={item} className={direction === item ? "active" : ""} onClick={() => setDirection(item)}>{item}</button>)}
-            <input aria-label="Search catalyst inventory" placeholder="Ticker, theme or sector" value={search} onChange={(event) => setSearch(event.target.value)}/>
-          </div>
-        </div>
-        <div className="catalyst-table-wrap">
-          <table className="catalyst-table">
-            <thead><tr><th>Classification</th><th>Ticker</th><th>Grade</th><th>Catalyst</th><th>Theme</th><th>Move</th><th>Freshness</th><th>Source confidence</th><th>Action</th></tr></thead>
-            <tbody>{filtered.map((row) => <tr key={row.ticker} className={`row-${row.direction}`} tabIndex={0} aria-label={`Open ${row.ticker} catalyst detail`} onClick={() => setSelected(row)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(row); } }}>
-              <td><b>{row.catalyst_quality_direction}</b></td>
-              <td><button type="button" className="catalyst-ticker" onClick={()=>setSelected(row)} aria-label={`Open ${row.ticker} catalyst detail`}>{row.ticker}</button>{row.appearances > 1 && <small>{row.appearances}×</small>}</td>
-              <td><span className={`catalyst-grade grade-${row.direction}`}>{gradeLabel(row.catalyst_quality_direction)}</span></td>
-              <td><strong>{row.primary_catalyst_category}</strong><small>{row.direct_sympathy_sector_move}</small></td>
-              <td>{row.theme}</td><td>{row.move_already_done}</td><td>{row.freshness_catalyst_age}</td><td>{row.source_confidence}</td><td>{row.action_priority}</td>
-            </tr>)}</tbody>
-          </table>
-          {(loading||catalogLoading) && <div className="catalyst-empty">Loading catalyst intelligence…</div>}
-          {!loading && !catalogLoading && !filtered.length && <div className="catalyst-empty">{resultsError?"Ticker results unavailable. Report text remains accessible in Full report.":!activeReport?`No ${type} report received.`:rows.length?"No catalysts match these filters.":activeReport.result_count===0?"Published report · zero qualifying results.":resultsReady?"No inventory rows received. Legacy report completeness is not recorded.":"Ticker results unavailable."}</div>}
-        </div>
-      </section>
+</Disclosure>
       </>:<section className="catalyst-panel catalyst-full-report" aria-label="Full selected report">
         <div className="catalyst-panel-head"><div><p className="eyebrow">Full report</p><h2>{latestReport?`${type} · ${latestReport.trading_date_checked}`:"No report selected"}</h2></div></div>
         {loading||catalogLoading?<p role="status">Loading the full report…</p>:!latestReport?<p>No {type} report is available. No other report type is being shown.</p>:latestReport.raw_report_text?<pre>{latestReport.raw_report_text}</pre>:<div className="catalyst-full-unavailable"><strong>Full narrative unavailable for this report.</strong><p>This record does not contain the producer’s original report text. The dashboard will not reconstruct it from ticker rows.</p>{latestReport.market_summary&&<><h3>Stored market summary</h3><p>{latestReport.market_summary}</p></>}{latestReport.themes_summary&&<><h3>Stored themes</h3><p>{latestReport.themes_summary}</p></>}{latestReport.best_focus&&<><h3>Stored focus</h3><p>{latestReport.best_focus}</p></>}</div>}

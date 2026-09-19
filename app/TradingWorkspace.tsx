@@ -1,5 +1,6 @@
 "use client";
 
+import { Disclosure, MissingValue } from "./WorkspacePresentation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DEMO_CAMPAIGNS,
@@ -22,7 +23,7 @@ import {
   type PositionAssociation,
   type TradeCampaign,
 } from "../lib/trading-domain";
-import { SAMPLE_PLANS, demoStorageKey } from "../lib/review-demo";
+import { SAMPLE_PLANS, demoStorageKey as legacyStorageKey } from "../lib/review-demo";
 import {
   PLANS_KEY,
   appendFill,
@@ -35,6 +36,9 @@ import {
 import { useBrowserStore } from "../lib/use-browser-store";
 import type { MarketContext } from "../lib/workspace-state";
 import { PositionExitPlanControls } from "./PositionExitPlanControls";
+import type { PaperExecution } from "./usePaperExecution";
+import { paperPosition } from "../lib/paper-execution";
+import { PaperCampaignActions } from "./PaperCampaignActions";
 import { TradePlanner } from "./TradePlanner";
 import { useModalAccessibility } from "./useModalAccessibility";
 
@@ -197,7 +201,7 @@ function positionNumbers(item: DemoPosition) {
     item.campaign ?? DEMO_CAMPAIGNS.find(
     (value) => value.campaignId === item.campaignId,
   );
-  const rollup = campaign ? rollupCampaign(campaign) : null;
+  const rollup = item.paperSummary && campaign ? { executions: campaign.executions, actualAverageEntry: item.paperSummary.averageEntry, enteredQuantity: item.paperSummary.entered, exitedQuantity: item.paperSummary.exited, realizedNetPnl: item.paperSummary.netRealized, actualInitialRisk: item.paperSummary.initialRisk } : campaign ? rollupCampaign(campaign) : null;
   const hasExecutions = Boolean(rollup?.executions.length);
   const averageEntry =
     (hasExecutions ? rollup?.actualAverageEntry : null) ?? item.averageEntry ?? null;
@@ -214,8 +218,8 @@ function positionNumbers(item: DemoPosition) {
     : item.snapshotOnly || filledQuantity == null
       ? null
       : Math.max(0, filledQuantity - openQuantity);
-  const realized = hasExecutions ? rollup!.realizedNetPnl : item.snapshotOnly ? null : 0;
-  const actualInitialRisk = hasExecutions
+  const realized = item.paperSummary ? item.paperSummary.netRealized : hasExecutions ? rollup!.realizedNetPnl : item.snapshotOnly ? null : 0;
+  const actualInitialRisk = item.paperSummary ? item.paperSummary.initialRisk : hasExecutions
     ? rollup!.actualInitialRisk
     : item.snapshotOnly
       ? null
@@ -259,6 +263,7 @@ function positionNumbers(item: DemoPosition) {
 function protectionLabel(item: DemoPosition, openQuantity: number) {
   if (openQuantity === 0)
     return item.status === "Working entry" ? item.protection.state : "Complete";
+  if (item.paperSummary && item.protection.state === "Unknown") return "Protection unconfirmed";
   const uncovered = Math.max(0, openQuantity - item.protection.quantity);
   if (uncovered)
     return item.protection.quantity
@@ -276,13 +281,17 @@ function positionMessageIsError(message: string) {
 }
 
 export function TradingWorkspace({
+  storageScope = "unlinked",
   context,
   onChart,
   onOpenJournalTrade,
   onCreateJournalTrade,
   positionCampaigns = [],
   demo = false,
+  paper,
 }: {
+  storageScope?: string;
+  paper?: PaperExecution;
   demo?: boolean;
   context?: MarketContext;
   onChart: (context: MarketContext) => void;
@@ -290,6 +299,7 @@ export function TradingWorkspace({
   onCreateJournalTrade?: (item: UnlinkedPositionInput) => string;
   positionCampaigns?: readonly TradeCampaign[];
 }) {
+  const demoStorageKey = (key: string, simulation: boolean) => simulation ? legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
   const store = useBrowserStore<Plan[]>(
     demoStorageKey(PLANS_KEY, demo),
     demo ? SAMPLE_PLANS : [],
@@ -343,7 +353,9 @@ export function TradingWorkspace({
   const [draft, setDraft] = useState<Plan | null>(null);
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
-  const [showSaved, setShowSaved] = useState(true);
+  const [showSaved, setShowSaved] = useState(false);
+  const [positionSearch, setPositionSearch] = useState("");
+  const matchesSymbol = (symbol: string) => symbol.toUpperCase().includes(positionSearch.trim().toUpperCase());
   const [planAmendmentMode, setPlanAmendmentMode] = useState(false);
   const [fill, setFill] = useState<Omit<Fill, "id" | "provenance">>({
     trancheId: "A",
@@ -368,19 +380,16 @@ export function TradingWorkspace({
     DEMO_LINKABLE_JOURNAL_TRADES[0]?.journalTradeId ?? "",
   );
   const [linkMessage, setLinkMessage] = useState("");
-  const [brokerState, setBrokerState] = useState<BrokerReadOnlyState>(
-    EMPTY_BROKER_STATE,
-  );
-  const [brokerBusy, setBrokerBusy] = useState(false);
   const restored = useRef(false);
-  const brokerStarted = useRef(false);
   const editorRef = useRef<HTMLElement>(null);
   const positionRef = useRef<HTMLElement>(null);
   const linkRef = useRef<HTMLElement>(null);
 
+  const brokerState = paper?.status?.broker ?? EMPTY_BROKER_STATE;
+  const ownedCampaigns = paper?.status?.campaigns ?? [];
   const brokerPositions = demo
     ? (DEMO_UNLINKED_POSITIONS as UnlinkedPositionInput[])
-    : brokerState.positions;
+    : brokerState.positions.filter(p => !ownedCampaigns.some(c => p.instrumentId === `IBKR-STK:${c.contract.conId}` && c.summary.openQuantity > 0)).map(p => ({ ...p, stale: p.stale || (paper ? !paper.status?.connected : false), associationEligible: paper ? false : p.associationEligible }));
   const linkableJournalTrades = demo
     ? DEMO_LINKABLE_JOURNAL_TRADES
     : positionCampaigns
@@ -442,7 +451,9 @@ export function TradingWorkspace({
           simulated: demo,
         } satisfies DemoPosition];
       });
-      return [...(demo ? DEMO_POSITIONS : []), ...linkedSnapshots].map((item) => {
+      const reconciledAt = Date.parse(paper?.status?.lastReconciled ?? "");
+      const currentEvidence = Boolean(paper?.status?.connected && !paper.status.error && Number.isFinite(reconciledAt) && Date.now() - reconciledAt <= 20000);
+      return [...ownedCampaigns.map(c => paperPosition(c, currentEvidence)), ...[...(demo ? DEMO_POSITIONS : []), ...linkedSnapshots].map((item) => {
         const override = positionOverrides.value[item.campaignId];
         return override
           ? {
@@ -458,8 +469,8 @@ export function TradingWorkspace({
               },
             }
           : item;
-      });
-    }, [associations.value, brokerPositions, demo, positionCampaigns, positionOverrides.value]);
+      })];
+    }, [associations.value, brokerPositions, demo, positionCampaigns, positionOverrides.value, paper?.status]);
   const detail =
     effectivePositions.find((item) => item.campaignId === detailId) ?? null;
   const detailNumbers = detail ? positionNumbers(detail) : null;
@@ -467,48 +478,6 @@ export function TradingWorkspace({
     ? amendments.value.find((item) => item.campaignId === detail.campaignId)
     : undefined;
   const linkingItem = brokerPositions.find((item) => item.id === linkingId) ?? null;
-
-  async function brokerRequest(
-    path: "/v1/ibkr/read-only/refresh" | "/v1/ibkr/read-only/disconnect",
-  ) {
-    setBrokerBusy(true);
-    try {
-      const response = await fetch(path, {
-        method: "POST",
-        cache: "no-store",
-        headers: { "X-Brontide-Local": "1" },
-      });
-      if (!response.ok) throw new Error(`Read-only broker request failed (${response.status}).`);
-      setBrokerState((await response.json()) as BrokerReadOnlyState);
-    } catch (error) {
-      setBrokerState((current) => ({
-        ...current,
-        connectionStatus: current.lastSuccessfulUpdate ? "stale" : "disconnected",
-        dataStatus: current.lastSuccessfulUpdate ? "stale" : "unavailable",
-        positions: current.positions.map((item) => ({ ...item, stale: true })),
-        error: (error as Error).message,
-      }));
-    } finally {
-      setBrokerBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    if (demo || brokerStarted.current) return;
-    brokerStarted.current = true;
-    fetch("/v1/ibkr/read-only", { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Read-only broker status failed (${response.status}).`);
-        return response.json() as Promise<BrokerReadOnlyState>;
-      })
-      .then((value) => {
-        setBrokerState(value);
-        void brokerRequest("/v1/ibkr/read-only/refresh");
-      })
-      .catch((error) => {
-        setBrokerState((value) => ({ ...value, error: (error as Error).message }));
-      });
-  }, [demo]);
 
   useEffect(() => {
     if (recovery.ready && !restored.current) {
@@ -696,6 +665,12 @@ export function TradingWorkspace({
   }
 
   function beginAmendment(item: DemoPosition) {
+    const owned = ownedCampaigns.find(c => c.id === item.campaignId);
+    if (owned) {
+      setAmendmentDefinition(structuredClone(owned.draft?.exitPlan ?? owned.activeExitPlan));
+      setAmendmentSource({ revision: String(owned.revision), quantity: owned.summary.openQuantity });
+      setAmendmentDirty(false); setPositionMessage("Save draft changes, then review before applying."); return;
+    }
     const existing = amendments.value.find(
       (value) => value.campaignId === item.campaignId,
     );
@@ -714,9 +689,13 @@ export function TradingWorkspace({
     );
   }
 
-  function saveAmendment(item: DemoPosition) {
+  async function saveAmendment(item: DemoPosition) {
     if (!amendmentDefinition || !amendmentSource) return;
     try {
+      if (paper && item.paperSummary) {
+        await paper.request(`campaigns/${item.campaignId}/actions`, { action: "save-amendment", revision: Number(amendmentSource.revision), commandId: crypto.randomUUID(), payload: amendmentDefinition });
+        await paper.refresh(); setAmendmentDirty(false); setAmendmentDefinition(null); setPositionMessage("Amendment saved. Review before applying to broker orders."); return;
+      }
       const created = createExitPlanAmendment({
         amendmentId: savedAmendment?.amendmentId ?? crypto.randomUUID(),
         campaignId: item.campaignId,
@@ -760,6 +739,7 @@ export function TradingWorkspace({
   }
 
   function discardAmendment(item: DemoPosition) {
+    if (paper && item.paperSummary) { setAmendmentDefinition(null); setAmendmentDirty(false); setPositionMessage("Unsaved edits discarded. Previously saved amendments remain available for review."); return; }
     if (
       !window.confirm(
         "Discard this unapplied amendment draft? Confirmed position records will not change.",
@@ -857,37 +837,28 @@ export function TradingWorkspace({
     }
   }
 
-  const working = effectivePositions.filter(
+  const visiblePositions = effectivePositions.filter(item => matchesSymbol(item.symbol));
+  const working = visiblePositions.filter(
     (item) => item.status === "Working entry",
   );
-  const openPositions = effectivePositions.filter(
+  const openPositions = visiblePositions.filter(
     (item) => !["Working entry", "Closed"].includes(item.status),
   );
-  const closed = effectivePositions.filter((item) => item.status === "Closed");
+  const closed = visiblePositions.filter((item) => item.status === "Closed");
 
   return (
     <section className="consolidated-trading">
-      {demo && (
-        <div className="simulation-ribbon" role="status">
-          <strong>SIMULATED PREVIEW</strong>
-          <span>
-            Isolated sample records · paper QC remains blocked · no
-            broker-confirmed fills
-          </span>
-        </div>
-      )}
-      <TradePlanner demo={demo} context={context} onChart={onChart} />
+      <TradePlanner key={storageScope} storageScope={storageScope} demo={demo} paper={paper} context={context} onChart={onChart} positionCount={effectivePositions.filter(item => item.status !== "Closed").length} exposure={<><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
       <section
         className="position-command-center"
         aria-labelledby="position-center-title"
       >
         <header className="position-center-head">
           <div>
-            <p className="eyebrow">Saved plans → working entries → positions</p>
+
             <h2 id="position-center-title">Positions</h2>
             <p>
-              Compact broker-shaped state; open a row for execution, risk,
-              protection and exits.
+              Execution, protection and remaining exposure.
             </p>
           </div>
           <div className="position-center-actions">
@@ -902,84 +873,13 @@ export function TradingWorkspace({
             </button>
           </div>
         </header>
-        {demo ? (
+        <label className="position-search">Find symbol<input type="search" aria-label="Find position symbol" placeholder="Symbol" value={positionSearch} onChange={e => setPositionSearch(e.target.value)} /></label>
+        {paper ? null : demo ? (
           <p className="simulation-action-note">
             No broker connection · broker submission disabled.
           </p>
         ) : (
-          <section className="broker-readonly-status" aria-labelledby="broker-status-title">
-            <div>
-              <p className="eyebrow">Paper data · read only</p>
-              <h3 id="broker-status-title">IBKR connection</h3>
-              <span className={`broker-state ${brokerState.dataStatus}`}>
-                {brokerState.connectionStatus}
-              </span>
-            </div>
-            <dl>
-              <div>
-                <dt>Account value</dt>
-                <dd>
-                  {brokerState.account?.available && brokerState.account.value != null && brokerState.account.currency
-                    ? accountMoney(brokerState.account.value, brokerState.account.currency)
-                    : "Unavailable"}
-                </dd>
-                <small>
-                  {brokerState.account
-                    ? `${brokerState.account.maskedId} · ${brokerState.account.source} · ${brokerState.account.currency ?? "currency unavailable"}`
-                    : "No verified account snapshot"}
-                </small>
-              </div>
-              <div>
-                <dt>Last successful update</dt>
-                <dd>{observedTime(brokerState.lastSuccessfulUpdate)}</dd>
-                <small>Manual planner equity and risk defaults are unchanged</small>
-              </div>
-              <div>
-                <dt>Snapshot</dt>
-                <dd>{brokerState.positions.filter((item) => item.snapshotState === "current").length} positions</dd>
-                <small>
-                  Open orders: {brokerState.openOrders.length === 0 ? "0 · completed empty" : brokerState.openOrders.length}
-                </small>
-              </div>
-            </dl>
-            <div className="broker-readonly-actions">
-              <button
-                disabled={brokerBusy}
-                onClick={() => void brokerRequest("/v1/ibkr/read-only/refresh")}
-              >
-                {brokerBusy ? "Refreshing…" : "Refresh paper data"}
-              </button>
-              <button
-                disabled={brokerBusy || brokerState.connectionStatus === "disconnected"}
-                onClick={() => void brokerRequest("/v1/ibkr/read-only/disconnect")}
-              >
-                Disconnect Brontide
-              </button>
-            </div>
-            {brokerState.error && (
-              <p className="broker-refresh-alert" role="alert">
-                {brokerState.error} Last completed positions were retained and marked stale.
-              </p>
-            )}
-            {brokerState.dataStatus === "stale" && !brokerState.error && (
-              <p className="broker-refresh-alert" role="status">
-                Broker data is stale. Displayed positions are retained; no closure is inferred.
-              </p>
-            )}
-            {brokerState.openOrders.length > 0 && (
-              <details className="broker-open-orders">
-                <summary>{brokerState.openOrders.length} read-only open orders</summary>
-                {brokerState.openOrders.map((order) => (
-                  <p key={order.id}>
-                    {order.symbol} · {order.action} {order.quantity} · {order.orderType} {order.timeInForce} · {order.status}
-                  </p>
-                ))}
-              </details>
-            )}
-            <p className="simulation-action-note">
-              TWS Read-Only remains enabled · submissions disabled · refresh does not bind or alter orders.
-            </p>
-          </section>
+          <p className="workspace-notice">Open Brontide on the Windows computer running your paper TWS to connect execution.</p>
         )}
         {errors.length > 0 && (
           <p className="persistence-alert" role="alert">
@@ -987,6 +887,82 @@ export function TradingWorkspace({
             were not overwritten.
           </p>
         )}
+        {demo || paper ? (
+          <>
+            <PositionRows
+              title="Working entries"
+              meta="Not yet positions"
+              items={working}
+              onOpen={openPositionDetail}
+            />
+            <PositionRows
+              title="Open positions"
+              meta="Recorded execution state"
+              items={openPositions}
+              onOpen={openPositionDetail}
+            />
+            <Disclosure title={`Recently closed (${closed.length})`} name="closed-positions" scope={demo ? "demo" : paper?.identity?.userId ?? "account"}><PositionRows
+              title="Recently closed"
+              meta="Zero confirmed open shares"
+              items={closed}
+              onOpen={openPositionDetail}
+            /></Disclosure>
+          </>
+        ) : (
+          <>
+            {effectivePositions.length > 0 && (
+              <PositionRows
+                title="Associated paper positions"
+                meta="Exact persisted associations · snapshot state"
+                items={effectivePositions}
+                onOpen={openPositionDetail}
+              />
+            )}
+            <section aria-labelledby="actual-positions-title">
+              <div className="section-kicker">
+                <h3 id="actual-positions-title">Recorded positions</h3>
+                <span>Manual/imported executions</span>
+              </div>
+              <div className="position-list">
+                {recordedPositions.filter(({plan}) => matchesSymbol(plan.symbol)).map(({ plan, state }) => (
+                  <article className="position-card" key={plan.id}>
+                  <header>
+                    <div>
+                      <b>{plan.symbol}</b>
+                      <span className={`side-pill ${plan.side.toLowerCase()}`}>
+                        {plan.side}
+                      </span>
+                    </div>
+                    <i>{state.status}</i>
+                  </header>
+                  <div className="position-metrics">
+                    <span>
+                      <small>Entered</small>
+                      <strong>{state.entered}</strong>
+                    </span>
+                    <span>
+                      <small>Remaining</small>
+                      <strong>{state.remaining}</strong>
+                    </span>
+                    <span>
+                      <small>Realized</small>
+                      <strong>{money(state.realized, 2)}</strong>
+                    </span>
+                  </div>
+                  <p>
+                    Manual/imported execution records only; broker confirmation
+                    unavailable.
+                  </p>
+                  <button onClick={() => open(plan)}>
+                    Open plan &amp; fills
+                  </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+
         {showSaved && (
           <section
             className="saved-plan-rail"
@@ -997,7 +973,7 @@ export function TradingWorkspace({
               <span>Intent · not positions</span>
             </div>
             <div className="saved-plan-grid">
-              {savedRows.map((row) => (
+              {savedRows.filter(row => matchesSymbol(row.symbol)).map((row) => (
                 <article key={row.id} className="saved-plan-card">
                   <div>
                     <b>{row.symbol}</b>
@@ -1038,82 +1014,6 @@ export function TradingWorkspace({
           </section>
         )}
 
-        {demo ? (
-          <>
-            <PositionRows
-              title="Working entries"
-              meta="Not yet positions"
-              items={working}
-              onOpen={openPositionDetail}
-            />
-            <PositionRows
-              title="Open positions"
-              meta="Recorded execution state"
-              items={openPositions}
-              onOpen={openPositionDetail}
-            />
-            <PositionRows
-              title="Recently closed"
-              meta="Zero confirmed open shares"
-              items={closed}
-              onOpen={openPositionDetail}
-            />
-          </>
-        ) : (
-          <>
-            {effectivePositions.length > 0 && (
-              <PositionRows
-                title="Associated paper positions"
-                meta="Exact persisted associations · snapshot state"
-                items={effectivePositions}
-                onOpen={openPositionDetail}
-              />
-            )}
-            <section aria-labelledby="actual-positions-title">
-              <div className="section-kicker">
-                <h3 id="actual-positions-title">Recorded positions</h3>
-                <span>Manual/imported executions</span>
-              </div>
-              <div className="position-list">
-                {recordedPositions.map(({ plan, state }) => (
-                  <article className="position-card" key={plan.id}>
-                  <header>
-                    <div>
-                      <b>{plan.symbol}</b>
-                      <span className={`side-pill ${plan.side.toLowerCase()}`}>
-                        {plan.side}
-                      </span>
-                    </div>
-                    <i>{state.status}</i>
-                  </header>
-                  <div className="position-metrics">
-                    <span>
-                      <small>Entered</small>
-                      <strong>{state.entered}</strong>
-                    </span>
-                    <span>
-                      <small>Open</small>
-                      <strong>{state.remaining}</strong>
-                    </span>
-                    <span>
-                      <small>Realized</small>
-                      <strong>{money(state.realized, 2)}</strong>
-                    </span>
-                  </div>
-                  <p>
-                    Manual/imported execution records only; broker confirmation
-                    unavailable.
-                  </p>
-                  <button onClick={() => open(plan)}>
-                    Open plan &amp; fills
-                  </button>
-                  </article>
-                ))}
-              </div>
-            </section>
-          </>
-        )}
-
         {(demo || brokerState.lastSuccessfulUpdate || brokerState.positions.length > 0) && (
           <section
             className="unlinked-positions"
@@ -1121,7 +1021,7 @@ export function TradingWorkspace({
           >
             <div className="section-kicker">
               <h3 id="unlinked-title">Unlinked IBKR positions</h3>
-              <span>Explicit association only</span>
+              <span>{paper ? "Read-only · outside this execution ledger" : "Explicit association only"}</span>
             </div>
             {linkMessage && (
               <p className="workspace-notice" role="status">
@@ -1131,7 +1031,7 @@ export function TradingWorkspace({
             {brokerPositions.length === 0 && (
               <p className="workspace-notice">No positions in the latest completed snapshot.</p>
             )}
-            {brokerPositions.map((item) => {
+            {brokerPositions.filter(item => matchesSymbol(item.symbol)).map((item) => {
               const association = associations.value.find(
                 (value) => value.brokerPositionId === item.id,
               );
@@ -1209,10 +1109,13 @@ export function TradingWorkspace({
         )}
       </section>
 
+      } />
+
       {detail && detailNumbers && (
         <PositionDetail
           drawerRef={positionRef}
           item={detail}
+          paperActions={paper && ownedCampaigns.find(c => c.id === detail.campaignId) ? <PaperCampaignActions paper={paper} campaign={ownedCampaigns.find(c => c.id === detail.campaignId)!} /> : undefined}
           numbers={detailNumbers}
           amendment={savedAmendment}
           definition={amendmentDefinition}
@@ -1227,10 +1130,11 @@ export function TradingWorkspace({
           }}
           onSaveAmendment={() => saveAmendment(detail)}
           onDiscardAmendment={() => discardAmendment(detail)}
-          onJournal={() =>
-            detailNumbers.campaign?.journalTradeId &&
-            onOpenJournalTrade?.(detailNumbers.campaign.journalTradeId)
-          }
+          onJournal={() => {
+            const id = detailNumbers.campaign?.journalTradeId;
+            closePositionDetail();
+            if (id) onOpenJournalTrade?.(id);
+          }}
         />
       )}
 
@@ -1660,6 +1564,7 @@ function PositionRows({
           {meta} · {items.length}
         </span>
       </div>
+      {items.length === 0 && <p className="position-empty">No matching {title.toLowerCase()}.</p>}
       <div className="position-list">
         {items.map((item) => {
           const numbers = positionNumbers(item);
@@ -1684,7 +1589,7 @@ function PositionRows({
                   {item.changedInIbkr && <em>Changed in IBKR</em>}
                 </span>
                 <span>
-                  <small>Open</small>
+                  <small>Remaining</small>
                   <strong>{numbers.openQuantity} sh</strong>
                 </span>
                 <span>
@@ -1699,7 +1604,7 @@ function PositionRows({
                     }
                   >
                     {numbers.unrealized == null
-                      ? "Unavailable"
+                      ? <MissingValue reason="Unrealized P&L unavailable; check quote and execution details" />
                       : signedMoney(numbers.unrealized)}
                   </strong>
                 </span>
@@ -1723,6 +1628,7 @@ function PositionRows({
 
 const PositionDetail = ({
   drawerRef,
+  paperActions,
   item,
   numbers,
   amendment,
@@ -1737,6 +1643,7 @@ const PositionDetail = ({
   onJournal,
 }: {
   drawerRef: React.RefObject<HTMLElement | null>;
+  paperActions?: React.ReactNode;
   item: DemoPosition;
   numbers: ReturnType<typeof positionNumbers>;
   amendment?: StoredAmendment;
@@ -1751,16 +1658,16 @@ const PositionDetail = ({
   onJournal: () => void;
 }) => {
   const risk = numbers.risk;
+  const executionTime = numbers.campaign?.executions[0]?.occurredAt;
+  const riskTime = executionTime && Number.isFinite(Date.parse(executionTime)) ? executionTime : item.simulated ? "2026-09-08T14:00:00Z" : null;
       const frozen =
-        numbers.averageEntry && item.fixedInitialStop && item.fixedInitialStop > 0
+        numbers.averageEntry && item.fixedInitialStop && item.fixedInitialStop > 0 && riskTime
       ? freezeRiskReference({
           basis: "Execution",
           direction: item.direction,
           entryPrice: numbers.averageEntry,
           fixedStopPrice: item.fixedInitialStop,
-          frozenAt:
-            numbers.campaign?.executions[0]?.occurredAt ??
-            "2026-09-08T14:00:00Z",
+          frozenAt: riskTime,
         })
       : null;
   return (
@@ -1777,7 +1684,7 @@ const PositionDetail = ({
           <p className="eyebrow">
             {item.simulated
               ? "Recorded position · simulated source"
-              : "Associated position · read-only IBKR snapshot"}
+              : item.paperSummary ? "TWS paper · confirmed execution ledger" : "Associated position · read-only IBKR snapshot"}
           </p>
           <h2>
             {item.symbol}{" "}
@@ -1860,7 +1767,7 @@ const PositionDetail = ({
           </span>
           <span>
             <small>Confirmed-stop downside</small>
-            <b>{risk ? money(risk.confirmedStopRisk, 2) : "Unavailable"}</b>
+            <b>{item.paperSummary && item.protection.state === "Unknown" ? "Unavailable" : risk ? money(risk.confirmedStopRisk, 2) : "Unavailable"}</b>
           </span>
           <span>
             <small>Total remaining risk</small>
@@ -1870,7 +1777,7 @@ const PositionDetail = ({
                 : money(risk.totalRemainingRisk, 2)}
             </b>
             <i>
-              {risk?.unprotectedQuantity
+              {item.paperSummary && item.protection.state === "Unknown" ? "Protection requires reconciliation" : risk?.unprotectedQuantity
                 ? `${risk.unprotectedQuantity} unprotected shares`
                 : "Confirmed stops only"}
             </i>
@@ -1911,7 +1818,7 @@ const PositionDetail = ({
         <div className="section-kicker">
           <h3>Protection, targets and runners</h3>
           <span>
-            {item.protection.confirmed
+            {item.protection.state === "Complete" ? "No remaining exposure" : item.protection.confirmed
               ? "Recorded source confirmation"
               : "Not confirmed"}
           </span>
@@ -1955,11 +1862,11 @@ const PositionDetail = ({
                 <span>
                   {execution.quantity} @ {money(execution.price, 2)}
                 </span>
-                <span>{new Date(execution.occurredAt).toLocaleString()}</span>
+                <span>{execution.occurredAt ? new Date(execution.occurredAt).toLocaleString() : "Broker time unavailable"}</span>
                 <i>
                   {execution.provenance === "manual-import"
                     ? "Changed in IBKR"
-                    : "Simulated adapter"}
+                    : item.paperSummary && execution.provenance === "IBKR" ? "IBKR paper execution" : "Simulated adapter"}
                 </i>
               </div>
             ))}
@@ -1969,7 +1876,7 @@ const PositionDetail = ({
         <p className="workspace-notice">
           {item.snapshotOnly
             ? "Historical fills, exited quantity, realized P&L and initial risk are unavailable. Current quantity and average entry come only from the identified position snapshot."
-            : "No confirmed executions are recorded for this working entry."}
+            : "No confirmed executions are recorded for this position."}
         </p>
       )}
       <div className="editor-actions">
@@ -1985,6 +1892,7 @@ const PositionDetail = ({
           </button>
         )}
       </div>
+      {paperActions}
       {definition && (
         <section className="position-amendment">
           <div className="section-kicker">
@@ -2038,7 +1946,7 @@ const PositionDetail = ({
       <small className="simulation-label">
         {item.simulated
           ? "Simulation · not broker confirmation. No broker submission path is enabled."
-          : "Read-only position snapshot · historical fills, realized P&L and protection remain unavailable unless separately recorded. No broker submission path is enabled."}
+          : item.paperSummary ? "Paper execution ledger · broker protection and managed-exit status are shown separately." : "Read-only position snapshot · historical fills, realized P&L and protection remain unavailable unless separately recorded. No broker submission path is enabled."}
       </small>
     </aside>
   );

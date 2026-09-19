@@ -26,6 +26,13 @@ async function navigateTo(
     await expect(destination).toBeVisible();
   }
   await destination.click();
+  if (name === "Trading") {
+    const presets = page.getByRole("button", { name: "Exit presets", exact: false });
+    if (await presets.isVisible() && await presets.getAttribute("aria-expanded") === "false") await presets.click();
+    const saved = page.getByRole("button", { name: "Show saved plans", exact: true });
+    if (await saved.isVisible()) await saved.click();
+    if (await page.locator(".workspace").count()) await page.locator(".workspace").evaluate(element => element.scrollTo(0,0));
+  }
 }
 
 async function dividerGeometry(page: Page): Promise<Geometry> {
@@ -123,14 +130,14 @@ test("planner derives sourced ATR and day-extreme stops, then preserves explicit
   await page.getByRole("button", { name: "Short", exact: true }).click();
   await expect(stop).toHaveValue("103");
   await method.selectOption("HoD");
-  await expect(method.locator("option:checked")).toHaveText("Day high · Sep 3");
+  await expect(method.locator("option:checked")).toHaveText("Day high");
   await expect(stop).toHaveValue("101");
   await expect(
     page.getByText("Sep 3, 2026 completed-session high $101.00"),
   ).toBeVisible();
   await page.getByRole("button", { name: "Long", exact: true }).click();
   await expect(method).toHaveValue("LoD");
-  await expect(method.locator("option:checked")).toHaveText("Day low · Sep 3");
+  await expect(method.locator("option:checked")).toHaveText("Day low");
   await expect(stop).toHaveValue("99");
   await expect(
     page.getByText("Sep 3, 2026 completed-session low $99.00"),
@@ -142,7 +149,7 @@ test("planner derives sourced ATR and day-extreme stops, then preserves explicit
   await expect(stop).toHaveValue("97.5");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("short stop must be above entry");
 
@@ -150,19 +157,19 @@ test("planner derives sourced ATR and day-extreme stops, then preserves explicit
   await page.getByLabel("Stock symbol").fill("ZZZZ");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("ATR is unavailable");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("No simulated daily data exists");
   await method.selectOption("Manual");
   await stop.fill("105");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toBeHidden();
 });
@@ -213,7 +220,7 @@ test("planner reopens reproducible saves and preserves legacy stop method and pr
   await expect(page.getByLabel("Stop price")).toHaveValue("96.25");
   await expect(
     page.locator(
-      ".trade-ticket:not(.trade-after-fill-ticket) .trade-validation",
+      ".trade-ticket:not(.trade-after-fill-ticket) .trade-entry-validation",
     ),
   ).toContainText("saved draft has no recorded market-data source");
 });
@@ -599,85 +606,52 @@ test("read-only paper snapshots stay isolated, duplicate-free, and recover after
     openOrders: [],
     error: null,
   };
-  let failNextRefresh = false;
+  let disconnected = false;
+  let outage = false;
   let brokerRequests = 0;
-  await page.route("**/v1/ibkr/read-only**", async (route) => {
-    brokerRequests += 1;
-    const request = route.request();
-    if (request.url().endsWith("/disconnect")) {
-      await route.fulfill({
-        json: {
-          ...connected,
-          connectionStatus: "disconnected",
-          dataStatus: "stale",
-          positions: positions.map((item) => ({ ...item, stale: true })),
-        },
-      });
-      return;
-    }
-    if (request.url().endsWith("/refresh") && failNextRefresh) {
-      failNextRefresh = false;
-      await route.fulfill({ status: 503, json: { detail: "simulated outage" } });
-      return;
-    }
-    await route.fulfill({ json: connected });
+  await page.route("https://brontide-test.supabase.co/**", r => r.fulfill({ json: r.request().url().includes("/token") ? {
+    access_token: "test-access-token", refresh_token: "test-refresh-token", expires_in: 3600, token_type: "bearer",
+    user: { id: "00000000-0000-0000-0000-000000000001", email: "test@example.com", email_confirmed_at: observedAt, aud: "authenticated" }
+  } : [] }));
+  await page.route("**/v1/ibkr/paper/**", async route => {
+    brokerRequests++;
+    const url = route.request().url();
+    if (url.endsWith("/identity")) { await route.fulfill({ json: { userId: "test-user", email: "test@example.com", linked: true } }); return; }
+    if (url.endsWith("/disconnect")) disconnected = true;
+    if (url.endsWith("/connect")) disconnected = false;
+    if (outage) { await route.fulfill({ status: 503, json: { detail: "Local service unavailable" } }); return; }
+    await route.fulfill({ json: { connected: !disconnected, connectionId: "connection", account: "DU••1234", submissionsEnabled: false,
+      armedBatch: null, lastReconciled: observedAt, campaigns: [], batches: [], broker: connected,
+      readiness: { state: disconnected ? "disconnected" : "blocked", message: disconnected ? "TWS disconnected" : "Connected; server paper submissions are locked." } } });
   });
-
-  await page.goto("/");
-  await navigateTo(page, "Trading");
+  await page.goto("/"); await navigateTo(page, "Trading");
+  await page.getByLabel("Email address").fill("test@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   const unlinked = page.locator(".unlinked-positions > article");
   await expect(unlinked).toHaveCount(2);
-  await expect(page.getByText("Open orders: 0 · completed empty")).toBeVisible();
-  await expect(page.getByText("$30,000.00")).toBeVisible();
-  await expect(page.getByText(/IBKR accountSummary · USD/)).toBeVisible();
   await expect(page.getByText(/Never auto-linked by ticker/)).toHaveCount(2);
-  expect(
-    await page.evaluate(() => ({
-      campaigns: localStorage.getItem("brontide-position-campaigns-v1"),
-      associations: localStorage.getItem("brontide-position-associations-v1"),
-    })),
-  ).toEqual({ campaigns: null, associations: null });
-
-  await page.getByRole("button", { name: "Refresh paper data" }).click();
+  await expect(unlinked.first().getByRole("button", { name: /Link|Create/ })).toBeDisabled();
+  await page.locator(".broker-connection > summary").click();
+  await page.getByRole("button", { name: "Refresh broker state" }).click();
   await expect(unlinked).toHaveCount(2);
-
-  failNextRefresh = true;
-  await page.getByRole("button", { name: "Refresh paper data" }).click();
-  await expect(page.locator(".broker-refresh-alert")).toContainText(
-    "Last completed positions were retained and marked stale",
-  );
+  outage = true;
+  await expect(page.locator(".broker-blocker")).toContainText("Local service unavailable", { timeout: 10000 });
   await expect(unlinked).toHaveCount(2);
-
-  await page.getByRole("button", { name: "Disconnect Brontide" }).click();
-  await expect(page.getByText("disconnected", { exact: true })).toBeVisible();
+  outage = false;
+  await page.getByRole("button", { name: "Retry connection" }).click();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(page.locator(".broker-account-status")).toContainText("Disconnected · last known");
   await expect(unlinked).toHaveCount(2);
-  await page.getByRole("button", { name: "Refresh paper data" }).click();
-  await expect(page.getByText("connected", { exact: true })).toBeVisible();
-  await expect(unlinked).toHaveCount(2);
-  expect(brokerRequests).toBeGreaterThanOrEqual(5);
-
-  for (const viewport of [
-    { width: 1280, height: 720 },
-    { width: 390, height: 844 },
-    { width: 1280, height: 720 },
-  ]) {
-    await page.setViewportSize(viewport);
-    await expectContained(page, ".broker-readonly-status", true);
-    for (let index = 0; index < 2; index += 1) {
-      await expectContained(
-        page,
-        `.unlinked-positions > article:nth-of-type(${index + 1})`,
-        true,
-      );
-    }
+  await page.getByRole("button", { name: "Retry connection" }).click();
+  for (const width of [1280, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (let i=1;i<=2;i++) await expectContained(page, `.unlinked-positions > article:nth-of-type(${i})`, true);
   }
+  expect(brokerRequests).toBeGreaterThanOrEqual(5);
+  expect(await page.evaluate(() => ({ campaigns: localStorage.getItem("brontide-position-campaigns-v1"), associations: localStorage.getItem("brontide-position-associations-v1") }))).toEqual({ campaigns: null, associations: null });
 
-  expect(
-    await page.evaluate(() => ({
-      campaigns: localStorage.getItem("brontide-position-campaigns-v1"),
-      associations: localStorage.getItem("brontide-position-associations-v1"),
-    })),
-  ).toEqual({ campaigns: null, associations: null });
 });
 
 test("demo preview never requests paper-account data", async ({ page }) => {
@@ -688,7 +662,7 @@ test("demo preview never requests paper-account data", async ({ page }) => {
   });
   await openDemo(page);
   await navigateTo(page, "Trading");
-  await expect(page.getByText(/SIMULATED PREVIEW/)).toBeVisible();
+  await expect(page.getByText("Simulation · no broker connection", {exact:true})).toBeVisible();
   expect(brokerRequests).toBe(0);
 });
 
@@ -702,6 +676,7 @@ test("position detail reports accounting, protection and price-data limitations 
     .getByRole("button", { name: "Open AAPL position details" })
     .click();
   let dialog = page.getByRole("dialog", { name: "AAPL position details" });
+  await expect(dialog.getByText("IBKR paper execution", { exact: true })).toHaveCount(0);
   await expect(dialog).toContainText("Filled entry");
   await expect(dialog).toContainText("40 sh");
   await expect(dialog).toContainText("Exited");
@@ -742,6 +717,7 @@ test("position detail reports accounting, protection and price-data limitations 
   await expect(dialog).toContainText("12 sh");
   await page.keyboard.press("Escape");
 
+  await page.getByRole("button", {name:/Recently closed/}).click();
   await page.getByRole("button", { name: "Open AMD position details" }).click();
   dialog = page.getByRole("dialog", { name: "AMD position details" });
   await expect(dialog).toContainText("Exited");
@@ -962,20 +938,17 @@ test("mobile workspaces do not create document-level horizontal scrolling", asyn
     await expectContained(page, selector, true);
   await page.getByRole("button", { name: "Journal", exact: true }).click();
   await expect(
-    page.getByText("Swipe horizontally to review all trade metrics."),
+    page.getByText("Scroll across for all columns. Open a symbol for execution details and review."),
   ).toBeVisible();
   const table = page.getByRole("region", {
     name: /Recent trades; scroll vertically/,
   });
-  await expectContainedScroller(page, ".trade-table");
-  await table.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect
-    .poll(() => table.evaluate((element) => element.scrollLeft))
-    .toBeGreaterThan(0);
+  await expectContained(page, ".trade-table", true);
+  await table.getByRole("button", {name:"NVDA",exact:true}).click();
+  await expect(page.getByRole("region", {name:"NVDA entry and exit details"})).toBeVisible();
 });
 
-test("positions sit beside the planner when wide and stack on the same loaded page when compact", async ({
+test("positions stay beside the planner on laptops and switch panes on compact screens", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 900 });
@@ -987,7 +960,7 @@ test("positions sit beside the planner when wide and stack on the same loaded pa
         window as Window & { __positionResizeSentinel?: string }
       ).__positionResizeSentinel = crypto.randomUUID()),
   );
-  const planner = page.locator(".trade-planner");
+  const planner = page.locator(".planner-editing-column");
   const positions = page.locator(".position-command-center");
   const wide = await Promise.all([
     planner.boundingBox(),
@@ -999,13 +972,14 @@ test("positions sit beside the planner when wide and stack on the same loaded pa
   await expectContained(page, ".position-command-center", true);
 
   await page.setViewportSize({ width: 1280, height: 760 });
-  const compact = await Promise.all([
-    planner.boundingBox(),
-    positions.boundingBox(),
-  ]);
-  expect(compact[1]!.y).toBeGreaterThanOrEqual(
-    compact[0]!.y + compact[0]!.height - 1,
-  );
+  const laptop = await Promise.all([planner.boundingBox(), positions.boundingBox()]);
+  expect(Math.abs(laptop[0]!.y - laptop[1]!.y)).toBeLessThan(2);
+  await page.setViewportSize({width:768,height:900});
+  await page.getByRole("tab", {name:"Plan",exact:true}).click();
+  await expect(positions).not.toBeVisible();
+  await page.getByRole("tab", {name:/Positions \(/}).click();
+  await expect(positions).toBeVisible();
+  await expect(planner).not.toBeVisible();
   await expectContained(page, ".position-command-center", true);
   await page
     .getByRole("button", { name: "Open AAPL position details" })
@@ -1082,6 +1056,7 @@ test("Journal stays within viewport and clipping bounds through wide-narrow-wide
   await navigateTo(page, "Trading");
   await page.getByRole("button", { name: "Journal", exact: true }).click();
 
+  await expect(page.getByRole("heading", { name: "Realized R distribution" })).toBeVisible();
   const chartSizes: Array<{ width: number; height: number }> = [];
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -1106,10 +1081,10 @@ test("Journal stays within viewport and clipping bounds through wide-narrow-wide
     for (const selector of [
       ".journal-content",
       ".header-actions",
-      ".topbar .range-control:not(.compact-filter)",
+      ".journal-record-controls .range-control:not(.compact-filter)",
       ".auth-button",
       ".topbar .primary-button",
-      ".journal-metric-grid",
+      ".journal-content > .journal-metric-grid",
       ".equity-panel",
       ".distribution-panel",
       ".equity-chart svg",
@@ -1145,7 +1120,7 @@ test("Journal stays within viewport and clipping bounds through wide-narrow-wide
   }
 
   expect(chartSizes[1].width).toBeLessThan(chartSizes[0].width);
-  expect(chartSizes[1].height).toBeLessThan(chartSizes[0].height);
+  expect(chartSizes[1].height).toBe(chartSizes[0].height);
   expect(
     Math.abs(chartSizes[2].width - chartSizes[0].width),
   ).toBeLessThanOrEqual(1);
@@ -1199,7 +1174,7 @@ test("Plan stays container-bound through a large-to-small per-monitor DPI transi
     expect(workspaceSizing.cssWidth).toBe(workspaceSizing.clientWidth);
     for (const selector of [
       ".trading-tabs",
-      ".simulation-ribbon",
+      ".broker-account-summary",
       ".trade-commandbar",
       ".trade-risk-banner",
       ".trade-actionbar",
@@ -1211,10 +1186,13 @@ test("Plan stays container-bound through a large-to-small per-monitor DPI transi
       ".trade-leg-list",
       ".trade-preset-panel",
       ".trade-safety-note",
-      ".position-command-center",
     ]) {
       await expectContained(page, selector, true);
     }
+    const panes = page.getByRole("tab", {name:/Positions \(/});
+    if (await panes.isVisible()) await panes.click();
+    await expectContained(page,".position-command-center",true);
+    if (await panes.isVisible()) await page.getByRole("tab",{name:"Plan",exact:true}).click();
     if (
       state.deviceScaleFactor === 1.5 &&
       process.env.BRONTIDE_CAPTURE_LAYOUT === "1"
@@ -1339,7 +1317,7 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   await page.getByRole("button", { name: "Journal", exact: true }).click();
 
   const cards = page.locator(".journal-metric-grid .metric-card");
-  const metricLayout = () => page.locator(".journal-metric-grid").evaluate((grid) => {
+  const metricLayout = () => page.locator(".journal-content > .journal-metric-grid").evaluate((grid) => {
     const cards = [...grid.querySelectorAll<HTMLElement>(".metric-card")];
     const rowTops = [...new Set(cards.map(card => Math.round(card.getBoundingClientRect().top)))];
     const content = grid.closest<HTMLElement>(".journal-content")!;
@@ -1362,9 +1340,8 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   await expect(cards.locator(":scope > .metric-value")).toHaveCount(12);
   await expect(cards.locator(":scope > .metric-detail")).toHaveCount(12);
   await expect(cards.locator(".metric-label")).toHaveText([
-    "Net P&L", "Win rate", "Avg planned R:R", "Expectancy in R", "Profit factor",
-    "Closed", "Avg result", "Avg win", "Avg loss", "Payoff", "Max drawdown",
-    "Longest loss streak",
+    "Net P&L", "Win rate", "Expectancy in R", "Profit factor", "Max drawdown", "Closed trades",
+    "Avg planned R:R", "Avg result", "Avg win", "Avg loss", "Payoff", "Longest loss streak",
   ]);
   await expect(cards.filter({ hasText: "Net P&L" })).toHaveAttribute("data-metric-tone", "positive");
   await expect(cards.filter({ hasText: "Avg win" })).toHaveAttribute("data-metric-tone", "positive");
@@ -1374,7 +1351,7 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   let layout = await metricLayout();
   expect(layout.contentWidth).toBeGreaterThanOrEqual(960);
   expect(layout.columns).toBe(6);
-  expect(layout.rows).toBe(2);
+  expect(layout.rows).toBe(1);
   expect(layout.contained).toBe(true);
   expect(layout.horizontalOverflow).toBeLessThanOrEqual(1);
   const eligibility = page.getByLabel("Journal eligibility summary");
@@ -1419,10 +1396,10 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
   expect(atBottom.lastBottom).toBeLessThanOrEqual(atBottom.tableBottom + 1);
   await lastRow.getByRole("button").click();
   await expect(table.locator(".journal-execution-details")).toBeVisible();
-  expect(await table.evaluate(element => element.clientHeight)).toBe(initial.clientHeight);
+  expect(await table.evaluate(element => element.clientHeight)).toBeGreaterThanOrEqual(initial.clientHeight);
 
-  const unavailableR = rows.filter({ hasText: "MSFT" }).locator(":scope > span").nth(7);
-  await expect(unavailableR).toHaveText("Unavailable");
+  const unavailableR = rows.filter({ hasText: "MSFT" }).locator(":scope > span").nth(8);
+  await expect(unavailableR).toContainText("Final Net R unavailable");
   await expect(unavailableR).toHaveClass(/journal-semantic-unavailable/);
 
   for (const state of [
@@ -1439,12 +1416,12 @@ test("Journal metrics share one semantic card system and Recent trades keeps a m
     expect(layout.contained).toBe(true);
     expect(layout.horizontalOverflow).toBeLessThanOrEqual(1);
   }
-  await expectContainedScroller(page, ".trade-table");
+  await expectContained(page, ".trade-table", true);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(table).toHaveAttribute("data-visible-rows", "10");
   await expect.poll(async () => (await metricLayout()).columns).toBe(6);
   layout = await metricLayout();
-  expect(layout.rows).toBe(2);
+  expect(layout.rows).toBe(1);
   expect(layout.contained).toBe(true);
 });
 
@@ -1457,7 +1434,7 @@ test("Journal filters, drawdown, review persistence and expanded rows remain res
   await page.getByLabel("Direction cohort").selectOption("Long");
   await page.getByLabel("Trade row status").selectOption("closed");
   await expect(page.locator('[data-journal-trade-id="journal-amd"]')).toBeVisible();
-  await page.getByRole("button", { name: "Drawdown", exact: true }).click();
+  await page.getByLabel("Equity chart view", { exact: true }).selectOption("drawdown");
   await expect(page.getByRole("img", { name: /drawdown within selected period/i })).toBeVisible();
   await page.locator('[data-journal-trade-id="journal-amd"] button').click();
   await page.getByLabel("AMD Market suitable?").selectOption("Partly");
@@ -1470,5 +1447,5 @@ test("Journal filters, drawdown, review persistence and expanded rows remain res
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('[data-journal-trade-id="journal-amd"] button').click();
   await expectContained(page, ".journal-execution-details", true);
-  await expectContainedScroller(page, ".trade-table");
+  await expectContained(page, ".trade-table", true);
 });

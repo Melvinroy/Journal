@@ -9,6 +9,10 @@ import {
 } from "../lib/local-trade-migration";
 import { CatalystDashboard } from "./CatalystDashboard";
 import { ScansDashboard } from "./ScansDashboard";
+import { ScannerDashboard } from "./ScannerDashboard";
+import { usePaperExecution } from "./usePaperExecution";
+import "./trading-refinement.css";
+import { paperJournalRow } from "../lib/paper-execution";
 import { BacktestDashboard } from "./BacktestDashboard";
 import { ResearchWorkspace } from "./ResearchWorkspace";
 import {
@@ -17,7 +21,7 @@ import {
 } from "./TradingWorkspace";
 import { useBrowserStore } from "../lib/use-browser-store";
 import { ChartDashboard } from "./ChartDashboard";
-import { withAuthTimeout } from "../lib/auth-ready";
+import { withAuthTimeout, readWithClockRetry } from "../lib/auth-ready";
 import type { MarketContext } from "../lib/workspace-state";
 import { demoStorageKey } from "../lib/review-demo";
 import { demoJournalRows, journalRowFromCampaign } from "../lib/trading-demo";
@@ -36,6 +40,7 @@ import {
   journalSemanticClass,
   journalSemanticTone,
 } from "../lib/journal-presentation";
+import { Disclosure, MissingValue } from "./WorkspacePresentation";
 import { MetricCard } from "./MetricCard";
 
 type Grade = "A" | "B" | "C";
@@ -318,12 +323,19 @@ function formatMoney(value: number, showPlus = true) {
   return `${sign}$${Math.abs(Math.round(value)).toLocaleString()}`;
 }
 
+function recordMoney(id: string, value: number, showPlus = true, maximumFractionDigits = 2) {
+  if (!id.startsWith("paper:")) return formatMoney(value, showPlus);
+  const sign = value < 0 ? "−" : showPlus ? "+" : "";
+  return `${sign}$${Math.abs(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits})}`;
+}
+
 function formatR(value: number) {
   if (!Number.isFinite(value)) return "—";
   return `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value).toFixed(value % 1 === 0 ? 1 : 2)}R`;
 }
 
 function shortDate(value: string) {
+  if (!value || !Number.isFinite(Date.parse(value))) return "Date unavailable";
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -512,6 +524,7 @@ function AuthScreen({
           <p className="eyebrow">Brontide</p>
           <h2>{title}</h2>
           <p className="auth-subtitle">{subtitle}</p>
+          {process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID && <p className="preview-identity" data-preview-identifier={process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID} aria-label={`Preview revision ${process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID}`}>Preview {process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID}</p>}
           <form onSubmit={submit}>
             {mode !== "recovery" && (
               <label>
@@ -831,7 +844,24 @@ function SetupScreen({
   );
 }
 
+function useJournalChartSize() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 760, height: 260 });
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setSize({ width, height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return { ref, ...size };
+}
+
 function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode; view: EquityView }) {
+  const { ref, width, height } = useJournalChartSize();
   const ordered = [...trades].sort(
     (a, b) =>
       (a.closedAt ?? a.date).localeCompare(b.closedAt ?? b.date) ||
@@ -853,9 +883,7 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
   if (!cumulative.length)
     return <div className="empty-chart">No trades in this period.</div>;
 
-  const width = 760;
-  const height = 220;
-  const left = 46;
+  const left = 64;
   const right = 14;
   const top = 15;
   const bottom = 30;
@@ -866,7 +894,7 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
   const paddedMax = max + spread * 0.12;
   const x = (index: number) =>
     left +
-    (index / Math.max(cumulative.length - 1, 1)) * (width - left - right);
+    (cumulative.length === 1 ? 0.5 : index / (cumulative.length - 1)) * (width - left - right);
   const y = (value: number) =>
     top +
     ((paddedMax - value) / (paddedMax - paddedMin)) * (height - top - bottom);
@@ -879,7 +907,7 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
   );
 
   return (
-    <div className="equity-chart">
+    <div className="equity-chart" ref={ref}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -907,8 +935,8 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
               className="axis-label"
             >
               {mode === "dollar"
-                ? `$${Math.round(tick / 100) / 10}k`
-                : `${tick.toFixed(0)}R`}
+                ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(tick)
+                : `${new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(tick)}R`}
             </text>
           </g>
         ))}
@@ -919,8 +947,8 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
           y2={y(0)}
           className="zero-line"
         />
-        <polygon points={area} fill="url(#equity-area)" />
-        <polyline points={points} className="equity-line" />
+        {cumulative.length > 1 && <polygon points={area} fill="url(#equity-area)" />}
+        {cumulative.length > 1 && <polyline points={points} className="equity-line" />}
         {cumulative.map((value, index) => (
           <circle
             key={ordered[index].id}
@@ -939,9 +967,9 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
             </title>
           </circle>
         ))}
-        <text x={left} y={height - 8} className="axis-label">
+        {ordered.length > 1 && <text x={left} y={height - 8} className="axis-label">
           {shortDate(ordered[0].date)}
-        </text>
+        </text>}
         <text
           x={(left + width - right) / 2}
           y={height - 8}
@@ -950,20 +978,21 @@ function EquityChart({ trades, mode, view }: { trades: Trade[]; mode: EquityMode
         >
           {shortDate(ordered[Math.floor(ordered.length / 2)].date)}
         </text>
-        <text
+        {ordered.length > 1 && <text
           x={width - right}
           y={height - 8}
           textAnchor="end"
           className="axis-label"
         >
           {shortDate(ordered[ordered.length - 1].date)}
-        </text>
+        </text>}
       </svg>
     </div>
   );
 }
 
 function DistributionChart({ trades }: { trades: Trade[] }) {
+  const { ref, width, height } = useJournalChartSize();
   if (!trades.length)
     return <div className="empty-chart">No outcomes in this period.</div>;
   const values = trades.map((trade) => trade.r);
@@ -988,13 +1017,11 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
     bins[Math.max(0, Math.min(raw, bins.length - 1))].count += 1;
   });
 
-  const width = 560;
-  const height = 300;
-  const left = 24;
-  const right = 4;
-  const top = 28;
-  const chartBottom = 182;
-  const rugTop = 238;
+  const left = 32;
+  const right = 18;
+  const top = 40;
+  const chartBottom = height - 100;
+  const rugTop = height - 42;
   const maxCount = Math.max(...bins.map((bin) => bin.count), 1);
   const plotWidth = width - left - right;
   const xValue = (value: number) =>
@@ -1009,7 +1036,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
   );
 
   return (
-    <div className="distribution-chart">
+    <div className="distribution-chart" ref={ref}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -1092,7 +1119,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
         </text>
         <text
           x={Math.max(xValue(med) - 4, 48)}
-          y={23}
+          y={Math.abs(xValue(mean) - xValue(med)) < 90 ? 35 : 23}
           textAnchor="end"
           className="reference-label"
         >
@@ -1151,7 +1178,7 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
 export default function Home() {
   const previewIdentity = process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID;
   type View =
-    "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Backtest";
+    "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Scanner" | "Backtest";
   const [active, setActive] = useState<View>("Charts");
   const navigation = useBrowserStore<{ active: View }>(
     "brontide-navigation-v2",
@@ -1166,22 +1193,27 @@ export default function Home() {
           "Trade",
           "Charts",
           "Scans",
+          "Scanner",
           "Backtest",
         ].includes(item.active ?? "")
       );
     },
   );
   useEffect(() => {
-    if (navigation.ready) setActive(navigation.value.active);
+    if (navigation.ready) {
+      const query = new URLSearchParams(window.location.search);
+      setActive(query.get("paper") === "1" && query.get("demo") !== "1" ? "Trade" : navigation.value.active);
+    }
   }, [navigation.ready]);
   const selectView = (next: View) => {
     setActive(next);
     navigation.save({ active: next });
   };
   const [chartContext, setChartContext] = useState<MarketContext>();
+  const [chartReturnView, setChartReturnView] = useState<View>("Scans");
   const [planContext, setPlanContext] = useState<MarketContext>();
   const primary =
-    active === "Scans" || active === "Catalyst"
+    active === "Scans" || active === "Scanner" || active === "Catalyst"
       ? "Discover"
       : active === "Backtest"
         ? "Strategies"
@@ -1199,13 +1231,14 @@ export default function Home() {
             : "Charts",
     );
   const openChart = (context: MarketContext) => {
+    setChartReturnView(active);
     setChartContext(context);
     selectView("Charts");
   };
   const localWorkspace =
     process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1" ||
     process.env.NEXT_PUBLIC_BRONTIDE_UI_TEST_LOCAL === "1";
-  const [trades, setTrades] = useState<Trade[]>([]);
+  const [tradeBucket, setTradeBucket] = useState<{ owner: string; rows: Trade[] }>({ owner: "signed-out", rows: [] });
   const [modal, setModal] = useState(false);
   const journalModalRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -1216,6 +1249,7 @@ export default function Home() {
   const [recovering, setRecovering] = useState(false);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudError, setCloudError] = useState("");
+  const [cloudReload, setCloudReload] = useState(0);
   const [importTrades, setImportTrades] = useState<Trade[]>([]);
   const [importDismissed, setImportDismissed] = useState(false);
   const [range, setRange] = useState<RangeKey>("30");
@@ -1223,28 +1257,43 @@ export default function Home() {
   const [equityView, setEquityView] = useState<EquityView>("equity");
   const [setupFilter, setSetupFilter] = useState("all");
   const [directionFilter, setDirectionFilter] = useState("all");
+  const [journalSource, setJournalSource] = useState("all");
+  const [journalSearch, setJournalSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [todayLabel, setTodayLabel] = useState("Trading overview");
   const [reportingTimezone, setReportingTimezone] = useState("Local timezone");
   const [greeting, setGreeting] = useState("Welcome back, Melvin");
   const [demoMode, setDemoMode] = useState(false);
+  const tradeOwner = demoMode ? "demo" : session?.user.id ?? "signed-out";
+  const currentTradeOwner = useRef(tradeOwner);
+  currentTradeOwner.current = tradeOwner;
+  const trades = tradeBucket.owner === tradeOwner ? tradeBucket.rows : [];
+  function setTrades(update: Trade[] | ((previous: Trade[]) => Trade[])) {
+    if (currentTradeOwner.current !== tradeOwner) return;
+    setTradeBucket(previous => ({ owner: tradeOwner, rows: typeof update === "function"
+      ? update(previous.owner === tradeOwner ? previous.rows : []) : update }));
+  }
+  const paper = usePaperExecution(session?.access_token, localWorkspace && !demoMode);
+  const tradingScope = demoMode ? "demo" : paper.enabled ? `paper:${paper.identity?.userId ?? `pending-${session?.user.id ?? "signed-out"}`}:${paper.identity?.accountBinding ?? "unlinked"}` : `planning:${session?.user.id ?? "signed-out"}`;
+  const tradingStorageKey = (key: string) => demoMode ? demoStorageKey(key, true) : `${key}:scope:${tradingScope}`;
   const positionCampaignStore = useBrowserStore<TradeCampaign[]>(
-    demoStorageKey("brontide-position-campaigns-v1", demoMode),
+    tradingStorageKey("brontide-position-campaigns-v1"),
     EMPTY_POSITION_CAMPAIGNS,
     validSnapshotCampaigns,
   );
   const journalCampaignStore = useBrowserStore<TradeCampaign[]>(
-    demoStorageKey("brontide-journal-campaigns-v1", demoMode),
+    tradingStorageKey("brontide-journal-campaigns-v1"),
     EMPTY_POSITION_CAMPAIGNS,
     validJournalCampaigns,
   );
   const reviewStore = useBrowserStore<Record<string, JournalReview>>(
-    demoStorageKey("brontide-journal-reviews-v1", demoMode),
+    tradingStorageKey("brontide-journal-reviews-v1"),
     EMPTY_REVIEWS,
     validReviews,
   );
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, JournalReview>>({});
   const [reviewMessage, setReviewMessage] = useState<Record<string, string>>({});
+  useEffect(() => { setReviewDrafts({}); setReviewMessage({}); }, [tradingScope]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupPreview, setSetupPreview] = useState(false);
   const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
@@ -1356,7 +1405,7 @@ export default function Home() {
     );
     if (isDemo) {
       setDemoMode(true);
-      setTrades([...demoJournalRows(), ...demoTrades]);
+      setTradeBucket({ owner: "demo", rows: [...demoJournalRows(), ...demoTrades] });
     }
     const saved = window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY);
     if (saved && !isDemo) {
@@ -1384,19 +1433,22 @@ export default function Home() {
       `${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Trader`,
     );
     setReportingTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Local timezone");
-    if (isDemo || localWorkspace || !supabase) {
+    if (isDemo || !supabase) {
       setAuthReady(true);
       return;
     }
+    let authActive = true, authEventSeen = false;
     withAuthTimeout(supabase.auth.getSession(), 5000, {
       data: { session: null },
       error: null,
     }).then(({ data }) => {
+      if (!authActive || authEventSeen) return;
       setSession(data.session);
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event: AuthChangeEvent, nextSession: Session | null) => {
+        authEventSeen = true;
         if (event === "PASSWORD_RECOVERY") {
           setRecovering(true);
           setAuthMode("recovery");
@@ -1405,7 +1457,7 @@ export default function Home() {
         setAuthReady(true);
       },
     );
-    return () => listener.subscription.unsubscribe();
+    return () => { authActive = false; listener.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -1423,11 +1475,12 @@ export default function Home() {
     async function loadTrades() {
       setCloudBusy(true);
       setCloudError("");
-      const { data, error } = await client!
+      try {
+      const { data, error } = await readWithClockRetry(() => client!
         .from("trades")
         .select("*")
         .order("trade_date", { ascending: false })
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false }), () => current);
       if (!current) return;
       if (error)
         setCloudError(
@@ -1436,13 +1489,15 @@ export default function Home() {
             : error.message,
         );
       else setTrades((data as TradeRow[]).map(fromRow));
-      setCloudBusy(false);
+      } catch {
+        if (current) setCloudError("Cloud history is unavailable. Your recorded paper trades remain separate; try again when connected.");
+      } finally { if (current) setCloudBusy(false); }
     }
     loadTrades();
     return () => {
       current = false;
     };
-  }, [session?.user.id]);
+  }, [session?.user.id, session?.access_token, cloudReload]);
 
   const journalTrades = useMemo(() => {
     const campaignRows = [
@@ -1450,23 +1505,25 @@ export default function Home() {
       ...positionCampaignStore.value.map(journalRowFromCampaign),
     ];
     const keyed = new Map<string, Trade>();
-    [...campaignRows, ...trades].forEach((trade) =>
+    [...campaignRows, ...trades, ...(paper.status?.campaigns ?? []).filter(c => c.summary.entered > 0).map(paperJournalRow)].forEach((trade) =>
       keyed.set(trade.campaignId ?? trade.id, trade),
     );
     return [...keyed.values()];
-  }, [journalCampaignStore.value, positionCampaignStore.value, trades]);
+  }, [journalCampaignStore.value, positionCampaignStore.value, trades, paper.status]);
 
   const filteredTrades = useMemo(() => {
     const cutoff = getCutoff(range);
     return journalTrades.filter((trade) => {
       const reportingDate = trade.closedAt ?? `${trade.date}T23:59:59`;
       return (
-        (!cutoff || new Date(reportingDate) >= cutoff) &&
+        (!cutoff || !trade.date || new Date(reportingDate) >= cutoff) &&
         (setupFilter === "all" || trade.setup === setupFilter) &&
-        (directionFilter === "all" || trade.side === directionFilter)
+        (directionFilter === "all" || trade.side === directionFilter) &&
+        (journalSource === "all" || (journalSource === "paper" ? trade.id.startsWith("paper:") : !trade.id.startsWith("paper:"))) &&
+        trade.symbol.toUpperCase().includes(journalSearch.trim().toUpperCase())
       );
     });
-  }, [journalTrades, range, setupFilter, directionFilter]);
+  }, [journalTrades, range, setupFilter, directionFilter, journalSource, journalSearch]);
 
   const measuredTrades = useMemo(
     () => filteredTrades.filter(
@@ -1579,6 +1636,7 @@ export default function Home() {
       .insert(toRow(trade))
       .select()
       .single();
+    if (currentTradeOwner.current !== tradeOwner) return;
     if (error) setCloudError(error.message);
     else {
       setTrades((current) => [fromRow(saved as TradeRow), ...current]);
@@ -1593,6 +1651,7 @@ export default function Home() {
     setCloudError("");
     const rows = importTrades.map(({ id: _id, ...trade }) => toRow(trade));
     const { data, error } = await supabase.from("trades").insert(rows).select();
+    if (currentTradeOwner.current !== tradeOwner) return;
     if (error) setCloudError(error.message);
     else {
       setTrades((current) => [
@@ -1643,6 +1702,9 @@ export default function Home() {
       return;
     }
     if (!supabase) return;
+    if (paper.enabled && session) {
+      try { await paper.request("signout", {}); } catch { /* Server lease expires within 60 seconds when unreachable. */ }
+    }
     await supabase.auth.signOut();
     setSession(null);
     setAuthMode("signin");
@@ -1657,7 +1719,7 @@ export default function Home() {
           ? "This year"
           : "All time";
   const latestTrades = [...tableTrades].sort((a, b) =>
-    b.date.localeCompare(a.date),
+    (b.closedAt ?? b.date).localeCompare(a.closedAt ?? a.date),
   );
 
   useEffect(() => {
@@ -1670,6 +1732,7 @@ export default function Home() {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+        table.style.setProperty("--journal-detail-width", `${table.clientWidth}px`);
         const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
         const visibleRows =
           viewportWidth <= 480 || viewportHeight < 620
@@ -1688,7 +1751,7 @@ export default function Home() {
         if (headerHeight <= 0 || rowsHeight <= 0) return;
         table.style.setProperty(
           "--journal-table-viewport-height",
-          `${headerHeight + rowsHeight}px`,
+          expandedTrade ? `${Math.max(headerHeight + rowsHeight, viewportHeight * .7)}px` : `${headerHeight + rowsHeight}px`,
         );
         table.dataset.visibleRows = String(rows.length);
       });
@@ -1696,6 +1759,7 @@ export default function Home() {
     const observer = new ResizeObserver(sizeTableViewport);
     observer.observe(header);
     observer.observe(row);
+    observer.observe(table);
     window.addEventListener("resize", sizeTableViewport, { passive: true });
     window.visualViewport?.addEventListener("resize", sizeTableViewport, {
       passive: true,
@@ -1707,7 +1771,7 @@ export default function Home() {
       window.removeEventListener("resize", sizeTableViewport);
       window.visualViewport?.removeEventListener("resize", sizeTableViewport);
     };
-  }, [latestTrades.length]);
+  }, [latestTrades.length, expandedTrade]);
 
   const accountLabel = demoMode
     ? "Demo Trader"
@@ -1729,9 +1793,9 @@ export default function Home() {
       </main>
     );
   if (setupPreview) return <SetupScreen forceUnconfigured />;
-  if (!localWorkspace && !demoMode && !supabaseConfig.isConfigured)
+  if ((!localWorkspace || active === "Trade" || active === "Journal") && !demoMode && !supabaseConfig.isConfigured)
     return <SetupScreen />;
-  if (!localWorkspace && !demoMode && (!session || recovering))
+  if ((!localWorkspace || active === "Trade" || active === "Journal") && !demoMode && (!session || recovering))
     return (
       <AuthScreen
         mode={authMode}
@@ -1830,6 +1894,12 @@ export default function Home() {
               Scans
             </button>
             <button
+              className={active === "Scanner" ? "active" : ""}
+              onClick={() => selectView("Scanner")}
+            >
+              Scanner
+            </button>
+            <button
               className={active === "Catalyst" ? "active" : ""}
               onClick={() => selectView("Catalyst")}
             >
@@ -1860,8 +1930,9 @@ export default function Home() {
           <CatalystDashboard demo={demoMode} onChart={openChart} />
         </div>
         <div hidden={active !== "Trade"}>
-          <TradingWorkspace
+          <TradingWorkspace key={tradingScope} storageScope={tradingScope}
             demo={demoMode}
+            paper={localWorkspace && !demoMode ? paper : undefined}
             context={planContext}
             onChart={openChart}
             onOpenJournalTrade={openJournalTrade}
@@ -1886,7 +1957,7 @@ export default function Home() {
                 : []),
             ]}
             context={chartContext}
-            onExit={() => selectView("Scans")}
+            onExit={() => selectView(chartReturnView)}
             onPlan={(context) => {
               setPlanContext({ ...context });
               selectView("Trade");
@@ -1899,6 +1970,12 @@ export default function Home() {
             demo={demoMode}
             kind="scan"
             onChart={openChart}
+          />
+        </div>
+        <div hidden={active !== "Scanner"}>
+          <ScannerDashboard
+            local={localWorkspace}
+            onChart={(symbol) => openChart({ symbol, mode: "local", adjustment: "all" })}
           />
         </div>
         <div hidden={active !== "Backtest"}>
@@ -1919,7 +1996,7 @@ export default function Home() {
           <header className="topbar">
             <div>
               <p className="eyebrow">{todayLabel}</p>
-              <h1>{greeting}</h1>
+              <h1>Trading journal</h1>
               <small className="reporting-timezone">Reporting timezone: {reportingTimezone}</small>
             </div>
             <div className="header-actions">
@@ -1931,36 +2008,8 @@ export default function Home() {
                     ? "Syncing…"
                     : cloudError
                       ? "Sync issue"
-                      : "Cloud synced"}
+                      : paper.enabled ? "Cloud history synced · paper local" : "Cloud synced"}
               </span>
-              <label className="range-control">
-                <Icon name="calendar" size={16} />
-                <span className="sr-only">Date range</span>
-                <select
-                  value={range}
-                  onChange={(event) => setRange(event.target.value as RangeKey)}
-                >
-                  <option value="30">Last 30 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="ytd">This year</option>
-                  <option value="all">All time</option>
-                </select>
-              </label>
-              <label className="range-control compact-filter">
-                <span className="sr-only">Setup cohort</span>
-                <select value={setupFilter} onChange={(event) => setSetupFilter(event.target.value)}>
-                  <option value="all">All setups</option>
-                  {[...new Set(trades.map(trade => trade.setup))].sort().map(setup => <option key={setup}>{setup}</option>)}
-                </select>
-              </label>
-              <label className="range-control compact-filter">
-                <span className="sr-only">Direction cohort</span>
-                <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)}>
-                  <option value="all">Long + short</option>
-                  <option value="Long">Long</option>
-                  <option value="Short">Short</option>
-                </select>
-              </label>
               <button
                 className="secondary-button auth-button"
                 onClick={signOut}
@@ -1982,7 +2031,7 @@ export default function Home() {
               <div>
                 <strong>
                   {cloudError
-                    ? "Cloud setup required"
+                    ? "Cloud history unavailable"
                     : `${importTrades.length} browser trades found`}
                 </strong>
                 <span>
@@ -1990,7 +2039,13 @@ export default function Home() {
                     "Import them once into your private cloud journal. Review first if these are demonstration trades."}
                 </span>
               </div>
-              {!cloudError && (
+              {cloudError ? (
+                <div className="cloud-notice-actions">
+                  <button disabled={cloudBusy} onClick={() => setCloudReload(value => value + 1)}>
+                    {cloudBusy ? "Retrying…" : "Retry cloud history"}
+                  </button>
+                </div>
+              ) : (
                 <div className="cloud-notice-actions">
                   <button onClick={() => setImportDismissed(true)}>
                     Not now
@@ -2007,54 +2062,75 @@ export default function Home() {
             </section>
           )}
 
+          <div className="journal-record-controls" aria-label="Journal filters">              <label className="range-control">
+                <Icon name="calendar" size={16} />
+                <span>Date range</span>
+                <select
+                  value={range}
+                  onChange={(event) => setRange(event.target.value as RangeKey)}
+                >
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="ytd">This year</option>
+                  <option value="all">All time</option>
+                </select>
+              </label>
+              <label className="range-control compact-filter">
+                <span>Setup cohort</span>
+                <select value={setupFilter} onChange={(event) => setSetupFilter(event.target.value)}>
+                  <option value="all">All setups</option>
+                  {[...new Set(journalTrades.map(trade => trade.setup))].sort().map(setup => <option key={setup}>{setup}</option>)}
+                </select>
+              </label>
+              <label className="range-control compact-filter">
+                <span>Direction cohort</span>
+                <select value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)}>
+                  <option value="all">Long + short</option>
+                  <option value="Long">Long</option>
+                  <option value="Short">Short</option>
+                </select>
+              </label>
+
+            <label>Find symbol<input type="search" aria-label="Find Journal symbol" placeholder="Symbol" value={journalSearch} onChange={e => setJournalSearch(e.target.value)} /></label>
+            <label>Record source<select aria-label="Journal record source" value={journalSource} onChange={e => setJournalSource(e.target.value)}><option value="all">All sources</option><option value="paper">IBKR paper · local</option><option value="history">Historical / manual</option></select></label>
+            <button type="button" className="secondary-button" onClick={() => { setRange("30"); setSetupFilter("all"); setDirectionFilter("all"); setJournalSearch(""); setJournalSource("all"); setStatusFilter("all"); }}>Clear filters</button><span>{filteredTrades.length} records{paper.enabled ? " · Paper executions stay on this computer" : ""}</span>
+          </div>
+          {paper.enabled && !paper.status && <p className="workspace-notice" role="status">Local paper records are unavailable. Totals include loaded records only.</p>}
+          {measuredTrades.length === 0 && !(paper.enabled && !paper.status && journalTrades.length === 0) && <div className="journal-empty-state" role="status"><strong>{journalTrades.length === 0 ? "No records yet" : filteredTrades.length === 0 ? "No records match these filters" : "No eligible closed trades"}</strong><p>{journalTrades.length === 0 ? "Log a trade or review a confirmed paper execution to begin." : filteredTrades.length === 0 ? "Clear or adjust filters to see your records." : "Your records are below. Performance requires completed trades with execution history and known costs; R metrics also require initial risk."}</p></div>}
           <section className="journal-metric-grid" aria-label="Trading statistics">
             <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? formatMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
-            <MetricCard label="Win rate" value={`${stats.winRate.toFixed(2)}%`} detail={`${stats.wins} wins · ${stats.losses} losses · ${stats.breakevens} flat`} />
-            <MetricCard label="Avg planned R:R" value={`1:${stats.avgPlanned.toFixed(1)}`} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
+            <MetricCard label="Win rate" value={measuredTrades.length ? `${stats.winRate.toFixed(2)}%` : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail={`${stats.wins} wins · ${stats.losses} losses · ${stats.breakevens} flat`} />
             <MetricCard label="Expectancy in R" title="Mean final net result divided by frozen initial dollar risk." value={stats.rEligible.length ? formatR(stats.avgR) : "Unavailable"} tone={journalSemanticTone(stats.avgR, stats.rEligible.length > 0)} detail={`${stats.rEligible.length} closed trades with valid risk`} />
             <MetricCard label="Profit factor" value={stats.profitFactor == null ? "Unavailable" : stats.profitFactor === "No losses" ? stats.profitFactor : stats.profitFactor.toFixed(2)} tone={stats.profitFactor == null ? "unavailable" : "neutral"} detail={`${measuredTrades.length} eligible closed trades`} />
-            <MetricCard label="Closed" title="Closed campaigns with complete execution history and known costs." value={measuredTrades.length} detail={`${stats.wins}W / ${stats.losses}L / ${stats.breakevens}BE`} />
+            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? formatMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
+            <MetricCard label="Closed trades" title="Closed campaigns with complete execution history and known costs." value={measuredTrades.length} detail={`${stats.wins}W / ${stats.losses}L / ${stats.breakevens}BE`} />
+          </section>
+<Disclosure title="More statistics" name="journal-statistics" scope={demoMode ? "demo" : session?.user.id ?? "account"}><section className="journal-metric-grid" aria-label="Additional statistics">            <MetricCard label="Avg planned R:R" value={stats.plannedEligible.length ? `1:${stats.avgPlanned.toFixed(1)}` : "Unavailable"} tone={stats.plannedEligible.length ? "neutral" : "unavailable"} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
             <MetricCard label="Avg result" title="Net result divided by eligible closed trade count." value={measuredTrades.length ? formatMoney(stats.averageResult) : "Unavailable"} tone={journalSemanticTone(stats.averageResult, measuredTrades.length > 0)} detail="Per eligible closed trade" />
             <MetricCard label="Avg win" value={stats.averageWin == null ? "Unavailable" : formatMoney(stats.averageWin)} tone={journalSemanticTone(stats.averageWin)} detail={`${stats.wins} winning trades`} />
             <MetricCard label="Avg loss" value={stats.averageLoss == null ? "Unavailable" : formatMoney(stats.averageLoss)} tone={journalSemanticTone(stats.averageLoss)} detail={`${stats.losses} losing trades`} />
             <MetricCard label="Payoff" value={secondaryStats.payoff == null ? "Unavailable" : secondaryStats.payoff.toFixed(2)} tone={secondaryStats.payoff == null ? "unavailable" : "neutral"} detail="Average win ÷ average loss" />
-            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={formatMoney(-secondaryStats.maxDrawdown)} tone={journalSemanticTone(-secondaryStats.maxDrawdown)} detail="Selected closed-trade curve" />
-            <MetricCard label="Longest loss streak" value={secondaryStats.longestLosingStreak} detail="Consecutive losing trades" />
-          </section>
+            <MetricCard label="Longest loss streak" value={measuredTrades.length ? secondaryStats.longestLosingStreak : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail="Consecutive losing trades" /></section></Disclosure>
           <p className="journal-eligibility-summary" aria-label="Journal eligibility summary">
             Eligibility: {measuredTrades.length} measured · {filteredTrades.length} recorded · {filteredTrades.length - measuredTrades.length} excluded as open or incomplete · {stats.multipleCurrencies ? "currencies separated" : stats.currency ?? "no currency cohort"}
           </p>
 
           <section className="analytics-grid">
-            <article className="panel equity-panel">
+            <article className={`panel equity-panel ${(equityMode === "r" ? rMeasuredTrades : measuredTrades).length ? "" : "is-empty"}`}>
               <div className="panel-heading">
                 <div>
                   <h2>{equityView === "equity" ? "Equity curve" : "Drawdown"}</h2>
                   <p>{equityView === "equity" ? "Cumulative closed-trade performance" : "Within selected period · starts at zero"} · {rangeLabel}</p>
                 </div>
-                <div
-                  className="segmented-control"
-                  aria-label="Equity chart view and unit"
-                >
-                  <button className={equityView === "equity" ? "selected" : ""} onClick={() => setEquityView("equity")}>Curve</button>
-                  <button className={equityView === "drawdown" ? "selected" : ""} onClick={() => { setEquityView("drawdown"); setEquityMode("dollar"); }}>Drawdown</button>
-                  <button
-                    className={equityMode === "dollar" ? "selected" : ""}
-                    onClick={() => setEquityMode("dollar")}
-                  >
-                    $
-                  </button>
-                  <button
-                    className={equityMode === "r" ? "selected" : ""}
-                    onClick={() => { setEquityMode("r"); setEquityView("equity"); }}
-                  >
-                    R
-                  </button>
+                <div className="journal-chart-controls">
+                  <label>View<select aria-label="Equity chart view" value={equityView} onChange={event => { setEquityView(event.target.value as EquityView); if (event.target.value === "drawdown") setEquityMode("dollar"); }}><option value="equity">Equity curve</option><option value="drawdown">Drawdown</option></select></label>
+                  {equityView === "equity" && <label>Unit<select aria-label="Equity chart unit" value={equityMode} onChange={event => setEquityMode(event.target.value as EquityMode)}><option value="dollar">Dollars</option><option value="r">Risk units (R)</option></select></label>}
                 </div>
               </div>
+              {equityView === "drawdown" ? <p className="journal-chart-explanation">Decline from the highest cumulative closed-trade profit in this period, in dollars.</p> : equityMode === "r" ? <p className="journal-chart-explanation">1R equals a trade’s initial planned risk. This curve adds the eligible trades’ net R results.</p> : null}
               <div className="chart-summary">
                 <strong>
-                  {equityView === "drawdown"
+                  {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length === 0 ? "Unavailable" : equityView === "drawdown"
                     ? formatMoney(-secondaryStats.maxDrawdown)
                     : equityMode === "dollar"
                       ? formatMoney(stats.pnl)
@@ -2062,12 +2138,13 @@ export default function Home() {
                         rMeasuredTrades.reduce((sum, trade) => sum + trade.r, 0),
                       )}
                 </strong>
-                <span>{measuredTrades.length} measured trades in view</span>
+                <span>{(equityMode === "r" ? rMeasuredTrades : measuredTrades).length} measured trades in view</span>
               </div>
-              <EquityChart trades={equityMode === "r" ? rMeasuredTrades : measuredTrades} mode={equityMode} view={equityView} />
+              {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length ? <EquityChart trades={equityMode === "r" ? rMeasuredTrades : measuredTrades} mode={equityMode} view={equityView} /> : <p className="chart-empty-note">{filteredTrades.length ? "No eligible completed trades for this measurement." : "No records in this selection."}</p>}
             </article>
 
-            <article className="panel distribution-panel">
+
+<article className="panel distribution-panel">
               <div className="panel-heading">
                 <div>
                   <h2>Realized R distribution</h2>
@@ -2080,197 +2157,22 @@ export default function Home() {
               <div className="distribution-summary">
                 <span>
                   Average{" "}
-                  <b className={stats.avgR >= 0 ? "positive" : "negative"}>
-                    {formatR(stats.avgR)}
+                  <b className={journalSemanticClass(journalSemanticTone(stats.avgR, rMeasuredTrades.length > 0))}>
+                    {rMeasuredTrades.length ? formatR(stats.avgR) : <MissingValue reason="No eligible closed trades with known initial risk" />}
                   </b>
                 </span>
                 <span>
                   Median{" "}
                   <b>
-                    {formatR(median(rMeasuredTrades.map((trade) => trade.r)))}
+                    {rMeasuredTrades.length ? formatR(median(rMeasuredTrades.map((trade) => trade.r))) : <MissingValue reason="No eligible closed trades with known initial risk" />}
                   </b>
                 </span>
               </div>
-              <DistributionChart trades={rMeasuredTrades} />
+              {rMeasuredTrades.length ? <DistributionChart trades={rMeasuredTrades} /> : <p className="chart-empty-note">No completed trades with known initial risk.</p>}
             </article>
           </section>
 
-          <section className="lower-grid journal-flow">
-            <article className="panel trades-panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Recent trades</h2>
-                  <p>Risk, execution and realized outcome</p>
-                </div>
-                <label className="compact-status-filter">
-                  <span className="sr-only">Trade row status</span>
-                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
-                    <option value="all">All records</option>
-                    <option value="open">Open records</option>
-                    <option value="closed">Closed records</option>
-                  </select>
-                </label>
-              </div>
-              <p className="table-scroll-hint">
-                Swipe horizontally to review all trade metrics.
-              </p>
-              <div
-                className="trade-table"
-                ref={tradeTableRef}
-                tabIndex={0}
-                role="region"
-                aria-label="Recent trades; scroll vertically for more records and horizontally for all metrics"
-              >
-                <div className="trade-row table-head" ref={tradeHeaderRef}>
-                  <span>Date</span>
-                  <span>Symbol</span>
-                  <span>Side</span>
-                  <span>Status</span>
-                  <span>Initial risk $</span>
-                  <span>Planned reward/risk</span>
-                  <span>Realized P&amp;L $</span>
-                  <span>Final Net R</span>
-                  <span>Review</span>
-                </div>
-                {latestTrades.map((trade, index) => (
-                  <div className="journal-trade-group" key={trade.id}>
-                    <div
-                      className={`trade-row ${trade.simulated ? "simulated" : ""}`}
-                      data-journal-trade-id={trade.id}
-                      ref={index === 0 ? tradeRowMeasureRef : undefined}
-                      tabIndex={-1}
-                    >
-                      <span>{shortDate(trade.date)}</span>
-                      <span className="symbol-cell">
-                        <button
-                          className="journal-expand"
-                          aria-expanded={expandedTrade === trade.id}
-                          onClick={() =>
-                            setExpandedTrade((current) =>
-                              current === trade.id ? null : trade.id,
-                            )
-                          }
-                        >
-                          {trade.symbol}
-                        </button>
-                        <small>
-                          {trade.setup}
-                          {trade.simulated ? " · Simulation" : ""}
-                        </small>
-                        <small>{trade.provenance ?? "Manual"}</small>
-                      </span>
-                      <span>
-                        <i className={`side-pill ${trade.side.toLowerCase()}`}>
-                          {trade.side}
-                        </i>
-                      </span>
-                      <span><i className="status-pill">{trade.status ?? "Closed"}</i></span>
-                      <span>{trade.initialRiskAvailable === false ? "Unavailable" : formatMoney(trade.risk, false)}</span>
-                      <span>{trade.fixedTargetCoverage === 100 ? `1:${trade.plannedR.toFixed(1)}` : `${trade.fixedTargetCoverage ?? 0}% fixed · incomplete`}</span>
-                      <span
-                        className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.realizedAvailable !== false))}
-                      >
-                        {trade.realizedAvailable === false ? "Unavailable" : `${formatMoney(trade.pnl)}${trade.costsComplete === false ? " provisional" : ""}`}
-                      </span>
-                      <span className={journalSemanticClass(journalSemanticTone(trade.r, trade.finalRAvailable !== false && trade.status === "Closed"))}>
-                        {trade.finalRAvailable === false || trade.status !== "Closed" ? "Unavailable" : formatR(trade.r)}
-                      </span>
-                      <span>
-                        {reviewStore.value[trade.id] ? "Reviewed" : `Grade ${trade.grade}`}
-                      </span>
-                    </div>
-                    {expandedTrade === trade.id && (
-                      <section
-                        className="journal-execution-details"
-                        aria-label={`${trade.symbol} entry and exit details`}
-                      >
-                        <header>
-                          <div>
-                            <strong>{trade.symbol} execution detail</strong>
-                            <span>
-                              {trade.status ?? "Closed"} · {trade.openQuantity ?? 0} shares open
-                            </span>
-                          </div>
-                          <i>SIMULATED · NOT BROKER CONFIRMED</i>
-                        </header>
-                        {trade.historyStatus && (
-                          <p className="workspace-notice">{trade.historyStatus}</p>
-                        )}
-                        <div className="journal-detail-grid">
-                          <span><small>Planned entry / size</small><b>{trade.journalSnapshot?.plannedEntry ? `${formatMoney(trade.journalSnapshot.plannedEntry, false)} · ${trade.journalSnapshot.plannedQuantity ?? "—"} sh` : "Unavailable"}</b></span>
-                          <span><small>Actual weighted entry</small><b>{trade.weightedEntry ? formatMoney(trade.weightedEntry, false) : "Unavailable"}</b></span>
-                          <span><small>Original / current stop</small><b>{trade.journalSnapshot?.originalStop ? `${formatMoney(trade.journalSnapshot.originalStop, false)} / ${trade.journalSnapshot.currentConfirmedStop ? formatMoney(trade.journalSnapshot.currentConfirmedStop, false) : "Unavailable"}` : "Unavailable"}</b></span>
-                          <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? "Unavailable" : formatMoney(trade.risk, false)}</b></span>
-                          <span><small>Entered / exited / remaining</small><b>{trade.enteredQuantity ?? "—"} / {trade.exitedQuantity ?? "—"} / {trade.openQuantity ?? "—"}</b></span>
-                          <span><small>Weighted exit</small><b>{trade.weightedExit ? formatMoney(trade.weightedExit, false) : "Unavailable"}</b></span>
-                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && trade.status === "Closed" && trade.costs != null))}>{trade.grossRealized == null ? "Unavailable" : `${formatMoney(trade.grossRealized)} / ${trade.costs == null ? "provisional" : formatMoney(trade.costs)} / ${trade.status === "Closed" && trade.costs != null ? formatMoney(trade.pnl) : "Unavailable"}`}</b></span>
-                          <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
-                        </div>
-                        <div className="journal-plan-detail">
-                          <div><strong>Planned exits</strong><p>{trade.journalSnapshot?.plannedTargets?.map(target => `${target.label} ${target.allocationPercent}%${target.multipleR ? ` @ ${target.multipleR}R` : target.price ? ` @ ${formatMoney(target.price, false)}` : ""}`).join(" · ") || "Unavailable"}</p><p>{trade.journalSnapshot?.plannedRunners?.map(runner => `${runner.label} ${runner.allocationPercent}% · ${runner.rule}`).join(" · ") || "No planned runners"}</p>{trade.planId && <button className="text-button" onClick={() => selectView("Trade")}>Open linked Plan &amp; Position</button>}</div>
-                          <div><strong>Confirmed amendments</strong><p>{trade.confirmedAmendments?.map(item => item.description).join(" · ") || "None confirmed"}</p><p>{trade.feeAdjustments?.length ? `${trade.feeAdjustments.length} late fee adjustment included` : "No late fee adjustments"}</p></div>
-                        </div>
-                        <div className="journal-fill-head">
-                          <span>Type</span>
-                          <span>Shares</span>
-                          <span>Price</span>
-                          <span>Fee</span>
-                          <span>Time</span>
-                          <span>Source</span>
-                        </div>
-                        {(trade.executions ?? []).map((execution) => (
-                          <div
-                            className="journal-fill-row"
-                            key={`${execution.sessionId}:${execution.executionId}`}
-                          >
-                            <span data-label="Type">
-                              <b className={execution.effect}>
-                                {execution.effect}
-                              </b>{" "}
-                              · {execution.role}
-                            </span>
-                            <span data-label="Shares">
-                              {execution.quantity}
-                            </span>
-                            <span data-label="Price">
-                              {formatMoney(execution.price, false)}
-                            </span>
-                            <span data-label="Fee">
-                              {formatMoney(execution.fee, false)}
-                            </span>
-                            <span data-label="Time">
-                              {new Date(execution.occurredAt).toLocaleString()}
-                            </span>
-                            <span data-label="Source">
-                              {execution.provenance === "manual-import"
-                                ? "Changed in IBKR"
-                                : execution.provenance}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="journal-review-form" aria-label={`${trade.symbol} personal review`}>
-                          <strong>Personal review <i>optional · Grade {trade.grade}</i></strong>
-                          {([
-                            ["environment", "Market suitable?"],
-                            ["entry", "Entry followed?"],
-                            ["risk", "Risk respected?"],
-                            ["exits", "Exit rules followed?"],
-                          ] as const).map(([key, label]) => (
-                            <label key={key}>{label}<select aria-label={`${trade.symbol} ${label}`} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.answers[key] ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, answers: { ...review.answers, [key]: event.target.value as "Yes" | "Partly" | "No" } }))}><option value="">Unanswered</option><option>Yes</option><option>Partly</option><option>No</option></select></label>
-                          ))}
-                          <label>Emotional state<select aria-label={`${trade.symbol} Emotional state`} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.emotionalState ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, emotionalState: (event.target.value || undefined) as JournalReview["emotionalState"] }))}><option value="">Unanswered</option><option>Calm</option><option>Hesitant</option><option>FOMO</option><option>Frustrated</option><option>Other</option></select></label>
-                          <label className="review-lesson">One lesson<input aria-label={`${trade.symbol} One lesson`} maxLength={180} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.lesson ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, lesson: event.target.value }))} /></label>
-                          <button className="secondary-button" onClick={() => saveReview(trade.id)} disabled={!reviewDrafts[trade.id]}>Save review</button>
-                          <span role="status">{reviewMessage[trade.id]}</span>
-                        </div>
-                      </section>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel setup-panel">
+<article className="panel setup-panel">
               <div className="panel-heading">
                 <div>
                   <h2>Setup performance</h2>
@@ -2301,7 +2203,184 @@ export default function Home() {
                 ))}
               </div>
             </article>
+
+          <section className="lower-grid journal-flow">
+            <article className="panel trades-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>Recent trades</h2>
+                  <p>Risk, execution and realized outcome</p>
+                </div>
+                <label className="compact-status-filter">
+                  <span className="sr-only">Trade row status</span>
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
+                    <option value="all">All records</option>
+                    <option value="open">Open records</option>
+                    <option value="closed">Closed records</option>
+                  </select>
+                </label>
+              </div>
+              <p className="table-scroll-hint">
+                Scroll across for all columns. Open a symbol for execution details and review.
+              </p>
+              <div
+                className="trade-table"
+                ref={tradeTableRef}
+                tabIndex={0}
+                role="region"
+                aria-label="Recent trades; scroll vertically for more records and horizontally for all metrics"
+              >
+                <div className="trade-row table-head" ref={tradeHeaderRef}>
+                  <span>Date</span>
+                  <span>Symbol</span>
+                  <span>Side</span>
+                  <span>Status</span>
+                  <span>Setup / source</span>
+                  <span>Initial risk $</span>
+                  <span title="Planned reward/risk">Planned R:R</span>
+                  <span>Realized P&amp;L $</span>
+                  <span>Final Net R</span>
+                  <span>Review</span>
+                </div>
+                {latestTrades.length === 0 && <p className="position-empty">No trades match these filters.</p>}
+                {latestTrades.map((trade, index) => (
+                  <div className="journal-trade-group" key={trade.id}>
+                    <div
+                      className={`trade-row ${trade.simulated ? "simulated" : ""}`}
+                      data-journal-trade-id={trade.id}
+                      ref={index === 0 ? tradeRowMeasureRef : undefined}
+                      tabIndex={-1}
+                    >
+                      <span>{shortDate(trade.date)}</span>
+                      <span className="symbol-cell">
+                        <button
+                          className="journal-expand"
+                          aria-expanded={expandedTrade === trade.id}
+                          onClick={() =>
+                            setExpandedTrade((current) =>
+                              current === trade.id ? null : trade.id,
+                            )
+                          }
+                        >
+                          {trade.symbol}
+                        </button>
+                      </span>
+                      <span>
+                        <i className={`side-pill ${trade.side.toLowerCase()}`}>
+                          {trade.side}
+                        </i>
+                      </span>
+                      <span><i className="status-pill">{trade.status ?? "Closed"}</i></span>
+                      <span className="journal-setup-source" title={`${trade.setup} · ${trade.provenance ?? "Manual"}${trade.simulated ? " · Simulation" : ""}`}>{trade.setup} · {trade.provenance ?? "Manual"}{trade.simulated ? " · Simulation" : ""}</span>
+                      <span>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : recordMoney(trade.id, trade.risk, false)}</span>
+                      <span>{trade.fixedTargetCoverage === 100 ? `1:${trade.plannedR.toFixed(1)}` : `${trade.fixedTargetCoverage ?? 0}% fixed · incomplete`}</span>
+                      <span
+                        className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.realizedAvailable !== false))}
+                      >
+                        {trade.realizedAvailable === false ? <MissingValue reason="Realized P&L unavailable" /> : `${recordMoney(trade.id, trade.pnl)}${trade.costsComplete === false ? " provisional" : ""}`}
+                      </span>
+                      <span className={journalSemanticClass(journalSemanticTone(trade.r, trade.finalRAvailable !== false && trade.status === "Closed"))}>
+                        {trade.finalRAvailable === false || trade.status !== "Closed" ? <MissingValue reason="Final Net R unavailable until eligible closure" /> : formatR(trade.r)}
+                      </span>
+                      <span>
+                        {reviewStore.value[trade.id] ? "Reviewed" : trade.id.startsWith("paper:") ? "Not reviewed" : `Grade ${trade.grade}`}
+                      </span>
+                    </div>
+                    {expandedTrade === trade.id && (
+                      <section
+                        className="journal-execution-details"
+                        aria-label={`${trade.symbol} entry and exit details`}
+                      >
+                        <header>
+                          <div>
+                            <strong>{trade.symbol} execution detail</strong>
+                            <span>{trade.setup} · {trade.provenance ?? "Manual"}{trade.simulated ? " · Simulation" : ""}</span>
+                            <span>
+                              {trade.status ?? "Closed"} · {trade.openQuantity ?? 0} shares open
+                            </span>
+                          </div>
+                          <i>{trade.id.startsWith("paper:") ? "BROKER-CONFIRMED PAPER EXECUTIONS" : trade.simulated ? "SIMULATED · NOT BROKER CONFIRMED" : "HISTORICAL / MANUAL RECORD"}</i>
+                        </header>
+                        {trade.historyStatus && (
+                          <p className="workspace-notice">{trade.historyStatus}</p>
+                        )}
+                        <div className="journal-detail-grid">
+                          <span><small>Planned entry / size</small><b>{trade.journalSnapshot?.plannedEntry ? `${recordMoney(trade.id, trade.journalSnapshot.plannedEntry, false, 6)} · ${trade.journalSnapshot.plannedQuantity ?? "—"} sh` : <MissingValue reason="Planned entry unavailable" />}</b></span>
+                          <span><small>Actual weighted entry</small><b>{trade.weightedEntry ? recordMoney(trade.id, trade.weightedEntry, false, 6) : <MissingValue reason="Entry execution history unavailable" />}</b></span>
+                          <span><small>Original / current stop</small><b>{trade.journalSnapshot?.originalStop ? <>{recordMoney(trade.id, trade.journalSnapshot.originalStop, false, 6)} / {trade.journalSnapshot.currentConfirmedStop ? recordMoney(trade.id, trade.journalSnapshot.currentConfirmedStop, false, 6) : <MissingValue reason="Current confirmed stop unavailable" />}</> : <MissingValue reason="Original stop unavailable" />}</b></span>
+                          <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : recordMoney(trade.id, trade.risk, false)}</b></span>
+                          <span><small>Entered / exited / remaining</small><b>{trade.enteredQuantity ?? "—"} / {trade.exitedQuantity ?? "—"} / {trade.openQuantity ?? "—"}</b></span>
+                          <span><small>Weighted exit</small><b>{trade.weightedExit ? recordMoney(trade.id, trade.weightedExit, false, 6) : <MissingValue reason="Exit execution history unavailable" />}</b></span>
+                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && (trade.status === "Closed" || (trade.id.startsWith("paper:") && trade.realizedAvailable !== false)) && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${recordMoney(trade.id, trade.grossRealized)} / ${trade.costs == null ? "provisional" : recordMoney(trade.id, trade.costs)} / ${(trade.status === "Closed" || (trade.id.startsWith("paper:") && trade.realizedAvailable !== false)) && trade.costs != null ? recordMoney(trade.id, trade.pnl) : "Unavailable"}`}</b></span>
+                          <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : trade.status === "Closed" ? "Closure time unavailable" : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
+                        </div>
+                        <div className="journal-plan-detail">
+                          <div><strong>Planned exits</strong><p>{trade.journalSnapshot?.plannedTargets?.map(target => `${target.label} ${target.allocationPercent}%${target.multipleR ? ` @ ${target.multipleR}R` : target.price ? ` @ ${recordMoney(trade.id, target.price, false)}` : ""}`).join(" · ") || "Unavailable"}</p><p>{trade.journalSnapshot?.plannedRunners?.map(runner => `${runner.label} ${runner.allocationPercent}% · ${runner.rule}`).join(" · ") || "No planned runners"}</p>{trade.planId && <button className="text-button" onClick={() => selectView("Trade")}>Open linked Plan &amp; Position</button>}</div>
+                          <div><strong>Confirmed amendments</strong><p>{trade.confirmedAmendments?.map(item => item.description).join(" · ") || "None confirmed"}</p><p>{trade.feeAdjustments?.length ? `${trade.feeAdjustments.length} late fee adjustment included` : "No late fee adjustments"}</p></div>
+                        </div>
+                        <div className="journal-fill-head">
+                          <span>Type</span>
+                          <span>Shares</span>
+                          <span>Price</span>
+                          <span>Fee</span>
+                          <span>Time</span>
+                          <span>Source</span>
+                        </div>
+                        {(trade.executions ?? []).map((execution) => (
+                          <div
+                            className="journal-fill-row"
+                            key={`${execution.sessionId}:${execution.executionId}`}
+                          >
+                            <span data-label="Type">
+                              <b className={execution.effect}>
+                                {execution.effect}
+                              </b>{" "}
+                              · {execution.role}
+                            </span>
+                            <span data-label="Shares">
+                              {execution.quantity}
+                            </span>
+                            <span data-label="Price">
+                              {recordMoney(trade.id, execution.price, false, 6)}
+                            </span>
+                            <span data-label="Fee">
+                              {execution.feeAvailable === false ? <MissingValue reason="Fee unavailable" /> : recordMoney(trade.id, execution.fee, false)}
+                            </span>
+                            <span data-label="Time">
+                              {execution.occurredAt ? new Date(execution.occurredAt).toLocaleString() : "Broker time unavailable"}
+                            </span>
+                            <span data-label="Source">
+                              {execution.provenance === "manual-import"
+                                ? "Changed in IBKR"
+                                : execution.provenance}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="journal-review-form" aria-label={`${trade.symbol} personal review`}>
+                          <strong>Personal review <i>{trade.id.startsWith("paper:") ? "optional" : `optional · Grade ${trade.grade}`}</i></strong>
+                          {([
+                            ["environment", "Market suitable?"],
+                            ["entry", "Entry followed?"],
+                            ["risk", "Risk respected?"],
+                            ["exits", "Exit rules followed?"],
+                          ] as const).map(([key, label]) => (
+                            <label key={key}>{label}<select aria-label={`${trade.symbol} ${label}`} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.answers[key] ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, answers: { ...review.answers, [key]: event.target.value as "Yes" | "Partly" | "No" } }))}><option value="">Unanswered</option><option>Yes</option><option>Partly</option><option>No</option></select></label>
+                          ))}
+                          <label>Emotional state<select aria-label={`${trade.symbol} Emotional state`} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.emotionalState ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, emotionalState: (event.target.value || undefined) as JournalReview["emotionalState"] }))}><option value="">Unanswered</option><option>Calm</option><option>Hesitant</option><option>FOMO</option><option>Frustrated</option><option>Other</option></select></label>
+                          <label className="review-lesson">One lesson<input aria-label={`${trade.symbol} One lesson`} maxLength={180} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.lesson ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, lesson: event.target.value }))} /></label>
+                          <button className="secondary-button" onClick={() => saveReview(trade.id)} disabled={!reviewDrafts[trade.id]}>Save review</button>
+                          <span role="status">{reviewMessage[trade.id]}</span>
+                        </div>
+                      </section>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </article>
+
+
           </section>
+
         </div>
       </section>
 

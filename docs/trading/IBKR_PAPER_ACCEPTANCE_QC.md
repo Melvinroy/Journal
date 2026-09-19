@@ -1,5 +1,9 @@
 # Consolidated paper-acceptance QC coverage
 
+Latest QC and consolidation plan: [16 September product and execution review](TRADING_QC_2026_09_16.md). Additional deterministic coverage includes 200 sequential campaigns / 880 unique executions, replay, late commissions, restart, order-ID allocation above unrelated observed orders, conservative stop precision, fixed-target validation, Journal closure dates and source/search filters. This does not promote any of P01–P38 to an actual broker pass. The retained three-share cap cannot cover four nonzero exit legs in one broker campaign.
+
+September 16 implementation continuation: [Connected paper lifecycle](PAPER_LIFECYCLE.md) adds the server ledger, paper UI, owned command transport and deterministic integration tests. It does not change any historical actual-paper result below into a pass. Fresh exact-batch execution evidence remains a separate gate.
+
 This matrix separates actual paper observations from deterministic evidence. Construction, acknowledgement and simulation never prove a fill, protection trigger, protection fill or exit. PL long 100 and AMD short 100 are excluded throughout.
 
 | ID | Scenario | Classification | Evidence / remaining requirement |
@@ -48,3 +52,10 @@ This matrix separates actual paper observations from deterministic evidence. Con
 The repository suites additionally cover partial/full exits, target allocation, separate runners, configurable breakeven, frozen Execution R, late fee adjustments, persistence failures, explicit amendments, and Position/Journal agreement for campaign identity, executions, confirmed/open quantities, fees, gross/net realized P&L and Final Net R. Snapshot-only campaigns retain missing fills, initial risk, Execution R, exits and realized results as unavailable.
 
 Actual broker coverage today is limited to verified paper binding, completed account/position/open-order snapshots, contract/capability data, live premarket quotes, and intent validation/persistence with submissions disabled. Every order acknowledgement, fill, protection and exit behavior remains pending an exact approved batch and eligible session.
+
+
+## Unified planner implementation — 16 September 2026
+
+The separate paper workspace is retired. New authenticated flow evidence is tracked in `test_paper_auth.py`, `paper-projection.test.mjs` and `paper-ui.spec.ts`; the existing 38-scenario classification remains unchanged. Browser network fixtures prove UI behavior, not broker acknowledgement or fills. Actual session-specific quote eligibility, exact ticket approval, protection, fills, exits and cleanup remain unobserved for this revision. The previously reported 10197 competing-session blocker must be checked afresh after user sign-in and the operator-confirmed account link. No old approval or September 10 ticket is reused.
+
+Automated verification for the unified implementation passed `npm run verify`: 197 Node tests passed (2 pre-existing gated skips), 214 backend tests passed, TypeScript passed, 41 browser regressions passed, and the production build passed. No screenshot baselines were changed. Direct browser inspection found and corrected a medium-width sign-in overflow; the repaired page was inspected at desktop, 765px and 390px widths with keyboard focus. Authenticated execution UI tests use controlled responses. Actual user sign-in/account linking, current TWS quotes and connected economic lifecycle evidence remain pending; no batch or campaign was created in the private execution ledger during implementation.

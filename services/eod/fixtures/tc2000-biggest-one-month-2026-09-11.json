@@ -1,0 +1,17 @@
+{
+  "name": "TC2000 Biggest One Month supplied reference",
+  "evaluation_session": "2026-09-11",
+  "supplied_on": "2026-09-13",
+  "provenance": "User-supplied screenshot transcription; reference output only, not a ranking universe.",
+  "symbols": [
+    "BDRX", "TRUG", "TNON", "FTFT", "ACVA", "FEIM", "FETH", "ETH", "ETHA", "ETHE",
+    "ETHU", "SWKS", "ASO", "QRVO", "DELL", "ASST", "LABD", "BMNR", "HPE", "BWET",
+    "SNDQ", "SBET", "HPQ", "XP", "PURR", "DLLL", "INSP", "FRO", "MSTX", "HTFL",
+    "BITX", "LUMN", "MRNA", "SIG", "HUT", "GDXU", "TSLG", "BMNU", "AGCO", "SEI",
+    "DINO", "AEHR", "FIGR", "VLO", "CLS", "CNH", "IBIT", "BE", "PBF", "MARA",
+    "CLSK", "UCO", "ROIV", "CONL", "USO", "MSTR", "ANF", "NTAP", "BULL", "SOXL",
+    "SPCH", "SNDU", "MTDR", "SMTC", "IOVA", "HOOD", "OKTA", "SNXX", "BNO", "FBTC",
+    "SIMO", "CRCL", "MSTU", "SNDK", "INTW", "KORU", "CRM", "RIOT", "AXTI", "IREN",
+    "TSLL", "TXG", "MXL", "RBLX", "EPAM", "FORM", "BITO", "UMC", "SKHY", "AMDL"
+  ]
+}

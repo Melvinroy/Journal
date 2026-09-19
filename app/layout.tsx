@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./scanner.css";
 
 export const metadata: Metadata = {
   title: "Brontide — Review clearly. Trade deliberately.",

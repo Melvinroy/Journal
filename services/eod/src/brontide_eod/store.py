@@ -107,6 +107,72 @@ CREATE TABLE IF NOT EXISTS data_quality_issues (
   detail VARCHAR NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
 );
+CREATE TABLE IF NOT EXISTS eod_update_state (
+  singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+  state VARCHAR NOT NULL,
+  expected_session DATE,
+  published_session DATE,
+  publication_id UUID,
+  last_success_at TIMESTAMPTZ,
+  retry_at TIMESTAMPTZ,
+  retry_attempt INTEGER NOT NULL DEFAULT 0,
+  coverage_percent DOUBLE,
+  expected_symbols INTEGER,
+  loaded_symbols INTEGER,
+  adjustment_coverage VARCHAR,
+  explanation VARCHAR,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT current_timestamp
+);
+CREATE TABLE IF NOT EXISTS eod_update_runs (
+  run_id UUID PRIMARY KEY,
+  mode VARCHAR NOT NULL,
+  started_at TIMESTAMPTZ NOT NULL,
+  completed_at TIMESTAMPTZ,
+  status VARCHAR NOT NULL,
+  expected_session DATE,
+  candidate_sessions VARCHAR,
+  retry_attempt INTEGER NOT NULL DEFAULT 0,
+  explanation VARCHAR,
+  diagnostics_json VARCHAR
+);
+CREATE TABLE IF NOT EXISTS eod_publications (
+  publication_id UUID PRIMARY KEY,
+  run_id UUID NOT NULL,
+  published_at TIMESTAMPTZ NOT NULL,
+  data_through_session DATE NOT NULL,
+  expected_session DATE NOT NULL,
+  feed VARCHAR NOT NULL,
+  adjustment_coverage VARCHAR NOT NULL,
+  universe_fingerprint VARCHAR NOT NULL,
+  calendar_fingerprint VARCHAR NOT NULL,
+  formula_version VARCHAR NOT NULL,
+  expected_symbols INTEGER NOT NULL,
+  loaded_symbols INTEGER NOT NULL,
+  coverage_percent DOUBLE NOT NULL,
+  excluded_count INTEGER NOT NULL,
+  manifest_json VARCHAR NOT NULL
+);
+CREATE TABLE IF NOT EXISTS scanner_measurements (
+  publication_id UUID NOT NULL,
+  scanner_key VARCHAR NOT NULL,
+  formula_version VARCHAR NOT NULL,
+  symbol VARCHAR NOT NULL,
+  session_date DATE NOT NULL,
+  dollar_volume DOUBLE NOT NULL,
+  growth_percent DOUBLE NOT NULL,
+  adr_percent DOUBLE NOT NULL,
+  growth_rank DOUBLE,
+  day_percent DOUBLE,
+  PRIMARY KEY (publication_id, scanner_key, symbol)
+);
+CREATE TABLE IF NOT EXISTS scanner_exclusions (
+  publication_id UUID NOT NULL,
+  scanner_key VARCHAR NOT NULL,
+  symbol VARCHAR NOT NULL,
+  reason VARCHAR NOT NULL,
+  detail VARCHAR NOT NULL,
+  PRIMARY KEY (publication_id, scanner_key, symbol)
+);
 """
 
 
@@ -166,6 +232,18 @@ class DuckDBStore:
             self.connection.execute("UPDATE instruments SET sip_queryable = true WHERE sip_queryable IS NULL")
         if "sip_queryable_reason" not in instrument_columns:
             self.connection.execute("ALTER TABLE instruments ADD COLUMN sip_queryable_reason VARCHAR")
+        scanner_columns = {
+            row[0]
+            for row in self.connection.execute("DESCRIBE scanner_measurements").fetchall()
+        }
+        if "day_percent" not in scanner_columns:
+            self.connection.execute("ALTER TABLE scanner_measurements ADD COLUMN day_percent DOUBLE")
+        update_run_columns = {
+            row[0]
+            for row in self.connection.execute("DESCRIBE eod_update_runs").fetchall()
+        }
+        if "diagnostics_json" not in update_run_columns:
+            self.connection.execute("ALTER TABLE eod_update_runs ADD COLUMN diagnostics_json VARCHAR")
 
     def begin(self) -> None:
         self.connection.execute("BEGIN TRANSACTION")

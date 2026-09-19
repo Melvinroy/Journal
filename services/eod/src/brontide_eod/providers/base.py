@@ -14,6 +14,8 @@ class MarketDataProvider(Protocol):
         symbols: Sequence[str],
         start: date,
         end: date,
+        *,
+        adjustment: str = "all",
     ) -> list[DailyBar]: ...
 
     def get_market_calendar(self, start: date, end: date) -> list[MarketSession]: ...

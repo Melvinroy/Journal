@@ -5,12 +5,12 @@ import { getPreviewIdentity } from "./scripts/preview-identity.mjs";
 const port = 3107;
 const previewIdentity = getPreviewIdentity(process.cwd());
 process.env.BRONTIDE_EXPECTED_PREVIEW_ID ||= previewIdentity.identifier;
-const serverEnv = { ...process.env, AI_AGENT: "", CODEX_SANDBOX: "", CODEX_CI: "", CODEX_THREAD_ID: "", NEXT_PUBLIC_BRONTIDE_UI_TEST_LOCAL: "1", NEXT_PUBLIC_BRONTIDE_PREVIEW_ID: process.env.BRONTIDE_EXPECTED_PREVIEW_ID };
+const serverEnv = { ...process.env, NEXT_PUBLIC_SUPABASE_URL: "https://brontide-test.supabase.co", NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test_only", AI_AGENT: "", CODEX_SANDBOX: "", CODEX_CI: "", CODEX_THREAD_ID: "", NEXT_PUBLIC_BRONTIDE_UI_TEST_LOCAL: "1", NEXT_PUBLIC_BRONTIDE_PREVIEW_ID: process.env.BRONTIDE_EXPECTED_PREVIEW_ID };
 const reportDirectory = process.env.BRONTIDE_VERIFY_REPORT_DIR;
 
 export default defineConfig({
   testDir: "./tests/ui",
-  testMatch: ["chart-regressions.spec.ts", "workspace-quality.spec.ts"],
+  testMatch: ["chart-regressions.spec.ts", "workspace-quality.spec.ts", "scanner-ui.spec.ts", "paper-ui.spec.ts", "ui-refinement.spec.ts", "journal-correction.spec.ts", "catalyst-reports.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

@@ -43,14 +43,25 @@ The API listens on `127.0.0.1:8765` by default:
 - `GET /health`
 - `GET /v1/instruments?q=NVDA`
 - `GET /v1/bars/NVDA?limit=300`
+- `GET /v1/eod/status`
+- `GET /v1/scanners/biggest-one-month`
 
-## EOD operating rule
+## Shared EOD updater
 
-Only request a completed session after Alpaca's 15-minute historical SIP delay has elapsed. The CLI requires an explicit `YYYY-MM-DD` session so a scheduler cannot silently ingest the wrong trading day. Market-calendar resolution and nightly scheduling are the next slice.
+Charts and Scanner share one updater and canonical database. `due-update` uses Alpaca's exchange calendar, America/New_York, and the actual close plus the configured 30-minute delay. It catches up missed sessions, refreshes the configured five-session correction overlap, validates all/raw/split coverage, commits bars and derived measurements together, and atomically replaces the read-only serving snapshot only after verification. Failed candidates leave the last published snapshot intact.
+
+```powershell
+# From services/eod. --env-file may point to another checkout's secure .env.
+.venv\Scripts\python.exe -m brontide_eod.cli due-update --env-file C:\path\to\services\eod\.env
+.venv\Scripts\python.exe -m brontide_eod.cli force-update --env-file C:\path\to\services\eod\.env
+.venv\Scripts\python.exe -m brontide_eod.cli status --env-file C:\path\to\services\eod\.env
+```
+
+`BRONTIDE_ENV_FILE` is the equivalent environment setting. Relative database paths are resolved against that environment file, not the current checkout. The canonical file has one writer; API readers use `brontide.published.duckdb`. See [Discover Scanner](../../docs/DISCOVER_SCANNER.md) for scheduling, formulas, and recovery.
 
 ## Phase 1: open your existing EOD database in the chart
 
-Use the existing `data/brontide.duckdb`; **do not run init-db or a backfill again** for this step. The chart service does not require Alpaca credentials to read an existing database. Stop an ingestion writer before starting the API: separate DuckDB writer and reader processes cannot share a write-locked database.
+Use the existing `data/brontide.duckdb`; **do not run init-db or a historical backfill again** for this step. After the first successful shared update, chart and Scanner reads use the validated published snapshot beside it. The updater is the only canonical writer.
 
 With the Python environment above installed, run from the repository root:
 

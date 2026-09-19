@@ -82,7 +82,8 @@ class PaperGatewayConfig:
     @classmethod
     def from_environment(cls) -> "PaperGatewayConfig":
         """Load private process configuration; order submission defaults off."""
-
+        if os.environ.get("BRONTIDE_EXECUTION_ENVIRONMENT", "paper") != "paper":
+            raise PaperSafetyError("Live execution is not an enabled release mode.")
         enabled = os.environ.get("BRONTIDE_IBKR_SUBMISSIONS_ENABLED", "false").lower() == "true"
         return cls(
             host=os.environ.get("BRONTIDE_IBKR_HOST", "127.0.0.1"),
@@ -326,13 +327,11 @@ if EClient is not None:
             self._market_prices: dict[str, float] = {}
             self._market_data_type: int | None = None
 
-        def error(  # noqa: N802 - IBKR callback
-            self,
-            _req_id: int,
-            error_code: int,
-            _error_string: str,
-            _advanced_order_reject_json: str = "",
-        ) -> None:
+        def error(self, _req_id: int, *details) -> None:  # noqa: N802 - IBKR callback
+            # API 10.50 adds errorTime before errorCode. Retain old SDK support.
+            # Broker text and advanced JSON can contain account data: store codes only.
+            modern = len(details) >= 3 and isinstance(details[1], int)
+            error_code = details[1] if modern else details[0]
             self._api_error_codes.append(error_code)
 
         def _record_unexpected_account(self, account: str, request: str) -> bool:

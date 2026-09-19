@@ -58,7 +58,7 @@ test('consolidated UI exposes persistence failure without overwriting and labels
   const workspace = readFileSync(new URL('../app/TradingWorkspace.tsx', import.meta.url), 'utf8');
   assert.match(workspace, /Persistence blocked/);
   assert.match(workspace, /Existing records\s+were\s+not overwritten/);
-  assert.match(workspace, /SIMULATED PREVIEW/);
+  assert.match(readFileSync(new URL("../app/BrokerConnection.tsx", import.meta.url), "utf8"), /Simulation · no broker connection/);
   assert.match(workspace, /not broker confirmation/i);
   assert.match(workspace, /Unlinked IBKR positions/i);
 });

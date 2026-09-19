@@ -15,6 +15,7 @@ export type DemoPrice = {
 };
 
 export type DemoPosition = {
+  paperSummary?: import("./paper-execution").PaperCampaign["summary"];
   campaignId: string;
   accountId: string;
   instrumentId: string;
