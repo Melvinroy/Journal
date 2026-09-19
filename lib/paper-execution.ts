@@ -2,7 +2,7 @@ import type { ExitPlanDefinition, TradeCampaign, Execution } from "./trading-dom
 import type { DemoPosition } from "./trading-demo";
 import { allocateExitShares, type TrailingRule } from "./trading-domain";
 
-export type PaperTicket = { planId: string; planRevision: string; planningSource?: string; symbol: string; direction: "Long" | "Short";
+export type PaperTicket = { planId: string; planRevision: string; savedPlan?: Readonly<Record<string, unknown>>; planningSource?: string; symbol: string; direction: "Long" | "Short";
   method: "Limit" | "Normal" | "Breakout"; quantity: number; planningPrice: number; hardCap: number;
   triggerPrice?: number; stopPrice: number; cleanupFloor: number; sessionMode: string; duration: string;
   protectionOrderType: string; protectionLimitPrice?: number; exitPlan: ExitPlanDefinition };

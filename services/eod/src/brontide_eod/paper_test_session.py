@@ -57,6 +57,8 @@ def session_ticket(instrument, index, session_id):
               "sessionMode": "Regular", "duration": "DAY", "protectionOrderType": "STP",
               "exitPlan": {"schemaVersion": 1, "legs": legs, "breakeven": {"activationR": .5, "favorableOffset": {"unit": "Dollar", "value": 0}}}}
     if method == "Breakout": result["triggerPrice"] = up(cap - 2 * tick) if cancellation else up(ask + tick)
+    from .paper_plan import generated_plan
+    result["savedPlan"] = generated_plan(result, now().isoformat())
     return result, cancellation
 
 

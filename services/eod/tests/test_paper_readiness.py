@@ -1,5 +1,6 @@
 """Offline evidence must survive restarts without becoming fresh broker evidence."""
 from copy import deepcopy
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import pytest
 from test_paper_lifecycle import service
@@ -10,6 +11,15 @@ from test_paper_lifecycle import ticket
 from test_paper_lifecycle import opened
 from brontide_eod.paper_store import PaperStore
 import sqlite3
+
+
+def customer_ticket(**overrides):
+    result = ticket(planId="plan", planRevision="revision", planningSource="Manual", **overrides)
+    saved = result["savedPlan"]
+    saved.pop("origin")
+    saved.update(accountEquity=30000, sizingEquity=30000, riskPercent=.5, maxAllocationPercent=10,
+                 sizingBasis={"source": "Legacy planning equity", "currency": "USD", "value": 30000})
+    return result
 
 
 def complete_snapshot(service, monkeypatch):
@@ -77,7 +87,72 @@ def test_plan_revision_content_cannot_be_reused(service):
     service.prepare_batch([original])
     assert len(service.store.all("plan-revision")) == 1
     with pytest.raises(PaperSafetyError, match="different content"):
-        service.prepare_batch([{**original, "planningPrice": 99.99}])
+        changed = deepcopy(original)
+        changed["savedPlan"]["riskPercent"] = 0.5
+        service.prepare_batch([changed])
+
+
+def test_new_batches_are_hidden_from_a_different_user_on_the_same_account(service):
+    service.authenticated("owner-a")
+    service.prepare_batch([ticket(planId="plan", planRevision="revision", planningSource="Manual")])
+    stored = service.store.all("batch")[0]
+    assert (stored["userId"], stored["accountBinding"], stored["environment"]) == (
+        "owner-a", service.client.config.binding(), "paper")
+    service.authenticated("owner-b")
+    assert service.status()["batches"] == []
+
+
+@pytest.mark.parametrize("field,value", [("side", "Short"), ("planRevision", "other"), ("executionQuantity", 2), ("hardCap", 101), ("stopPrice", 97)])
+def test_saved_planner_mismatch_never_prepares_or_transmits(service, field, value):
+    service.authenticated("owner")
+    original = ticket(planId="plan", planRevision="revision", planningSource="Manual")
+    original["savedPlan"][field] = value
+    with pytest.raises(PaperSafetyError, match="differs"):
+        service.prepare_batch([original])
+    assert not service.store.all("batch") and not service.client.writes
+
+
+def test_full_planner_content_is_archived_and_legacy_requires_resave(service):
+    service.authenticated("owner")
+    original = customer_ticket()
+    original["savedPlan"]["marketSnapshot"] = {"session": "2026-09-18", "atr": 1.23456789}
+    service.prepare_batch([original])
+    archived = service.store.all("plan-revision")[0]
+    assert archived["ticket"]["savedPlan"] == original["savedPlan"]
+    assert len(archived["planDigest"]) == 64
+    assert len(archived["contentDigest"]) == 64
+    del original["savedPlan"]
+    with pytest.raises(PaperSafetyError, match="complete new planner"):
+        service.prepare_batch([original])
+
+
+@pytest.mark.parametrize("field", ["capturedEntrySource", "sizingBasis", "sessionPolicy", "savedAt", "exitPlan"])
+def test_incomplete_saved_plan_is_never_archived(field, service):
+    service.authenticated("owner")
+    original = customer_ticket()
+    del original["savedPlan"][field]
+    with pytest.raises(PaperSafetyError, match="incomplete"):
+        service.prepare_batch([original])
+    assert not service.store.all("plan-revision")
+
+
+def test_concurrent_revision_reuse_accepts_only_one_content(service):
+    service.authenticated("owner")
+    first = ticket(planId="plan", planRevision="revision", planningSource="Manual")
+    second = deepcopy(first)
+    second["savedPlan"]["marketSnapshot"] = {"session": "different"}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda value: _prepare_outcome(service, value), (first, second)))
+    assert sorted(outcomes) == ["accepted", "rejected"]
+    assert len(service.store.all("plan-revision")) == 1
+
+
+def _prepare_outcome(service, value):
+    try:
+        service.prepare_batch([value])
+        return "accepted"
+    except PaperSafetyError:
+        return "rejected"
 
 
 def test_funds_and_environment_fail_closed(service, monkeypatch):

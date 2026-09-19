@@ -65,9 +65,42 @@ async function savePlan(page: Page) {
 async function mockReview(page: Page) {
   await page.route("**/v1/ibkr/paper/batches", async r => {
     const { tickets } = r.request().postDataJSON();
+    expect(tickets[0].savedPlan).toMatchObject({ schemaVersion: 2, planId: tickets[0].planId,
+      planRevision: tickets[0].planRevision, symbol: tickets[0].symbol, entryPrice: tickets[0].planningPrice,
+      stopPrice: tickets[0].stopPrice, executionQuantity: tickets[0].quantity, exitPlan: tickets[0].exitPlan });
+    expect(tickets[0].savedPlan.savedAt).toBeTruthy();
+    expect(tickets[0].savedPlan.result.valid).toBe(true);
     await r.fulfill({ json: { id: "batch", digest: "a".repeat(64), tickets, sourceIdentity: "test-source", validUntil: new Date(Date.now()+60000).toISOString() } });
   });
 }
+
+test("Journal recovers a transient validator clock error without reloading or writing", async ({ page }) => {
+  await signIn(page);
+  let reads = 0, writes = 0;
+  await page.route("**/rest/v1/trades**", r => {
+    if (r.request().method() !== "GET") writes++;
+    reads++;
+    return reads === 1 ? r.fulfill({ status: 401, json: { message: "JWT issued at future", code: "PGRST303" } }) : r.fulfill({ json: [] });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Journal", exact: true }).click();
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.getByText("JWT issued at future", { exact: false })).toHaveCount(0);
+  expect(writes).toBe(0);
+});
+
+test("Journal leaves a persistent token rejection visible after one read retry", async ({ page }) => {
+  await signIn(page);
+  let reads = 0;
+  await page.route("**/rest/v1/trades**", r => { reads++; return r.fulfill({ status: 401, json: { message: "JWT issued at future", code: "PGRST303" } }); });
+  await page.reload();
+  await page.getByRole("button", { name: "Journal", exact: true }).click();
+  await expect.poll(() => reads).toBe(2);
+  await expect(page.getByText("JWT issued at future", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry cloud history" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry cloud history" }).click();
+  await expect.poll(() => reads).toBe(4);
+});
 
 test("exact confirmation, keyboard dismissal, and double-click submit guard", async ({ page }) => {
   let approvals = 0, submissions = 0;

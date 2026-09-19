@@ -46,9 +46,13 @@ def plan():
 
 
 def ticket(**overrides):
-    return {"symbol": "TEST", "direction": "Long", "method": "Limit", "quantity": 3,
+    result = {"symbol": "TEST", "direction": "Long", "method": "Limit", "quantity": 3,
             "planningPrice": 100, "hardCap": 100, "stopPrice": 98, "cleanupFloor": 98,
             "sessionMode": "Regular", "duration": "DAY", "protectionOrderType": "STP", "exitPlan": plan(), **overrides}
+    if "planId" in result and "savedPlan" not in overrides:
+        from brontide_eod.paper_plan import generated_plan
+        result["savedPlan"] = generated_plan(result, "2026-09-19T00:00:00Z")
+    return result
 
 
 class FakeTransport:

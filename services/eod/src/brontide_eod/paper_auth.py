@@ -1,6 +1,7 @@
 """Verified application identity plus an operator-installed local account binding."""
 import json
 import os
+import re
 from pathlib import Path
 from uuid import UUID
 
@@ -18,7 +19,7 @@ def owner_path():
 def verified_user(authorization: str = Header(default="")):
     url = (os.environ.get("BRONTIDE_AUTH_SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")).rstrip("/")
     key = os.environ.get("BRONTIDE_AUTH_SUPABASE_PUBLISHABLE_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "")
-    if not url.startswith("https://") or not url.endswith(".supabase.co") or not key.startswith("sb_publishable_"):
+    if not re.fullmatch(r"https://[a-z0-9-]+\.supabase\.co", url) or not key.startswith("sb_publishable_"):
         raise HTTPException(503, "Configure Brontide sign-in before connecting TWS.")
     if not authorization.startswith("Bearer ") or len(authorization) < 15:
         raise HTTPException(401, "Sign into Brontide to connect your paper account.")
@@ -31,7 +32,7 @@ def verified_user(authorization: str = Header(default="")):
         if not user.get("email_confirmed_at") or user.get("is_anonymous"):
             raise HTTPException(403, "A verified Brontide account is required.")
         return {"id": user_id, "email": user.get("email", "")}
-    except (httpx.HTTPError, ValueError, KeyError):
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
         raise HTTPException(503, "Brontide identity verification is unavailable; trading remains locked.") from None
 
 

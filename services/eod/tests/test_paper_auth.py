@@ -55,6 +55,21 @@ def test_expired_and_unverified_identity_rejected(auth, monkeypatch):
     assert error.value.status_code == 403
 
 
+@pytest.mark.parametrize("body", [None, [], "invalid", {"id": None}, {"id": USER, "email_confirmed_at": "yes", "is_anonymous": True}])
+def test_malformed_or_anonymous_identity_fails_closed(auth, monkeypatch, body):
+    monkeypatch.setattr(paper_auth.httpx, "get", lambda *a, **k: SimpleNamespace(status_code=200, json=lambda: body))
+    with pytest.raises(HTTPException) as error: paper_auth.verified_user("Bearer valid-test-token")
+    assert error.value.status_code in (403, 503)
+
+
+@pytest.mark.parametrize("url", ["https://evil.example/path.supabase.co", "https://user@project.supabase.co", "http://project.supabase.co", "https://project.supabase.co:443"])
+def test_identity_configuration_rejects_non_project_origins(auth, monkeypatch, url):
+    monkeypatch.setenv("BRONTIDE_AUTH_SUPABASE_URL", url)
+    monkeypatch.setattr(paper_auth.httpx, "get", lambda *a, **k: pytest.fail("No credentials may be sent"))
+    with pytest.raises(HTTPException) as error: paper_auth.verified_user("Bearer valid-test-token")
+    assert error.value.status_code == 503
+
+
 def test_exact_persisted_approval_and_duplicate_submission(service):
     service.authenticated(USER)
     with pytest.raises(PaperSafetyError): service.prepare_batch([ticket()])

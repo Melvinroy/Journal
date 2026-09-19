@@ -83,7 +83,7 @@ type PlannerDraft = Partial<SavedSettings> & {
   capturedEntrySource?: CapturedEntrySource;
   entryPrice?: number;
   exitPlan?: ExitPlanDefinition | { targetCount?: number; stopCount?: number; runnerEnabled?: boolean };
-  marketSnapshot?: PlanningMarketSnapshot;
+  marketSnapshot?: PlanningMarketSnapshot | null;
   schemaVersion?: number;
   side?: TradeSide;
   stopPrice?: number;
@@ -95,6 +95,9 @@ type PlannerDraft = Partial<SavedSettings> & {
   protectionOrderType?: ProtectionOrderType;
   protectionLimitPrice?: number;
   sessionPolicy?: ExecutionSessionPolicy;
+  sizingEquity?: number;
+  sizingBasis?: { source: "Fresh broker equity" | "Stale broker estimate" | "Legacy planning equity"; currency: "USD"; value: number; observedAt?: string };
+  savedAt?: string;
 };
 
 type MarketLoad = {
@@ -208,6 +211,7 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
   const [hardCap, setHardCap] = useState(0);
   const [triggerPrice, setTriggerPrice] = useState(0);
   const [planRevision, setPlanRevision] = useState("");
+  const [savedPlan, setSavedPlan] = useState<PlannerDraft | null>(null);
 
   useEffect(() => setContextImportPending(false), [context]);
   useModalAccessibility(settingsOpen, settingsRef, () => setSettingsOpen(false));
@@ -242,6 +246,7 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
       const savedDraft = window.localStorage.getItem(demoStorageKey(DRAFT_KEY,demo));
       if (savedDraft) {
         const draft = JSON.parse(savedDraft) as PlannerDraft;
+        setSavedPlan(draft.schemaVersion === 2 ? structuredClone(draft) : null);
         if (draft.planId) planIdentity.current = draft.planId;
         if (["Regular", "RegularExtended", "Overnight", "OvernightDay"].includes(String(draft.sessionMode))) setSessionMode(draft.sessionMode!);
         if (["DAY", "GTC"].includes(String(draft.duration))) setDuration(draft.duration!);
@@ -425,17 +430,24 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
     if (!result.valid) return;
     if (!planIdentity.current) planIdentity.current = crypto.randomUUID();
     const revision = crypto.randomUUID();
-    window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify({
+    const snapshot = {
       schemaVersion: 2,
       planId: planIdentity.current,
-      planRevision: revision, executionMethod, executionQuantity, hardCap, triggerPrice,
+      planRevision: revision, executionMethod, executionQuantity: executionQuantity || result.shares,
+      hardCap: hardCap || entryPrice, triggerPrice,
       symbol: symbol.trim().toUpperCase(), side, entryPrice, stopPrice: effectiveStopPrice, stopSource,
-      atrMultiplier, capturedEntrySource, marketSnapshot: marketLoad.snapshot,
-      accountEquity, riskPercent, maxAllocationPercent, result,
+      atrMultiplier, capturedEntrySource, marketSnapshot: marketLoad.snapshot ?? null,
+      accountEquity, sizingEquity, riskPercent, maxAllocationPercent, result,
+      sizingBasis: { source: brokerEquity?.available && brokerEquity.currency === "USD"
+        ? paper?.status?.connected && paper.status.broker?.dataStatus === "fresh" ? "Fresh broker equity" as const : "Stale broker estimate" as const
+        : "Legacy planning equity" as const,
+        currency: "USD" as const, value: sizingEquity, ...(brokerEquity?.observedAt ? { observedAt: brokerEquity.observedAt } : {}) },
       exitPlan, sessionMode, duration, protectionOrderType, protectionLimitPrice,
       sessionPolicy: sessionSelection.policy,
       savedAt: new Date().toISOString(),
-    }));
+    };
+    window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify(snapshot));
+    setSavedPlan(JSON.parse(JSON.stringify(snapshot)));
     setStageState("staged");
     setPlanRevision(revision);
     setBrokerIntentCheck({ state: "unchecked", message: "Saved locally. Broker validation has not run and no order was submitted." });
@@ -505,7 +517,11 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
     try {
       const revision = crypto.randomUUID();
       const savedEntry = window.localStorage.getItem(demoStorageKey(DRAFT_KEY,demo));
-      if (savedEntry) window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify({ ...JSON.parse(savedEntry), exitPlan, planRevision: revision }));
+      if (savedEntry) {
+        const snapshot = { ...JSON.parse(savedEntry), exitPlan, planRevision: revision, savedAt: new Date().toISOString() } as PlannerDraft;
+        window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify(snapshot));
+        setSavedPlan(snapshot);
+      }
       window.localStorage.setItem(demoStorageKey(AFTER_FILL_KEY,demo), JSON.stringify({ schemaVersion: EXIT_PLAN_SCHEMA_VERSION, definition: exitPlan, savedAt: new Date().toISOString() }));
       setPlanRevision(revision); setAfterFillStaged(true); setExitPlanDirty(false); setExitMessage("Exit-plan draft saved locally. No broker action was applied.");
     } catch { setExitMessage("Exit-plan save failed. Your edits remain on screen and the saved plan was not replaced."); }
@@ -576,7 +592,7 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
           {afterFillStaged && !exitPlanDirty ? "Unsave exits" : "Save exits"}
         </button>
         {paper && !demo && <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
-          planId: planIdentity.current, planRevision, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
+          planId: planIdentity.current, planRevision, savedPlan: savedPlan ?? undefined, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
           method: executionMethod, quantity: executionQuantity || result.shares, planningPrice: entryPrice, hardCap: hardCap || entryPrice,
           ...(executionMethod === "Breakout" ? { triggerPrice } : {}), stopPrice: effectiveStopPrice, cleanupFloor: effectiveStopPrice,
           sessionMode, duration, protectionOrderType, ...(protectionOrderType === "STP LMT" ? { protectionLimitPrice } : {}), exitPlan,

@@ -9,6 +9,9 @@ export function usePaperExecution(token: string | undefined, enabled: boolean) {
   const [errorState, setErrorState] = useState<"blocked" | "error" | "disconnected">("blocked");
   const [connecting, setConnecting] = useState(false);
   const [identity, setIdentity] = useState<Identity | null>(null);
+  const [stateToken, setStateToken] = useState(token);
+  const currentToken = useRef(token);
+  currentToken.current = token;
   const paused = useRef(false);
   const identityScope = useRef("");
   const request = useCallback(async <T,>(path: string, body?: unknown): Promise<T> => {
@@ -21,11 +24,13 @@ export function usePaperExecution(token: string | undefined, enabled: boolean) {
     return value as T;
   }, [token, enabled]);
   const refresh = useCallback(async () => {
-    const next = await request<PaperStatus>("status"); setStatus(next); setError(""); return next;
-  }, [request]);
+    const next = await request<PaperStatus>("status");
+    if (currentToken.current !== token) throw new Error("Sign-in changed; reload account status.");
+    setStatus(next); setError(""); return next;
+  }, [request, token]);
   useEffect(() => {
     let active = true, timer: ReturnType<typeof setTimeout>, retry = 1000;
-    paused.current = false; setStatus(null); setIdentity(null); setError("");
+    paused.current = false; setStatus(null); setIdentity(null); setStateToken(token); setError("");
     if (!enabled || !token) return;
     async function poll() {
       try {
@@ -62,6 +67,8 @@ export function usePaperExecution(token: string | undefined, enabled: boolean) {
   }, [request, token, enabled]);
   const disconnect = async () => { paused.current = true; await request("disconnect", {}); await refresh(); };
   const reconnect = async () => { paused.current = false; setConnecting(true); try { await request("connect", {}); await refresh(); } finally { setConnecting(false); } };
-  return { status, error, errorState, identity, connecting, request, refresh, disconnect, reconnect, enabled, signedIn: Boolean(token) };
+  const sameIdentity = stateToken === token && enabled;
+  return { status: sameIdentity ? status : null, error: sameIdentity ? error : "", errorState,
+    identity: sameIdentity ? identity : null, connecting, request, refresh, disconnect, reconnect, enabled, signedIn: Boolean(token) };
 }
 export type PaperExecution = ReturnType<typeof usePaperExecution>;

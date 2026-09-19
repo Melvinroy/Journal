@@ -21,7 +21,7 @@ import {
 } from "./TradingWorkspace";
 import { useBrowserStore } from "../lib/use-browser-store";
 import { ChartDashboard } from "./ChartDashboard";
-import { withAuthTimeout } from "../lib/auth-ready";
+import { withAuthTimeout, readWithClockRetry } from "../lib/auth-ready";
 import type { MarketContext } from "../lib/workspace-state";
 import { demoStorageKey } from "../lib/review-demo";
 import { demoJournalRows, journalRowFromCampaign } from "../lib/trading-demo";
@@ -1238,7 +1238,7 @@ export default function Home() {
   const localWorkspace =
     process.env.NEXT_PUBLIC_BRONTIDE_LOCAL === "1" ||
     process.env.NEXT_PUBLIC_BRONTIDE_UI_TEST_LOCAL === "1";
-  const [trades, setTrades] = useState<Trade[]>([]);
+  const [tradeBucket, setTradeBucket] = useState<{ owner: string; rows: Trade[] }>({ owner: "signed-out", rows: [] });
   const [modal, setModal] = useState(false);
   const journalModalRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -1249,6 +1249,7 @@ export default function Home() {
   const [recovering, setRecovering] = useState(false);
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudError, setCloudError] = useState("");
+  const [cloudReload, setCloudReload] = useState(0);
   const [importTrades, setImportTrades] = useState<Trade[]>([]);
   const [importDismissed, setImportDismissed] = useState(false);
   const [range, setRange] = useState<RangeKey>("30");
@@ -1263,6 +1264,15 @@ export default function Home() {
   const [reportingTimezone, setReportingTimezone] = useState("Local timezone");
   const [greeting, setGreeting] = useState("Welcome back, Melvin");
   const [demoMode, setDemoMode] = useState(false);
+  const tradeOwner = demoMode ? "demo" : session?.user.id ?? "signed-out";
+  const currentTradeOwner = useRef(tradeOwner);
+  currentTradeOwner.current = tradeOwner;
+  const trades = tradeBucket.owner === tradeOwner ? tradeBucket.rows : [];
+  function setTrades(update: Trade[] | ((previous: Trade[]) => Trade[])) {
+    if (currentTradeOwner.current !== tradeOwner) return;
+    setTradeBucket(previous => ({ owner: tradeOwner, rows: typeof update === "function"
+      ? update(previous.owner === tradeOwner ? previous.rows : []) : update }));
+  }
   const paper = usePaperExecution(session?.access_token, localWorkspace && !demoMode);
   const tradingScope = demoMode ? "demo" : paper.enabled ? `paper:${paper.identity?.userId ?? `pending-${session?.user.id ?? "signed-out"}`}:${paper.identity?.accountBinding ?? "unlinked"}` : `planning:${session?.user.id ?? "signed-out"}`;
   const tradingStorageKey = (key: string) => demoMode ? demoStorageKey(key, true) : `${key}:scope:${tradingScope}`;
@@ -1395,7 +1405,7 @@ export default function Home() {
     );
     if (isDemo) {
       setDemoMode(true);
-      setTrades([...demoJournalRows(), ...demoTrades]);
+      setTradeBucket({ owner: "demo", rows: [...demoJournalRows(), ...demoTrades] });
     }
     const saved = window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY);
     if (saved && !isDemo) {
@@ -1427,15 +1437,18 @@ export default function Home() {
       setAuthReady(true);
       return;
     }
+    let authActive = true, authEventSeen = false;
     withAuthTimeout(supabase.auth.getSession(), 5000, {
       data: { session: null },
       error: null,
     }).then(({ data }) => {
+      if (!authActive || authEventSeen) return;
       setSession(data.session);
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange(
       (event: AuthChangeEvent, nextSession: Session | null) => {
+        authEventSeen = true;
         if (event === "PASSWORD_RECOVERY") {
           setRecovering(true);
           setAuthMode("recovery");
@@ -1444,7 +1457,7 @@ export default function Home() {
         setAuthReady(true);
       },
     );
-    return () => listener.subscription.unsubscribe();
+    return () => { authActive = false; listener.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -1462,11 +1475,12 @@ export default function Home() {
     async function loadTrades() {
       setCloudBusy(true);
       setCloudError("");
-      const { data, error } = await client!
+      try {
+      const { data, error } = await readWithClockRetry(() => client!
         .from("trades")
         .select("*")
         .order("trade_date", { ascending: false })
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false }), () => current);
       if (!current) return;
       if (error)
         setCloudError(
@@ -1475,13 +1489,15 @@ export default function Home() {
             : error.message,
         );
       else setTrades((data as TradeRow[]).map(fromRow));
-      setCloudBusy(false);
+      } catch {
+        if (current) setCloudError("Cloud history is unavailable. Your recorded paper trades remain separate; try again when connected.");
+      } finally { if (current) setCloudBusy(false); }
     }
     loadTrades();
     return () => {
       current = false;
     };
-  }, [session?.user.id]);
+  }, [session?.user.id, session?.access_token, cloudReload]);
 
   const journalTrades = useMemo(() => {
     const campaignRows = [
@@ -1620,6 +1636,7 @@ export default function Home() {
       .insert(toRow(trade))
       .select()
       .single();
+    if (currentTradeOwner.current !== tradeOwner) return;
     if (error) setCloudError(error.message);
     else {
       setTrades((current) => [fromRow(saved as TradeRow), ...current]);
@@ -1634,6 +1651,7 @@ export default function Home() {
     setCloudError("");
     const rows = importTrades.map(({ id: _id, ...trade }) => toRow(trade));
     const { data, error } = await supabase.from("trades").insert(rows).select();
+    if (currentTradeOwner.current !== tradeOwner) return;
     if (error) setCloudError(error.message);
     else {
       setTrades((current) => [
@@ -2013,7 +2031,7 @@ export default function Home() {
               <div>
                 <strong>
                   {cloudError
-                    ? "Cloud setup required"
+                    ? "Cloud history unavailable"
                     : `${importTrades.length} browser trades found`}
                 </strong>
                 <span>
@@ -2021,7 +2039,13 @@ export default function Home() {
                     "Import them once into your private cloud journal. Review first if these are demonstration trades."}
                 </span>
               </div>
-              {!cloudError && (
+              {cloudError ? (
+                <div className="cloud-notice-actions">
+                  <button disabled={cloudBusy} onClick={() => setCloudReload(value => value + 1)}>
+                    {cloudBusy ? "Retrying…" : "Retry cloud history"}
+                  </button>
+                </div>
+              ) : (
                 <div className="cloud-notice-actions">
                   <button onClick={() => setImportDismissed(true)}>
                     Not now

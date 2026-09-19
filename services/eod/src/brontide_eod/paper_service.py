@@ -149,7 +149,7 @@ class PaperService:
                 view.update(dataStatus="stale", connectionStatus="stale" if connected else "disconnected")
                 view["positions"] = [{**p, "stale": True, "associationEligible": False} for p in view["positions"]]
             campaigns = self.store.all("campaign")
-            if scope: campaigns = [c for c in campaigns if c["accountBinding"] == scope["accountBinding"]]
+            if scope: campaigns = [c for c in campaigns if self._in_operator_scope(c)]
             return {"mode": "paper", "connected": connected, "armedBatch": self.armed,
                     "submissionsEnabled": bool(connected and self.client.config.submissions_enabled),
                     "accountBinding": self.client.config.binding() if connected else (scope or {}).get("accountBinding"),
@@ -158,7 +158,7 @@ class PaperService:
                     "error": self.error, "readiness": self.readiness(connected, campaigns),
                     "broker": view, "quote": self.last_quote, "testSession": self.test_sessions.status(),
                     "campaigns": [self.public_campaign(c) for c in campaigns],
-                    "batches": [self.public_batch(b) for b in self.store.all("batch") if not scope or b["accountBinding"] == scope["accountBinding"]],
+                    "batches": [self.public_batch(b) for b in self.store.all("batch") if not scope or self._in_operator_scope(b)],
                     "blocked": ["Short entry fill bounds", "Opening auction", "Overnight sessions"],
                     "capabilities": deepcopy(CAPABILITIES), "limits": deepcopy(LIMITS)}
 
@@ -169,6 +169,15 @@ class PaperService:
         try: binding = config.binding()
         except PaperSafetyError: return None
         return {"userId": self.operator_id, "accountBinding": binding, "environment": "paper"}
+
+    def _in_operator_scope(self, record):
+        """New records require all scope keys; legacy account-bound evidence stays readable for its installed owner."""
+        scope = self.snapshot_scope()
+        if not scope:
+            return not self.operator_id
+        if record.get("accountBinding") != scope["accountBinding"]:
+            return False
+        return ("userId" not in record or record.get("userId") == scope["userId"]) and record.get("environment", "paper") == "paper"
 
     @staticmethod
     def public_batch(batch):
@@ -275,6 +284,8 @@ class PaperService:
             self._connected()
             self.reconcile()
             with self.store.transaction() as db: c = self.store.get(db, "campaign", campaign_id)
+            if self.operator_id and not self._in_operator_scope(c):
+                raise PaperSafetyError("Campaign belongs to another user, account or environment.")
             if c["revision"] != revision: raise PaperSafetyError("Position changed. Review the current revision.")
             if c["state"] == "Needs reconciliation": raise PaperSafetyError("Resolve reconciliation before a broker action.")
             if c.get("closureOnly") and action != "cleanup":
@@ -319,6 +330,8 @@ class PaperService:
         with self.store.transaction() as db:
             prior = db.execute("SELECT campaign,request FROM commands WHERE id=?", (command_id,)).fetchone()
             c = self.store.get(db, "campaign", campaign_id)
+            if self.operator_id and not self._in_operator_scope(c):
+                raise PaperSafetyError("Campaign belongs to another user, account or environment.")
             if prior:
                 if prior[0] != campaign_id or json.loads(prior[1]) != {"action": "recover", "revision": revision}:
                     raise PaperSafetyError("Recovery command identity was reused.")
@@ -379,6 +392,9 @@ class PaperService:
             raise PaperSafetyError("Simulation and legacy pricing cannot enter paper execution; capture a new plan.")
         if self.operator_id and any(not isinstance(ticket.get(k), str) or not ticket[k].strip() or len(ticket[k]) > 128 for k in ("planId", "planRevision")):
             raise PaperSafetyError("Save the planner revision before reviewing an order.")
+        if self.operator_id:
+            from .paper_plan import validate_saved_plan
+            validate_saved_plan(ticket)
         ticket["symbol"] = str(ticket.get("symbol", "")).strip().upper()
         if ticket["symbol"] in CAPABILITIES["excludedSymbols"]: raise PaperSafetyError("PL and AMD are excluded from paper QC.")
         if ticket.get("direction") not in CAPABILITIES["directions"]: raise PaperSafetyError("Short entry remains blocked: both fill bounds cannot be enforced.")
@@ -449,6 +465,8 @@ class PaperService:
                      "accountBinding": self.client.config.binding(), "createdAt": stamp(),
                      "validUntil": min(v[3]["windowEnd"] for v in validated), "tickets": frozen,
                      "contracts": [v[1]["contract"] for v in validated]}
+            if self.operator_id:
+                batch.update(userId=self.operator_id, environment="paper")
             batch["digest"] = sha256(canonical(batch).encode()).hexdigest()
             with self.store.transaction() as db:
                 if self.operator_id:
@@ -456,7 +474,9 @@ class PaperService:
                         revision = {"userId": self.operator_id, "accountBinding": batch["accountBinding"],
                                     "environment": "paper", "planId": ticket["planId"], "revision": ticket["planRevision"]}
                         key = sha256(canonical(revision).encode()).hexdigest()
-                        content = {**revision, "ticket": ticket, "contentDigest": sha256(canonical(ticket).encode()).hexdigest()}
+                        content = {**revision, "ticket": ticket,
+                                   "planDigest": sha256(canonical(ticket["savedPlan"]).encode()).hexdigest(),
+                                   "contentDigest": sha256(canonical(ticket).encode()).hexdigest()}
                         row = db.execute("SELECT body FROM objects WHERE kind='plan-revision' AND id=?", (key,)).fetchone()
                         if row and json.loads(row[0]) != content:
                             raise PaperSafetyError("Saved plan revision has different content. Save a new revision before review.")
@@ -470,6 +490,8 @@ class PaperService:
     def arm(self, batch_id):
         with self.lock:
             batch = self._batch(batch_id)
+            if self.operator_id and not self._in_operator_scope(batch):
+                raise PaperSafetyError("Paper batch belongs to another user, account or environment.")
             self._connected()
             if not self.client.config.submissions_enabled: raise PaperSafetyError("Server paper submissions are disabled.")
             if self.operator_id:
@@ -511,6 +533,8 @@ class PaperService:
 
     def _authority(self, batch, entry=False):
         self._connected()
+        if self.operator_id and not self._in_operator_scope(batch):
+            raise PaperSafetyError("Paper batch belongs to another user, account or environment.")
         if entry:
             with self.store.transaction() as db:
                 if db.execute("SELECT 1 FROM objects WHERE kind='entry-rejection' AND id=?", (batch["id"],)).fetchone():
@@ -562,6 +586,8 @@ class PaperService:
                  "contract": package["contract"], "tick": instrument["contract"]["minimumTick"], "revision": 1,
                  "state": "Pending entry", "message": None, "slots": slots, "executions": [],
                  "createdAt": stamp(), "accountBinding": batch["accountBinding"], "automation": "Waiting for confirmed fills"}
+            if self.operator_id:
+                c.update(userId=self.operator_id, environment="paper")
             request = {"action": "submit", "batchId": batch_id, "ticketIndex": ticket_index}
             with self.store.transaction() as db:
                 self.store.command(db, command_id, campaign_id, request)
@@ -886,6 +912,8 @@ class PaperService:
         with self.lock:
             with self.store.transaction() as db:
                 c = self.store.get(db, "campaign", campaign_id)
+                if self.operator_id and not self._in_operator_scope(c):
+                    raise PaperSafetyError("Campaign belongs to another user, account or environment.")
                 prior = db.execute("SELECT request, campaign FROM commands WHERE id=?", (command_id,)).fetchone()
                 request = {"action": action, "revision": revision, "payload": payload}
                 if prior:
