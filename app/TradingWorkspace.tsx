@@ -1818,7 +1818,7 @@ const PositionDetail = ({
         <div className="section-kicker">
           <h3>Protection, targets and runners</h3>
           <span>
-            {item.protection.confirmed
+            {item.protection.state === "Complete" ? "No remaining exposure" : item.protection.confirmed
               ? "Recorded source confirmation"
               : "Not confirmed"}
           </span>
