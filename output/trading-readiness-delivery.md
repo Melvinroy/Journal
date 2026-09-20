@@ -175,3 +175,62 @@ The active service was not stopped or repointed. A genuinely distinct Windows id
 - Fresh broker protection/reconnect/concurrency, owned-flat, owned-orders-cleared and complete-accounting evidence; 30 authenticated audited round trips; live trading. None was attempted or inferred.
 
 The exact local commit SHA and matching post-commit preview identifier are reported in the final handoff; no push, merge or deployment is authorized by this report.
+
+---
+
+# Remaining Step 1 verification closure — September 20, 2026
+
+## Scope and decision
+
+**Still no-go for live trading.** This verification-only package started from `edefd2cd63457695a315c4c09a169bf2d41a3e9b` on `codex/local-first-security-closure`. It made no executable-code, dependency, authentication-policy, billing, ACL, service, broker or deployment change. GitHub Pages remains unpublished and its workflow remains disabled. The halted session, rejected automatic approval, target 200, two historical completions and F protection failure remain unchanged.
+
+## Disposable identity and deployed ownership evidence
+
+The test used Supabase project **trading-journal** (`fsccmouzyfgcpqlmcngu`) and unique marker `step1-20260920071738-e5b5l7`. Two auto-confirmed reserved-domain users were created through **Create new user**; no invitation, recovery, magic-link or confirmation email operation was used. Their disposable Auth UUIDs were `63e6a544-2cf1-4d73-959f-7c33af499786` (A) and `92f80aa4-f16a-447f-8aea-6b40d22edf81` (B). The existing owner UUID was different and was not selected, rebound, signed out or modified.
+
+- A and B logins returned 200. Each inserted exactly one owned `public.trades` fixture (201). Each saw one own row and zero cross-user rows.
+- Cross-user update and delete requests returned 200 with zero affected rows. Explicit cross-user insertion and ownership reassignment both returned 403. Each owner could update its own fixture, and both fixtures remained correctly owned after every negative case. No write was retried.
+- Anonymous and malformed bearer requests returned 401. A and B refreshes returned 200, and refreshed tokens retained one own row / zero cross-user rows.
+- B logout returned 204. The Auth user endpoint rejected the revoked session after 0.2 seconds and remained rejected through 30.3 seconds. PostgREST continued to accept the already-issued access JWT for its one owned row throughout the same 30.3 seconds. The token lifetime was one hour. This is an observed stateless-JWT revocation window, not immediate global invalidation; actual expiry was not awaited and remains unverified.
+- Fixture cleanup was limited to the two recorded row UUIDs. Marker/owner pairs were checked, each fixture was deleted once in its owner context, and both owners then returned zero marker rows.
+- After explicit action-time authorization, the two Auth UUID/address pairs were verified against the creation evidence and only those two accounts were selected. The dashboard reported **Successfully deleted the selected 2 users**. After refresh, exact searches for each UUID independently returned **No users found / Total: 0**. The unfiltered table showed only the pre-existing owner account. The dashboard heading/footer count was stale before filtering, so it is not used as deletion evidence.
+
+## Authenticated local browser observations
+
+The signed-in checks used `http://localhost:3000/` and preview `edefd2cd+d.dc895c42`; this identifier included the intended `edefd2cd` executable source plus the then-current eligible documentation/untracked-source contribution. The documented localhost origin was used because the 127.0.0.1 development origin did not complete the Next.js development connection. No broker validation, submission or execution was requested.
+
+- A's Journal showed only A's fixture and B's showed only B's. A saved a local `QAADRAFT` plan through ordinary Plan controls with entry 100 and manual stop 95; TWS/account remained unavailable and submission controls remained locked. B opened with the default NVDA plan and no A plan. Returning to A restored A's saved plan.
+- An unsaved A review was cleared after the A→B→A scope transition and did not appear for B. This is intentional review invalidation, while the saved A plan remained preserved.
+- A delayed A history request was intercepted while switching to B. The browser canceled that prior-session request; continuing it reported that the interception no longer existed. B rendered one B record with no A marker. This is direct fail-closed cancellation evidence. The stronger case where a prior-session response actually resolves after the switch remains automated-only coverage.
+- Failing B's history GET rendered **Sync issue / Cloud history unavailable / TypeError: Failed to fetch**. The ordinary **Retry cloud history** control restored **Cloud synced** and still showed only B's row.
+- These legacy fixtures do not establish accounting agreement with broker executions, and the disposable cloud users could not be bound to the real owner's local paper account/environment. Same-user account/environment transition evidence and fresh broker accounting therefore remain open.
+
+## Dependency, skipped-test and configuration reconciliation
+
+- Repository environment: `services/eod/.venv`, Python 3.11.9, no `ibapi` or protobuf installed, dependency consistency clean and repository Python audit clean for auditable packages. This result applies to the repository test environment, not the operator's full trading runtime.
+- Active operator service environment: the protected `Journal-ui-refinement` checkout's venv with official `ibapi` 10.50.2 and exactly pinned protobuf 5.29.5. Dependency consistency passed, but the audit reported PYSEC-2026-1805 through two metadata aliases. Fixed protobuf versions 5.29.6 / 6.33.5 conflict with the SDK pin. IBKR's current stable 10.45 package has no Python API and its latest 10.50 package still supplies the affected combination, so no vendor-supported remediation is currently available and no pin or metadata was overridden.
+- The four SDK-dependent backend cases that normally skip in the repository environment were explicitly run against the active operator environment with mocked transport: 4 passed with 2 known deprecation warnings. They cover cancel/OCA translation, monotonic concurrent order IDs, UTC seven-day execution filtering, and modern `lastNDays` plus errors/fees. The normal full-suite skips remain accurately classified as optional-SDK absence, not failed execution.
+- Supabase **Prevent use of leaked passwords** is disabled on this Free project. Official configuration requires Pro or higher plus enabling the control in Auth Attack Protection. No subscription, billing or configuration change was made.
+- Read-only clock investigation still has no new reproduction. Previous synchronized-clock, Date-header and log evidence rules out a persistent broad skew but does not explain the intermittent validator error. Authentication validation and the single idempotent read retry were not changed.
+
+## Windows private-storage evidence
+
+The interactive identity is `MELVIN\melvi` (`S-1-5-21-1386659274-518491314-1459396466-1001`) in a non-elevated shell. The prepared runtime and backup roots exist, are owned by that identity, inherit their ACLs and expose full-control entries only for `MELVIN\melvi`, `SYSTEM` and `Administrators`. This is inspection, not operational denial proof.
+
+No suitable disposable non-owner identity or elevation was available. The prepared `MELVIN\BrontideAclProbe` procedure in `docs/trading/PRIVATE_STORAGE.md` gives literal paths and separate list/read/create-or-write/delete checks while preserving owner access. It was not run. Active-service cutover, TWS reconnection, reconciliation and rollback remain a separate reviewed operation.
+
+## Automated results, carried-forward results and skipped cases
+
+- Newly executed focused check: four operator-SDK backend tests passed; two known dependency deprecation warnings were emitted.
+- Documentation checks for this package: `git diff --check` passed before commit. No executable, dependency or rendered frontend source changed, so a new full `npm run verify` and a new frontend-verification implementation run were not warranted. The last full result at the unchanged executable baseline remains: 204 Node passed / 2 skipped; 269 backend passed / 4 skipped / 2 warnings; TypeScript passed; 66 browser passed / 3 skipped; production build passed.
+- Authenticated observations above are direct browser evidence. Earlier demo evidence remains demo/fixture evidence only. Physical monitor/DPI, non-Chromium browsers, a delivered delayed prior-session response, actual one-hour token expiry, same-user account/environment switching and fresh broker accounting were not directly tested in this package.
+
+## Remaining gates
+
+1. Create a suitable disposable Windows non-owner account with elevation, execute and review list/read/write/delete denial, then separately review active-service cutover and rollback. No ACL listing substitutes for this proof.
+2. Obtain Supabase Pro-or-higher entitlement and separate approval before enabling leaked-password protection.
+3. Obtain a vendor-supported IBKR SDK/protobuf combination without PYSEC-2026-1805; the current operator runtime must not be called vulnerability-free.
+4. Resolve or reproduce the intermittent validator-clock error without weakening validation or retrying uncertain writes. Record real access-token expiry behavior if that evidence is still required.
+5. Establish same-user paper account/environment transitions and fresh broker-based Plan/Position/Journal accounting, protection, reconnect, flat quantity and cleared-owned-order evidence in a separately authorized session. The 30-round-trip acceptance amendment also remains separately blocked. No broker action is authorized by this report.
+
+The exact scoped local commit SHA and the post-commit preview identifier are reported in the review handoff because a commit cannot contain its own SHA. No push, merge, deployment, service cutover or broker execution occurred.
