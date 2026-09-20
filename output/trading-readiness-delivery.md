@@ -234,3 +234,38 @@ No suitable disposable non-owner identity or elevation was available. The prepar
 5. Establish same-user paper account/environment transitions and fresh broker-based Plan/Position/Journal accounting, protection, reconnect, flat quantity and cleared-owned-order evidence in a separately authorized session. The 30-round-trip acceptance amendment also remains separately blocked. No broker action is authorized by this report.
 
 The exact scoped local commit SHA and the post-commit preview identifier are reported in the review handoff because a commit cannot contain its own SHA. No push, merge, deployment, service cutover or broker execution occurred.
+
+---
+
+# COORD-02 identity-boundary review — September 20, 2026
+
+## Decision and scope
+
+**No production defect was demonstrated and live trading remains a no-go.** This package started from `746b25ec8b999520cbaecd990f4a7ea86e2cd194`. It added deterministic isolation/expiry regressions and documentation only; application behavior, cloud configuration, installed owner binding, broker state and submission policy were not changed. No TWS connection, broker endpoint, service cutover, cloud user, paid change, ACL operation, push, merge or deployment was used.
+
+## Boundary matrix
+
+| Boundary | Validation and ownership | Revocation / expiry guarantee | Deterministic evidence and residual limit |
+| --- | --- | --- | --- |
+| Journal cloud reads | The Supabase browser client sends the current access JWT to PostgREST; deployed RLS limits rows by `auth.uid()`. The load effect is keyed by user ID and access token, hides the previous owner's bucket immediately, and accepts a result only while its request is current. The one retry applies only to `JWT issued at future` and only while the same request remains current. | Supabase logout/revocation prevents refresh and Auth-user lookup when the Auth service observes it, but an already-issued PostgREST JWT can remain valid until its JWT expiry. The observed revoked token still read its own row through 30.3 seconds of a one-hour token. Brontide does not claim immediate PostgREST revocation. | A new browser regression holds A's actual REST response, signs out, signs in as B, renders B, then resolves A; B remains visible and A never appears. Existing Node tests cover token refresh dependencies and cancellation during the clock-retry delay. Real one-hour expiry remains unobserved. |
+| Local paper HTTP endpoints | Requests must be loopback, any supplied Origin must match, and mutations require the local-request header. Every endpoint dependency calls Supabase `/auth/v1/user`; operational endpoints then compare the verified user with the immutable installed owner and current `PaperGatewayConfig.binding()`. | Once Auth rejects a revoked/expired token, the next local HTTP request returns 401 and cannot renew authority. An already-admitted identity refreshes an in-memory operator lease for 60 seconds. Normal sign-out calls local `/signout` before cloud logout; if that call is unreachable, the lease is allowed to expire rather than retrying a write. | Existing authentication tests cover absent, expired, malformed, anonymous, wrong-user and wrong-binding requests. New same-user fixtures prove records follow the exact paper account binding and reject a non-paper environment. A real installed-account switch was not performed. |
+| Exact order review / entry | Approval requires the verified local owner plus the exact batch digest, source identifier, account binding, connection ID and review window. Entry authority also checks the current source, connection, submission lock, prior rejection and batch expiry. New entries occur only through an authenticated explicit submit request. | A stale review cannot be approved, and entry authority rejects an expired operator lease or expired batch window. Disarming clears the armed batch, reviewed campaigns and authorized-batch set and changes the authenticated connection identity. | A new regression expires `validUntil` before approval and proves rejection with no approval receipt or transport write. Existing source/account/connection/rejection tests remain in force. Submission is still locked, and no real eligible quote/order evidence was produced. |
+| Managed campaign authority | A position action is reauthenticated and scoped to user, paper account, environment, connection, current campaign revision and reviewed source. Successful review stores only in-memory campaign/batch authority; broker-held protective orders remain independent at TWS. | Managed authority has the same 60-second local lease. The worker disarms before further automation when the deadline expires; authenticated actions also fail the lease check. If normal sign-out cannot reach the service, managed rules can retain local authority only until that deadline, while existing broker-held protection remains in place. | A new regression establishes reviewed managed authority, expires the lease, then proves the next authority check disarms and clears all reviewed/authorized sets. This is deterministic mock evidence, not a real broker or process-timing observation. |
+
+The frontend paper storage key includes user and account binding. The server record scope also requires environment=`paper`. There is no second enabled execution environment: `BRONTIDE_EXECUTION_ENVIRONMENT=live` is rejected. Before any future multi-environment release, the frontend identity/storage scope must explicitly add environment rather than relying on the current single-environment invariant.
+
+## Verification
+
+- Focused repository Python: `test_paper_auth.py` plus `test_paper_readiness.py` — 43 passed, with the two known dependency deprecation warnings.
+- Focused ordinary paper UI: 20 passed, including the new response-that-resolves-after-switch regression. The first local iteration selected A for both mocked token responses; the fixture was corrected to parse B's request payload, after which the new case and the complete paper UI file passed.
+- Full `npm run verify` passed all five stages in 813.4 seconds: 204 Node passed / 2 skipped; 272 backend passed / 4 SDK-dependent skipped / 2 known warnings; TypeScript passed; 67 browser passed / 3 skipped; production build passed. Reports are in `output/coord-02-verify/`.
+- No rendered application behavior changed. A separate frontend-verification implementation review was therefore not applicable; final source identity is checked against a served post-commit preview in the review handoff.
+
+## Remaining evidence and external gates
+
+- Actual one-hour PostgREST token expiry and a real local installed-account transition remain unobserved. Deterministic tests do not replace them.
+- The 60-second managed-authority bound is proven by controlled time/state tests, not by allowing a real broker-managed session to expire. No broker interaction was authorized.
+- Validator-clock root cause, elevated Windows denial/cutover proof, Supabase Pro leaked-password protection and the official IBKR SDK/protobuf advisory remain open.
+- Fresh broker accounting, protection, reconnect, flat-quantity and cleared-order evidence, the separately audited 30-round-trip target and all live-trading gates remain open. The previous submission-policy rejection remains independently binding.
+
+The exact scoped commit SHA and post-commit preview identifier are reported in the review handoff. This report does not authorize a push, merge, deployment, service restart, broker execution or submission unlock.

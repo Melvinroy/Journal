@@ -102,6 +102,34 @@ def test_new_batches_are_hidden_from_a_different_user_on_the_same_account(servic
     assert service.status()["batches"] == []
 
 
+def test_same_user_records_are_isolated_by_paper_account_and_environment(service):
+    service.authenticated("owner")
+    current = service.prepare_batch([ticket(planId="plan", planRevision="revision", planningSource="Manual")])
+    stored = service._batch(current["id"])
+    other_config = PaperGatewayConfig(
+        service.client.config.host,
+        service.client.config.port,
+        service.client.config.client_id,
+        "OTHER-PAPER",
+        service.client.config.submissions_enabled,
+    )
+    other_account = deepcopy(stored)
+    other_account.update(id="other-account", accountBinding=other_config.binding())
+    other_environment = deepcopy(stored)
+    other_environment.update(id="other-environment", environment="live")
+    with service.store.transaction() as db:
+        service.store.put(db, "batch", other_account["id"], other_account)
+        service.store.put(db, "batch", other_environment["id"], other_environment)
+
+    assert {batch["id"] for batch in service.status()["batches"]} == {current["id"]}
+
+    service.client.config = other_config
+    service.client.authorized_account = "OTHER-PAPER"
+    service.client._managed_accounts = ["OTHER-PAPER"]
+    assert {batch["id"] for batch in service.status()["batches"]} == {"other-account"}
+    assert "other-environment" not in {batch["id"] for batch in service.status()["batches"]}
+
+
 @pytest.mark.parametrize("field,value", [("side", "Short"), ("planRevision", "other"), ("executionQuantity", 2), ("hardCap", 101), ("stopPrice", 97)])
 def test_saved_planner_mismatch_never_prepares_or_transmits(service, field, value):
     service.authenticated("owner")

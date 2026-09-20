@@ -306,3 +306,23 @@ The procedure above is retained as the audit trail. The executed outcomes and li
 - [x] Compromised-password subscription/configuration and validator-clock status are reported without mutation or overclaim. The Pro-or-higher protection gate and unexplained intermittent clock error remain open.
 - [x] Focused SDK checks and authenticated direct browser verification were completed and reported separately. No executable or rendered source changed in this package, so the already-current full `npm run verify` result was carried forward and the frontend-verification implementation workflow was not rerun.
 - [x] Scoped documentation is committed locally; the exact SHA and clean post-commit preview identifier are reported in the review handoff. No push, merge or deployment.
+
+## 12. COORD-02 identity-boundary review — September 20, 2026
+
+This bounded package starts from `746b25ec8b999520cbaecd990f4a7ea86e2cd194` on `codex/local-first-security-closure`. It reviews existing authentication and isolation guarantees without creating cloud users, changing cloud configuration, touching the installed owner binding, connecting to TWS, restarting services or exercising broker actions. Existing unrelated and generated working-tree files remain outside the scoped commit.
+
+### Questions and evidence standard
+
+1. Map Journal cloud reads, local paper endpoints, exact-order review state and managed paper authority to the identity check they perform, their revocation/expiry behavior, and their residual exposure. The observed Supabase behavior is the starting fact: Auth rejected the revoked session after 0.2 seconds, while PostgREST continued to accept its already-issued one-hour JWT through the 30.3-second observation window.
+2. Inspect deterministic coverage for same-user paper account/environment changes, a prior-session response that actually resolves after a transition, review expiry and managed-authority expiry. Add only missing isolated fixture/mock regressions, and distinguish those tests from real token-expiry, real account-transition and broker evidence.
+3. Fix only demonstrated defects within the existing authentication/isolation design. Do not add a parallel cloud authorization architecture, weaken token validation, retry uncertain writes or alter the submission-policy block.
+
+### COORD-02 checklist
+
+- [x] Boundary matrix records validation, revocation/expiry guarantee, tests and residual limits for Journal reads, local paper endpoints, order reviews and managed authority.
+- [x] Same-user account/environment coverage now proves account-binding selection and rejection of non-paper records with isolated service fixtures. The only enabled execution environment remains paper; live configuration fails closed.
+- [x] A prior-user Journal response is held until after sign-out and sign-in as a second user, then allowed to resolve; the regression proves it cannot replace the second user's row.
+- [x] Expired order review and expired 60-second managed-authority lease both fail closed, clear in-memory authority and perform no real broker action.
+- [x] Focused checks passed: 43 authentication/readiness backend tests and 20 paper UI tests. Because test-harness source changed, full `npm run verify` passed all five stages. No rendered behavior changed, so a separate frontend-verification implementation review was not triggered.
+- [x] The evidence report separates deterministic coverage from real token-expiry, account-transition and broker evidence; external gates remain open.
+- [x] Scoped tests and documentation are committed locally; the exact SHA/source identifier is reported in the review handoff. No push, merge or deployment.

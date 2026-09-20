@@ -96,6 +96,35 @@ def test_expired_lease_cannot_silently_resume(service):
     assert not service.reviewed_campaigns
 
 
+def test_expired_order_review_is_rejected_before_approval(service):
+    service.authenticated(USER)
+    batch = service.prepare_batch([ticket(planId="plan", planRevision="saved-1", planningSource="Manual")])
+    stored = service._batch(batch["id"])
+    stored["validUntil"] = (utcnow() - timedelta(seconds=1)).isoformat()
+    with service.store.transaction() as db:
+        service.store.put(db, "batch", stored["id"], stored)
+    with pytest.raises(PaperSafetyError, match="stale"):
+        service.approve(stored["id"], stored["digest"], "expired-review")
+    assert not service.store.all("approval")
+    assert not service.client.writes
+
+
+def test_expired_managed_authority_disarms_reviewed_campaign(service):
+    campaign = opened(service)
+    service.authenticated(USER)
+    service.disarm()
+    campaign = service.store.all("campaign")[0]
+    service.review_action(campaign["id"], campaign["revision"], "resume-reviewed", "resume")
+    assert service.reviewed_campaigns == {campaign["id"]}
+    assert service.armed == campaign["batchId"]
+    service.operator_deadline = utcnow() - timedelta(seconds=1)
+    with pytest.raises(PaperSafetyError, match="lease expired"):
+        service._authority(service._batch(campaign["batchId"]))
+    assert service.armed is None
+    assert not service.reviewed_campaigns
+    assert not service.authorized_batches
+
+
 def test_execution_clock_is_explicit():
     assert execution_time("20260916 10:00:00 America/New_York") == "2026-09-16T14:00:00+00:00"
     assert execution_time("20260916 10:00:00") == ""
