@@ -52,3 +52,41 @@ The enabled `MELVIN\CodexSandboxOffline` and `MELVIN\CodexSandboxOnline` account
 6. After the evidence is reviewed, delete only the temporary sentinels and remove exactly `MELVIN\BrontideAclProbe`. Account removal is destructive and requires an action-time confirmation. Re-read the roots to confirm owner access remains.
 
 This procedure deliberately does not stop or restart the active service, reconnect TWS, repoint configuration, reconcile the broker, apply a production cutover or exercise rollback. Those actions remain a separate reviewed operation after denial evidence passes.
+
+### September 21 owner proof and prepared operator probe
+
+At `2026-09-21T11:26:54Z`, the **non-elevated** `MELVIN\melvi` session successfully listed, created, read, updated and deleted unique harmless scratch files in both literal roots above. The scratch files were verified absent afterward. No private data, directory ACLs, accounts or service settings were modified. Fresh inspection found the same owner and three allowed principals on both roots; neither root nor its ancestors was a reparse point. These are owner-positive results, not distinct-user denial evidence.
+
+An inspectable operator helper is prepared locally at `C:\Users\melvi\Projects\Journal\output\phase1-final-checks\Invoke-BrontideAclProbe.ps1`. Its PowerShell syntax was checked; it has **not** been executed as administrator. It is an operational artifact, not a service launcher. After reviewing the script, the operator runs this in an elevated **Windows PowerShell** as `MELVIN\melvi`:
+
+```powershell
+& 'C:\Users\melvi\Projects\Journal\output\phase1-final-checks\Invoke-BrontideAclProbe.ps1'
+```
+
+The helper refuses an existing `BrontideAclProbe` account, a different operator SID, unexpected root ownership/ACL entries or a reparse ancestor. It prompts for a temporary password without printing or saving it, creates the standard probe account with a one-day expiry, and uses a hidden credentialed process to test list/read/create/modify/delete separately in each root. Only uniquely named harmless sentinels are read, changed or deleted by these probes; no ledger or backup is used. The child confirms its exact new SID and non-administrator token. Only `UnauthorizedAccessException` counts as denial; launch failures, missing files and other errors do not pass. Copy the resulting sanitized JSON evidence back for review.
+
+The account and sentinels deliberately remain for separately confirmed cleanup. Record the returned account SID and run ID. After action-time approval, remove only that same account and the exact `brontide-acl-sentinel-<runId>.txt` files (and `brontide-acl-write-<runId>.txt` only if a failed probe created it). Revalidate each literal path and reject reparse points before deletion. Do not recursively delete either root, remove a Windows profile automatically, or repeat an interrupted run against an existing account. An expiry date is not account cleanup. If the operator run is unavailable, distinct-user denial remains **blocked**, not passed.
+
+### Separately gated cutover and rollback checklist
+
+No cutover is authorized by the preparation or denial probe. The active service and its protected checkout must stay untouched until a separate reviewed operation is permitted. Do not start another instance pointed at the active ledger as a workaround. A service launch must never be used to route around the existing paper-submission policy block.
+
+Before any future permitted change:
+
+- [ ] Capture the exact active process, checkout/version, launch mechanism, runtime identity and current private configuration **without printing credentials**. Confirm there are no other writers. Do not assume the repository's current interpreter is the active service interpreter.
+- [ ] Resolve the active source filenames from the actual configuration. The paper-store and owner defaults are `C:\Users\melvi\AppData\Local\Brontide\paper-lifecycle.sqlite3` and `C:\Users\melvi\AppData\Local\Brontide\paper-owner.json`; the verification path has no safe assumed default. Preserve account/client/endpoint values and owner binding unchanged.
+- [ ] Establish separately authorized broker reconciliation and a safe maintenance window. No cached snapshot proves current protection or flatness. Preserve the halted session, submission locks and managed-rule pause; do not invoke connect/resume/order endpoints as a storage test.
+- [ ] Record a consistent SQLite online backup, timestamp, hash, integrity result, schema version and object/command/event counts. The September 20 prepared copy is historical and must not replace a newer ledger. Copy owner/verification files without regenerating their identities; preserve original files and configuration for rollback.
+- [ ] After the authorized service stop and confirmed writer quiescence, update **only the private process configuration** to the following destinations; do not put these values or private configuration in browser assets or a public deployment.
+
+| Setting | Reviewed candidate destination |
+| --- | --- |
+| `BRONTIDE_PAPER_DATABASE` | `C:\Users\melvi\AppData\Local\BrontidePrivate\Runtime\paper-lifecycle.sqlite3` |
+| `BRONTIDE_PAPER_OWNER_FILE` | `C:\Users\melvi\AppData\Local\BrontidePrivate\Runtime\paper-owner.json` |
+| `BRONTIDE_IBKR_VERIFICATION_FILE` | `C:\Users\melvi\AppData\Local\BrontidePrivate\Runtime\operator-verification.json` |
+| Backup root | `C:\Users\melvi\AppData\Local\BrontidePrivate\Backups` |
+| `BRONTIDE_IBKR_SUBMISSIONS_ENABLED` | `false` (must remain locked) |
+
+- [ ] Read back ACLs on the freshly copied files and new WAL/SHM/backup artifacts. Verify identity, private-path isolation, authenticated saved history and database integrity before any separately approved broker connection. Require complete broker reconciliation before any later execution review; storage success alone cannot authorize orders.
+- [ ] For rollback, stop the authorized runtime and capture any post-cutover events before restoring configuration. Never point to the old database blindly if the new database acquired commands/events: preserve both, reconcile the delta and select a consistent recovery copy under review. Avoid duplicating or losing durable command identities.
+- [ ] Restore original process configuration only after that reconciliation, validate restored ACLs and integrity, and repeat locked history checks. Keep both copies until the retention/rollback window is explicitly closed. Record actual results; a checklist or simulated restore is not active-service rollback evidence.

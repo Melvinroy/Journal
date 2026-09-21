@@ -306,3 +306,22 @@ No frontend implementation review or fresh signed-in/manual browser observation 
 
 
 Final `npm run verify` completed successfully in **752.5 seconds** on the final executable/test source: 204 Node passed/2 skipped (6.3s); 274 backend passed/4 skipped/2 known warnings (324.9s); TypeScript passed (17.2s); 67 browser passed/3 skipped (374.0s); production build passed (29.2s). No screenshot baselines changed. Only checklist/results text was finalized afterward. Original `next-env.d.ts` bytes were restored and compared exactly; its pre-existing unrelated diff remains preserved. Exact local commit/source identity is reported separately by the delivery coordinator; no commit, push or merge is implied by this test result.
+
+## Phase 1 final security checks — September 21, 2026
+
+This bounded package starts from local commit `8611ff4d48cca94f7846423112f5c139db1caacb` on `codex/phase1-final-security-checks`. Sub-agents performed independent Windows preparation, dependency inspection and session-access checks; the coordinator reviewed their reports and the operator script. Application and regression source were not changed. The unrelated `next-env.d.ts` diff and untracked files remain preserved.
+
+| Item | Result and remaining requirement |
+| --- | --- |
+| Windows protection | **Partial pass / blocked:** non-elevated `MELVIN\melvi` list/create/read/update/delete succeeded on harmless unique files in both private roots at 11:26:54 UTC; files removed and absence verified. ACL/reparse inspection and helper syntax/static review passed. The user must run the narrowly scoped elevated helper for genuine distinct-user denial. No test account was created by the agents. Recheck normal-owner access afterward and separately confirm exact-account cleanup. |
+| Protected storage | **Preparation passed; operation blocked:** runbook now records exact destination settings, fresh-backup requirements and rollback without losing post-cutover events. No active service was stopped, repointed or restarted. Actual cutover/reconciliation/rollback remain unperformed. |
+| Password protection | **Deferred, not passed:** explicit no-paid-upgrade choice retained. No billing/authentication configuration change. |
+| Broker dependency | **Blocked:** repository npm and Python advisory audits and dependency consistency passed. Protected operator dependency consistency passed, but its audit found protobuf 5.29.5 affected by CVE-2026-0994 (alias GHSA-7gcm-g887-7qv7). Fresh official 10.50.2 archive inspection still shows the exact affected pin. No supported patched candidate or forced override installed. Non-PyPI editable/SDK packages skipped by the auditor are not security passes. |
+| Real token expiry | **Blocked before creation:** healthy project connector access exists, but the normal Auth dashboard remained blank after navigation/reload, and no Auth-admin create operation is exposed. No disposable user, JWT, session, trade row or email was created; the one-hour test never started. Restore authenticated dashboard access before this check. |
+| Validator clock | **Unresolved:** three public Auth-health requests returned 200 with sanitized local/HTTP timing. These are not JWT-validation-clock measurements and do not close the intermittent failure. |
+
+Detailed local artifacts: `output/phase1-final-checks/dependencies.md`, `session.md`, and `Invoke-BrontideAclProbe.ps1`. The helper is a prepared, unexecuted operator artifact; parser/static review is not administrator-execution evidence. Its independent review identified and corrected misleading elevated-owner labeling; genuine non-elevated owner evidence is recorded separately in the private-storage runbook. Local output artifacts remain available separately from the scoped documentation commit.
+
+Documentation checks include whitespace/diff review. No fresh full suite or frontend behavior inspection is claimed for this documentation-only delivery; the earlier full suite above is historical executable-source evidence. No broker connection, order, target amendment, submission unlock, cloud identity mutation, ACL change, cutover, push, merge or deployment occurred. Previously rejected cleanup was not retried.
+
+**Readiness: Phase 1 remains incomplete; live trading remains no-go.** Immediate operator dependencies are the Windows denial probe and restoration of normal authenticated dashboard access. Vendor remediation, deferred paid protection, real account-transition evidence and the independent broker acceptance block remain separate gates.

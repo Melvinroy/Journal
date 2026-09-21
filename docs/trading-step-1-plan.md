@@ -348,3 +348,18 @@ This package uses isolated synthetic databases and the existing fake transport o
 - [x] Focused readiness/lifecycle checks: 67 passed, 4 optional-SDK skips and 2 known warnings. Final full verification passed all five stages in 752.5 seconds: 204 Node passed/2 skipped; 274 backend passed/4 skipped/2 known warnings; TypeScript passed; 67 browser passed/3 skipped; production build passed. No baseline updates. Real broker, Windows denial/cutover and signed-in expiry evidence remain separate open gates.
 
 No new public API, recovery endpoint or alternate order form is planned. Distinct-user Windows denial, active cutover/rollback, vendor SDK remediation, paid password protection, real token-expiry/account-transition observations, intermittent clock diagnosis and fresh broker acceptance remain external or separately gated work.
+
+## 14. Phase 1 final security checks — September 21, 2026
+
+The user approved this bounded execution package from `8611ff4d48cca94f7846423112f5c139db1caacb`. Work is on `codex/phase1-final-security-checks`. The user is available for narrow elevated Windows operator steps and explicitly chose **no paid upgrade**. Existing unrelated changes and private records remain preserved.
+
+| Item | Work and acceptance | Current status |
+| --- | --- | --- |
+| Windows protection | Exact private roots, harmless sentinels, owner success and genuine standard-user list/read/write/delete denial; account cleanup separately confirmed | Owner-positive check passed unelevated at 11:26:54 UTC; distinct-user proof awaits the user's elevated operator run and separate cleanup |
+| Protected storage | Exact cutover/configuration/backup/rollback operator checklist; do not enact cutover or restart | Preparation passed: runbook updated; actual cutover and rollback remain blocked/separately gated |
+| Compromised-password protection | Preserve no-upgrade decision; no billing or authentication setting change | Deferred, not passed |
+| Broker dependency | Official package metadata and separate repository/operator audits; no unsupported pin override | Blocked: official 10.50.2 still pins affected protobuf 5.29.5; repository audits passed, operator audit failed |
+| Real login expiry | One bounded disposable session, empty own-scope read, observed JWT expiry without automatic refresh or project lifetime change, recovery and verified cleanup | Blocked before creation: dashboard blank and no connector Auth-admin create operation; no user/session created, observation not started |
+| Validator clock | Sanitized session timing and bounded reproduction investigation; no reproduced failure is not resolution | Unresolved: three public Auth-health timing samples are not JWT-validator clock proof |
+
+No application behavior change is assumed. Fix only demonstrated in-scope defects. Documentation-only evidence updates need targeted checks; executable/test-harness changes require full verification, with frontend verification for visible behavior changes. No push, merge, deployment, broker connection/action, submission unlock, target amendment, active-service restart/cutover or retry of rejected cleanup is authorized. Any unresolved gate remains explicit in the final readiness decision.
