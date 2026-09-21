@@ -118,3 +118,170 @@ The unauthenticated paper route was also opened and showed the sign-in boundary 
 - The existing skipped tests remain skips, not passes. Passing Step 1 does not authorize paper submission or live trading.
 
 This report is part of the reviewed source. The exact local commit SHA and the clean post-commit preview identifier are recorded in the delivery handoff because a commit cannot contain its own SHA.
+
+---
+
+# Local-first security/data closure — September 20, 2026
+
+## Decision and source
+
+**Still no-go for live trading.** Work started from `f21e8a7ef2eb490d25036356eb66dad3a38fe871` on `codex/local-first-security-closure`. No broker order, paper-submission unlock, historical target amendment, service restart, merge or push occurred. The halted session, rejected automatic approval, target 200, two historical completions and F protection failure remain preserved.
+
+## Public hosting removal
+
+- The remote `Deploy Brontide to GitHub Pages` workflow was disabled before other implementation. No queued or running deployment existed to cancel.
+- The last published artifact (run `35464051997`, artifact `10590742044`) was inspected after extraction: 50 files / 2,820,618 bytes. It contained one expected Supabase publishable-key reference and public research/demo data, but no privileged key, JWT, database credential, private-key material, private runtime path or broker execution record.
+- The Pages site was deleted with the supported GitHub API. The Pages API returns 404 and a cache-bypassed request to `https://melvinroy.github.io/Journal/` returns 404 with no Brontide content.
+- The source workflow no longer runs on `main`, no longer enables Pages, has no embedded project fallback, and is fail-closed behind manual dispatch, `BRONTIDE_PAGES_PUBLISH_ENABLED == 'true'` and a required approval reference. The remote workflow remains disabled.
+
+## Cloud security and clock evidence
+
+- The Supabase project is on Free. Dashboard inspection showed leaked-password protection disabled and explicitly limited to Pro and above. No setting or subscription was changed.
+- The deployed user inventory contains only the real owner account, so the disposable A/B ownership and revocation matrix has not yet run. No real record was used for destructive testing.
+- Windows Time reports a successful `time.windows.com` synchronization. Five read-only Supabase Date-header samples differed from the local request midpoint by -0.75 to +0.07 seconds. Two-day Auth, PostgREST and gateway log searches found no `future` / `JWT issued` match. A persistent local clock offset was not reproduced, but the intermittent validator-clock cause remains unknown; the existing one-read retry and all authentication checks remain unchanged.
+
+## Dependencies and generated output
+
+- `npm audit --omit=dev --audit-level=low`: zero vulnerabilities.
+- Repository Python `pip-audit`: no known vulnerability in auditable packages; the local project is not on PyPI. `pip check`: no broken requirements.
+- Active operator environment: official `ibapi` 10.50.2 still pins protobuf 5.29.5 and reports PYSEC-2026-1805 / CVE-2026-0994. IBKR's current official download remains 10.50. The fixed protobuf versions conflict with the SDK pin, so no unsupported override was applied.
+- Final `out` scan: zero privileged-secret match files, zero private-runtime-path match files and zero broker-evidence match files; one generated file contains the expected browser publishable key.
+
+## Private storage operational evidence
+
+Candidate runtime identity `MELVIN\melvi` and literal paths are recorded in `docs/trading/PRIVATE_STORAGE.md`. The new runtime/backup roots exclude inherited development-platform grants. Online SQLite backup, separate restoration and integrity checks passed with matching 23 objects, 27 commands, 55,395 events and schema version 1. A new database, WAL and SHM inherited only the owner, `SYSTEM` and `Administrators` grants. Original files remain in place.
+
+The active service was not stopped or repointed. A genuinely distinct Windows identity could not be created from the non-elevated shell, so read/write/delete/list denial and the final cutover/reconciliation remain open gates.
+
+## Automated verification
+
+- Focused: 31 Node tests passed; 94 backend tests passed with 4 SDK-dependent skips and 2 deprecation warnings; 19 paper UI tests passed. The long 200-campaign test was left to the full gate.
+- Workflow YAML parsed, required fail-closed job condition was present, the `push` trigger was absent, and `git diff --check` passed.
+- Full `npm run verify` passed all five stages in 1084.1 seconds: 204 Node tests passed / 2 skipped; 269 backend tests passed / 4 skipped / 2 deprecation warnings; TypeScript passed; 66 browser tests passed / 3 skipped; production build passed. No screenshot baseline was updated. Evidence is under `output/trading-local-first-closure/` and `output/trading-local-first-closure-verify.log`.
+
+## Direct browser observations
+
+- Supabase dashboard: project Free plan; one real user; leaked-password control disabled with a Pro-only notice. No cloud setting changed.
+- Supabase logs: two-day Auth, PostgREST and gateway searches showed no matching validator-clock error.
+- The final source candidate was served from the intended checkout on `http://127.0.0.1:3000/`. Through ordinary demo controls, a plan was saved at entry 101 and changing the entry to 102 visibly invalidated the review, retained the draft, and kept validation/submission disabled. The NVDA open-position detail disclosed stale pricing and seven unprotected shares. The AMD closed-position detail and its linked expanded Journal row agreed on 20 entered, 20 exited, zero remaining, weighted exit 168, gross +80, costs +2 and net +79 (rounding from the underlying 78.70). Exiting demo returned to the sign-in boundary. This is direct UI evidence for ordinary controls, not authenticated-flow evidence.
+- The exact-source authenticated Plan/Positions/Journal matrix is still pending disposable identity creation. The automated normal-control flow passed, but it is not substituted for signed-in direct evidence.
+
+## Remaining external or unverified gates
+
+- Disposable cloud identities, deployed A/B ownership/reassignment and revoked-session behavior; authenticated ordinary-control browser transitions and cleanup.
+- Supabase Pro entitlement and separate account-level approval for leaked-password protection.
+- Official IBKR SDK/protobuf compatibility fix.
+- Distinct Windows identity denial, active-service path cutover, read-only reconciliation and rollback-window completion.
+- Fresh broker protection/reconnect/concurrency, owned-flat, owned-orders-cleared and complete-accounting evidence; 30 authenticated audited round trips; live trading. None was attempted or inferred.
+
+The exact local commit SHA and matching post-commit preview identifier are reported in the final handoff; no push, merge or deployment is authorized by this report.
+
+---
+
+# Remaining Step 1 verification closure — September 20, 2026
+
+## Scope and decision
+
+**Still no-go for live trading.** This verification-only package started from `edefd2cd63457695a315c4c09a169bf2d41a3e9b` on `codex/local-first-security-closure`. It made no executable-code, dependency, authentication-policy, billing, ACL, service, broker or deployment change. GitHub Pages remains unpublished and its workflow remains disabled. The halted session, rejected automatic approval, target 200, two historical completions and F protection failure remain unchanged.
+
+## Disposable identity and deployed ownership evidence
+
+The test used Supabase project **trading-journal** (`fsccmouzyfgcpqlmcngu`) and unique marker `step1-20260920071738-e5b5l7`. Two auto-confirmed reserved-domain users were created through **Create new user**; no invitation, recovery, magic-link or confirmation email operation was used. Their disposable Auth UUIDs were `63e6a544-2cf1-4d73-959f-7c33af499786` (A) and `92f80aa4-f16a-447f-8aea-6b40d22edf81` (B). The existing owner UUID was different and was not selected, rebound, signed out or modified.
+
+- A and B logins returned 200. Each inserted exactly one owned `public.trades` fixture (201). Each saw one own row and zero cross-user rows.
+- Cross-user update and delete requests returned 200 with zero affected rows. Explicit cross-user insertion and ownership reassignment both returned 403. Each owner could update its own fixture, and both fixtures remained correctly owned after every negative case. No write was retried.
+- Anonymous and malformed bearer requests returned 401. A and B refreshes returned 200, and refreshed tokens retained one own row / zero cross-user rows.
+- B logout returned 204. The Auth user endpoint rejected the revoked session after 0.2 seconds and remained rejected through 30.3 seconds. PostgREST continued to accept the already-issued access JWT for its one owned row throughout the same 30.3 seconds. The token lifetime was one hour. This is an observed stateless-JWT revocation window, not immediate global invalidation; actual expiry was not awaited and remains unverified.
+- Fixture cleanup was limited to the two recorded row UUIDs. Marker/owner pairs were checked, each fixture was deleted once in its owner context, and both owners then returned zero marker rows.
+- After explicit action-time authorization, the two Auth UUID/address pairs were verified against the creation evidence and only those two accounts were selected. The dashboard reported **Successfully deleted the selected 2 users**. After refresh, exact searches for each UUID independently returned **No users found / Total: 0**. The unfiltered table showed only the pre-existing owner account. The dashboard heading/footer count was stale before filtering, so it is not used as deletion evidence.
+
+## Authenticated local browser observations
+
+The signed-in checks used `http://localhost:3000/` and preview `edefd2cd+d.dc895c42`; this identifier included the intended `edefd2cd` executable source plus the then-current eligible documentation/untracked-source contribution. The documented localhost origin was used because the 127.0.0.1 development origin did not complete the Next.js development connection. No broker validation, submission or execution was requested.
+
+- A's Journal showed only A's fixture and B's showed only B's. A saved a local `QAADRAFT` plan through ordinary Plan controls with entry 100 and manual stop 95; TWS/account remained unavailable and submission controls remained locked. B opened with the default NVDA plan and no A plan. Returning to A restored A's saved plan.
+- An unsaved A review was cleared after the A→B→A scope transition and did not appear for B. This is intentional review invalidation, while the saved A plan remained preserved.
+- A delayed A history request was intercepted while switching to B. The browser canceled that prior-session request; continuing it reported that the interception no longer existed. B rendered one B record with no A marker. This is direct fail-closed cancellation evidence. The stronger case where a prior-session response actually resolves after the switch remains automated-only coverage.
+- Failing B's history GET rendered **Sync issue / Cloud history unavailable / TypeError: Failed to fetch**. The ordinary **Retry cloud history** control restored **Cloud synced** and still showed only B's row.
+- These legacy fixtures do not establish accounting agreement with broker executions, and the disposable cloud users could not be bound to the real owner's local paper account/environment. Same-user account/environment transition evidence and fresh broker accounting therefore remain open.
+
+## Dependency, skipped-test and configuration reconciliation
+
+- Repository environment: `services/eod/.venv`, Python 3.11.9, no `ibapi` or protobuf installed, dependency consistency clean and repository Python audit clean for auditable packages. This result applies to the repository test environment, not the operator's full trading runtime.
+- Active operator service environment: the protected `Journal-ui-refinement` checkout's venv with official `ibapi` 10.50.2 and exactly pinned protobuf 5.29.5. Dependency consistency passed, but the audit reported PYSEC-2026-1805 through two metadata aliases. Fixed protobuf versions 5.29.6 / 6.33.5 conflict with the SDK pin. IBKR's current stable 10.45 package has no Python API and its latest 10.50 package still supplies the affected combination, so no vendor-supported remediation is currently available and no pin or metadata was overridden.
+- The four SDK-dependent backend cases that normally skip in the repository environment were explicitly run against the active operator environment with mocked transport: 4 passed with 2 known deprecation warnings. They cover cancel/OCA translation, monotonic concurrent order IDs, UTC seven-day execution filtering, and modern `lastNDays` plus errors/fees. The normal full-suite skips remain accurately classified as optional-SDK absence, not failed execution.
+- Supabase **Prevent use of leaked passwords** is disabled on this Free project. Official configuration requires Pro or higher plus enabling the control in Auth Attack Protection. No subscription, billing or configuration change was made.
+- Read-only clock investigation still has no new reproduction. Previous synchronized-clock, Date-header and log evidence rules out a persistent broad skew but does not explain the intermittent validator error. Authentication validation and the single idempotent read retry were not changed.
+
+## Windows private-storage evidence
+
+The interactive identity is `MELVIN\melvi` (`S-1-5-21-1386659274-518491314-1459396466-1001`) in a non-elevated shell. The prepared runtime and backup roots exist, are owned by that identity, inherit their ACLs and expose full-control entries only for `MELVIN\melvi`, `SYSTEM` and `Administrators`. This is inspection, not operational denial proof.
+
+No suitable disposable non-owner identity or elevation was available. The prepared `MELVIN\BrontideAclProbe` procedure in `docs/trading/PRIVATE_STORAGE.md` gives literal paths and separate list/read/create-or-write/delete checks while preserving owner access. It was not run. Active-service cutover, TWS reconnection, reconciliation and rollback remain a separate reviewed operation.
+
+## Automated results, carried-forward results and skipped cases
+
+- Newly executed focused check: four operator-SDK backend tests passed; two known dependency deprecation warnings were emitted.
+- Documentation checks for this package: `git diff --check` passed before commit. No executable, dependency or rendered frontend source changed, so a new full `npm run verify` and a new frontend-verification implementation run were not warranted. The last full result at the unchanged executable baseline remains: 204 Node passed / 2 skipped; 269 backend passed / 4 skipped / 2 warnings; TypeScript passed; 66 browser passed / 3 skipped; production build passed.
+- Authenticated observations above are direct browser evidence. Earlier demo evidence remains demo/fixture evidence only. Physical monitor/DPI, non-Chromium browsers, a delivered delayed prior-session response, actual one-hour token expiry, same-user account/environment switching and fresh broker accounting were not directly tested in this package.
+
+## Remaining gates
+
+1. Create a suitable disposable Windows non-owner account with elevation, execute and review list/read/write/delete denial, then separately review active-service cutover and rollback. No ACL listing substitutes for this proof.
+2. Obtain Supabase Pro-or-higher entitlement and separate approval before enabling leaked-password protection.
+3. Obtain a vendor-supported IBKR SDK/protobuf combination without PYSEC-2026-1805; the current operator runtime must not be called vulnerability-free.
+4. Resolve or reproduce the intermittent validator-clock error without weakening validation or retrying uncertain writes. Record real access-token expiry behavior if that evidence is still required.
+5. Establish same-user paper account/environment transitions and fresh broker-based Plan/Position/Journal accounting, protection, reconnect, flat quantity and cleared-owned-order evidence in a separately authorized session. The 30-round-trip acceptance amendment also remains separately blocked. No broker action is authorized by this report.
+
+The exact scoped local commit SHA and the post-commit preview identifier are reported in the review handoff because a commit cannot contain its own SHA. No push, merge, deployment, service cutover or broker execution occurred.
+
+---
+
+# COORD-02 identity-boundary review — September 20, 2026
+
+## Decision and scope
+
+**No production defect was demonstrated and live trading remains a no-go.** This package started from `746b25ec8b999520cbaecd990f4a7ea86e2cd194`. It added deterministic isolation/expiry regressions and documentation only; application behavior, cloud configuration, installed owner binding, broker state and submission policy were not changed. No TWS connection, broker endpoint, service cutover, cloud user, paid change, ACL operation, push, merge or deployment was used.
+
+## Boundary matrix
+
+| Boundary | Validation and ownership | Revocation / expiry guarantee | Deterministic evidence and residual limit |
+| --- | --- | --- | --- |
+| Journal cloud reads | The Supabase browser client sends the current access JWT to PostgREST; deployed RLS limits rows by `auth.uid()`. The load effect is keyed by user ID and access token, hides the previous owner's bucket immediately, and accepts a result only while its request is current. The one retry applies only to `JWT issued at future` and only while the same request remains current. | Supabase logout/revocation prevents refresh and Auth-user lookup when the Auth service observes it, but an already-issued PostgREST JWT can remain valid until its JWT expiry. The observed revoked token still read its own row through 30.3 seconds of a one-hour token. Brontide does not claim immediate PostgREST revocation. | A new browser regression holds A's actual REST response, signs out, signs in as B, renders B, then resolves A; B remains visible and A never appears. Existing Node tests cover token refresh dependencies and cancellation during the clock-retry delay. Real one-hour expiry remains unobserved. |
+| Local paper HTTP endpoints | Requests must be loopback, any supplied Origin must match, and mutations require the local-request header. Every endpoint dependency calls Supabase `/auth/v1/user`; operational endpoints then compare the verified user with the immutable installed owner and current `PaperGatewayConfig.binding()`. | Once Auth rejects a revoked/expired token, the next local HTTP request returns 401 and cannot renew authority. An already-admitted identity refreshes an in-memory operator lease for 60 seconds. Normal sign-out calls local `/signout` before cloud logout; if that call is unreachable, the lease is allowed to expire rather than retrying a write. | Existing authentication tests cover absent, expired, malformed, anonymous, wrong-user and wrong-binding requests. New same-user fixtures prove records follow the exact paper account binding and reject a non-paper environment. A real installed-account switch was not performed. |
+| Exact order review / entry | Approval requires the verified local owner plus the exact batch digest, source identifier, account binding, connection ID and review window. Entry authority also checks the current source, connection, submission lock, prior rejection and batch expiry. New entries occur only through an authenticated explicit submit request. | A stale review cannot be approved, and entry authority rejects an expired operator lease or expired batch window. Disarming clears the armed batch, reviewed campaigns and authorized-batch set and changes the authenticated connection identity. | A new regression expires `validUntil` before approval and proves rejection with no approval receipt or transport write. Existing source/account/connection/rejection tests remain in force. Submission is still locked, and no real eligible quote/order evidence was produced. |
+| Managed campaign authority | A position action is reauthenticated and scoped to user, paper account, environment, connection, current campaign revision and reviewed source. Successful review stores only in-memory campaign/batch authority; broker-held protective orders remain independent at TWS. | Managed authority has the same 60-second local lease. The worker disarms before further automation when the deadline expires; authenticated actions also fail the lease check. If normal sign-out cannot reach the service, managed rules can retain local authority only until that deadline, while existing broker-held protection remains in place. | A new regression establishes reviewed managed authority, expires the lease, then proves the next authority check disarms and clears all reviewed/authorized sets. This is deterministic mock evidence, not a real broker or process-timing observation. |
+
+The frontend paper storage key includes user and account binding. The server record scope also requires environment=`paper`. There is no second enabled execution environment: `BRONTIDE_EXECUTION_ENVIRONMENT=live` is rejected. Before any future multi-environment release, the frontend identity/storage scope must explicitly add environment rather than relying on the current single-environment invariant.
+
+## Verification
+
+- Focused repository Python: `test_paper_auth.py` plus `test_paper_readiness.py` — 43 passed, with the two known dependency deprecation warnings.
+- Focused ordinary paper UI: 20 passed, including the new response-that-resolves-after-switch regression. The first local iteration selected A for both mocked token responses; the fixture was corrected to parse B's request payload, after which the new case and the complete paper UI file passed.
+- Full `npm run verify` passed all five stages in 813.4 seconds: 204 Node passed / 2 skipped; 272 backend passed / 4 SDK-dependent skipped / 2 known warnings; TypeScript passed; 67 browser passed / 3 skipped; production build passed. Reports are in `output/coord-02-verify/`.
+- No rendered application behavior changed. A separate frontend-verification implementation review was therefore not applicable; final source identity is checked against a served post-commit preview in the review handoff.
+
+## Remaining evidence and external gates
+
+- Actual one-hour PostgREST token expiry and a real local installed-account transition remain unobserved. Deterministic tests do not replace them.
+- The 60-second managed-authority bound is proven by controlled time/state tests, not by allowing a real broker-managed session to expire. No broker interaction was authorized.
+- Validator-clock root cause, elevated Windows denial/cutover proof, Supabase Pro leaked-password protection and the official IBKR SDK/protobuf advisory remain open.
+- Fresh broker accounting, protection, reconnect, flat-quantity and cleared-order evidence, the separately audited 30-round-trip target and all live-trading gates remain open. The previous submission-policy rejection remains independently binding.
+
+The exact scoped commit SHA and post-commit preview identifier are reported in the review handoff. This report does not authorize a push, merge, deployment, service restart, broker execution or submission unlock.
+
+## Independent review follow-up — September 21, 2026
+
+Read-only review of `7e2a8dcad5109258d83e839a569d2130e1a73fc5` found a gap in the new late-Journal-response regression: releasing A's route and immediately checking the already-visible B did not establish that A's response had been processed. No application defect was demonstrated; the production code retains both a cancelled-request check and a current-owner setter guard.
+
+The test now waits for A's specific network response to finish, observes the Supabase client's `Response.text()` body consumption, and uses a queued browser task plus two animation frames before asserting A is absent and B remains visible. It adds no fixed delay or application behavior change.
+
+- Focused paper UI: **20 passed** (2.6 minutes).
+- Negative sensitivity: a detached disposable checkout at the same baseline removed the stale-request and owner guards only in its local application copy. The body/render marker passed, but the final `USERB` visibility assertion failed after its full 10-second assertion timeout. Its owner-tagged bucket still hid A; loss of B is the demonstrated failure. The proof does not claim every possible asynchronous race is covered.
+- Positive control: restoring the disposable application's original source made the same test pass (**1 passed**, 43.6 seconds).
+- The disposable server used webpack on isolated port 3117 with fixture-only Supabase endpoints. An initial cold-server startup timeout and a cold-run global timeout were infrastructure iterations, not the final sensitivity evidence. The final negative run used a 90-second test budget in the disposable configuration, leaving the actual assertion timeout at 10 seconds.
+- Negative trace and browser error context are retained under `output/coord-02-response-proof/sensitivity/`. These are automated artifacts, not separately inspected manual screenshots.
+- Full `npm run verify`: **all five stages passed in 854.2 seconds** — 204 Node passed / 2 skipped; 272 backend passed / 4 SDK-dependent skipped / 2 known warnings; TypeScript passed; 67 browser passed / 3 skipped; production build passed. Reports are under `output/coord-02-response-proof/`; the runner log is `output/coord-02-response-proof-verify.log`. No screenshot baselines were changed.
+- No active application source, cloud/broker state, submission lock, service configuration or installed account binding was changed. Existing `next-env.d.ts` and unrelated untracked files remain preserved.
+
+Cleanup of the disposable worktree and its dependency junction was rejected by automatic approval review with `blocked by policy`. No cleanup retry was made. The temporary checkout remains at `C:\Users\melvi\AppData\Local\Temp\brontide-coord02-proof-c4e70a8f0a1b48279a2f39034b46a32b`; its application source was restored before the successful positive control. This cleanup limitation does not change the trading-policy block or any release gate above.

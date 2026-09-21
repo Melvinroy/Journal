@@ -235,3 +235,104 @@ This checklist distinguishes implemented local controls from evidence that is bl
 - [x] Complete direct frontend verification of the available normal demo controls against served preview `611b72e5+d.3c34d6a8` at `http://127.0.0.1:3000/?demo=1`: desktop/mobile/desktop, draft invalidation and retention, Journal expansion, dialog keyboard dismissal/focus return, responsive overflow and console checks passed.
 - [ ] Directly repeat the cloud error/retry and real user/account-switch paths with disposable authenticated identities. Automated browser regressions cover the visible recovery and stale-response behavior, but no suitable credentials were used for direct inspection.
 - [x] Create the scoped local commit and record its exact SHA in the review handoff. Do not push, merge or deploy without a later exact-SHA approval.
+
+## 10. Local-first closure continuation — September 20, 2026
+
+This section supersedes earlier delivery-state wording without erasing the historical evidence above. Work resumes from merged baseline `f21e8a7ef2eb490d25036356eb66dad3a38fe871` on branch `codex/local-first-security-closure`. The public Pages application is now explicitly out of scope and authorized for removal. Future publishing remains a separate approval.
+
+### Already implemented and retained
+
+- [x] Session-safe Journal reads, one bounded retry for the specific validator-clock read failure, explicit persistent-error recovery, and stale read/write suppression.
+- [x] User/account/environment scoping for browser state and new paper records, plus preservation of unscoped legacy evidence without silent reassignment.
+- [x] Complete version-2 saved-plan evidence, server-side validation and digests, tamper/concurrency rejection, and shared Position/Journal accounting regressions.
+- [x] Submission approval remains locked. The rejected automatic approval, halted session, historical target of 200, two recorded completions and F protection failure remain unchanged.
+
+### Ordered closure work and evidence standard
+
+1. **Remove public hosting first.** Inspect the currently published Pages artifact for private data and privileged credentials; a browser Supabase publishable key is expected public configuration, not by itself a secret leak. Disable the deployment workflow before any other implementation, cancel queued/running deployments, delete the Pages site through the supported GitHub API, and verify both the Pages API and public URL report that hosting is unavailable. Replace automatic `main` deployment and automatic Pages enablement with a manual-only workflow that fails closed unless a later explicit enablement variable and separate approval are present.
+2. **Close cloud identity evidence where access permits.** Use only disposable users and disposable rows for authenticated REST select/insert/update/delete/reassignment, user A/B isolation, revocation and browser transition testing. Preserve real records. Record sanitized token timing and request outcomes without tokens, passwords, emails or full identifiers. Never retry a write and do not relax signature, issuer, expiry or ownership validation. Treat missing dashboard/API entitlement as an external blocker.
+3. **Repeat supported dependency/configuration checks.** Re-run npm and Python audits, dependency consistency, official SDK compatibility evidence and generated-asset secret scans. Apply only vendor-supported changes. Inspect compromised-password protection and surface any paid/account-level change before applying it.
+4. **Perform the private-storage migration operationally.** Use the current interactive Windows identity only after recording it explicitly. Select dedicated literal runtime and backup paths outside the repository and cloud-synchronised locations; preserve the original tree and ACL rollback file. Prove runtime read/write, WAL inheritance, backup integrity/restore and access denial from a genuinely distinct disposable Windows identity. If elevation or a disposable identity is unavailable, stop with that gate open rather than treating an ACL listing as proof.
+5. **Verify the authenticated local application.** Serve the exact intended source and exercise ordinary Plan, Positions and Journal controls with disposable authenticated sessions: user/account transitions, stale responses, disconnected history, draft preservation, review invalidation and accounting agreement. Demo-only evidence is supporting evidence, not an authenticated pass.
+
+### Current checklist
+
+- [x] Published artifact inspected without exposing secret values: the final Pages artifact contained the expected browser publishable key and public research/demo data, but no privileged credentials, JWTs, private-key material, private runtime paths or broker execution records.
+- [x] Pages workflow made manual and fail-closed; automatic `main` deployment and automatic enablement removed. The remote workflow is also `disabled_manually`; future publication requires a separate workflow re-enable, repository enablement variable and approval reference.
+- [x] No queued or running Pages deployment remained to cancel. The GitHub Pages site was deleted through the supported API; the Pages API and a cache-bypassed public request both return 404.
+- [ ] Disposable deployed ownership, account-isolation and revocation matrix completed through the real authentication/REST path.
+- [x] Validator-clock failure retained explicitly as unresolved with sanitized evidence and the bounded read-only mitigation unchanged. Windows reports a successful `time.windows.com` synchronization; five Supabase Date-header samples were within 0.75 seconds of the local midpoint, and two-day Auth, PostgREST and gateway log searches contained no matching error. This rules out a persistent machine-wide offset but does not identify the intermittent cause.
+- [x] JavaScript/Python audits, consistency checks and generated-output secret scan repeated. npm and the repository Python environment are clean; the active official IBKR environment still has the protobuf advisory that cannot be fixed without violating the current SDK pin, so it remains a blocker.
+- [x] Compromised-password protection inspected without mutation. It is disabled and available only on Supabase Pro while this project is on Free; an account upgrade requires separate approval.
+- [ ] Dedicated Windows runtime/backup paths and operating identity recorded; backup/WAL inheritance and restore are proven, but distinct-user access denial and active-service cutover remain open. See the private-storage runbook for the exact partial evidence.
+- [ ] Exact-source authenticated Plan/Positions/Journal browser matrix completed; automated, direct and skipped evidence reported separately.
+- [x] Focused checks and final `npm run verify` passed without baseline updates: 204 Node tests passed with 2 skipped; 269 backend tests passed with 4 skipped and 2 deprecation warnings; TypeScript passed; 66 browser tests passed with 3 skipped; production build passed.
+- [x] Scoped local commit contains this checklist; its exact SHA is reported in the out-of-band review handoff because a commit cannot contain its own identity. Do not push, merge or deploy without later, separate approval.
+
+## 11. Remaining verification work package — September 20, 2026
+
+This work package is verification-first and does not reopen deployment, broker submission, acceptance-target or live-mode work. It starts from local commit `edefd2cd63457695a315c4c09a169bf2d41a3e9b` on `codex/local-first-security-closure`. Existing owner records, the halted session, its approval history, private data, generated evidence and unrelated working-tree files remain out of scope for mutation.
+
+### Disposable cloud identity procedure — completed within authorization
+
+The target was the hosted Supabase project **trading-journal** (`fsccmouzyfgcpqlmcngu`). After explicit creation authorization, two disposable users were created through the dashboard's **Create new user** operation with auto-confirmation, not **Send invitation**, using non-deliverable reserved-domain addresses. The dashboard stated that no confirmation email would be sent. Random passwords and bearer tokens remained ephemeral and were not written to the repository or evidence report. After testing and fixture cleanup, the operator separately authorized deletion of exactly the two recorded UUIDs. Their UUID/address pairs were checked against the creation evidence before deletion, only those two rows were selected, the dashboard reported successful deletion of two users, and exact-UUID searches returned **No users found / Total: 0** for each. The real owner remained the sole visible unfiltered row.
+
+After authorization, the procedure is:
+
+1. Record the two returned user UUIDs in transient test notes and use a unique `step1-<UTC timestamp>-<random suffix>` fixture marker. Do not inspect, rebind, sign out or otherwise change the real owner's session.
+2. Authenticate each disposable user through the deployed Auth endpoint with the browser publishable key. Record only sanitized status, token issue/expiry times and session identifiers or hashes.
+3. Through the deployed REST endpoint, insert exactly one `public.trades` row for each user using the normal schema: unique marker in `symbol`/`setup`, valid Long/Short side, disposable date and numeric accounting fields. Record the returned row UUIDs. No real trade, broker or paper-session row is used.
+4. For A and B independently, verify own-row select/update/delete visibility; cross-user UUID selects return no row; cross-user update/delete affect no row; and explicit insert or ownership reassignment to the other user's UUID is rejected by RLS. Re-read both owned rows after every negative case. Writes are issued once only—an uncertain write is never retried.
+5. Exercise the ordinary signed-in local Journal controls with A and B: sign-in/sign-out/sign-in transitions, per-user empty/owned history, draft/review separation and a delayed A response arriving after the interface has moved to B. Use the existing Plan, Positions and Journal controls only. REST probes remain test evidence, not an alternate trading interface. Same-user account/environment separation is checked only in the local paper state where those boundaries exist; the legacy `public.trades` table has a user boundary but no account/environment columns.
+6. Refresh a disposable session through the supported Auth refresh flow and verify the refreshed token retains only its owner's access. Revoke one disposable session without changing the real owner. Probe Auth and read-only REST at recorded intervals until rejection or JWT expiry, reporting the observed window rather than assuming immediate invalidation. Do not retry any write. An expired token and a malformed token must fail closed.
+7. Cleanup is limited to the two recorded fixture row UUIDs and the two recorded disposable Auth UUIDs. First verify the fixture marker/owner pair, delete each fixture once with its owner context, and confirm both UUIDs are absent. Then revoke disposable sessions. Account deletion is a separate destructive action and will receive an action-time confirmation before deleting exactly those two UUIDs. Confirm no fixture rows remain. No invitation or other email operation is part of cleanup.
+
+The procedure above is retained as the audit trail. The executed outcomes and limitations are recorded in `output/trading-readiness-delivery.md`; the missing real-expiry observation and unsupported same-user account/environment transition remain open rather than being inferred from the completed disposable-user cleanup.
+
+### Windows access, dependency and external-gate procedure
+
+- Inspect the prepared literal runtime and backup paths and their current ACLs without changing them. Identify a real enabled non-owner local Windows account before any denial test. The elevated operator procedure must preserve the ACL export, remove inheritance only on the two intended Brontide private directories, retain the owner and required SYSTEM/Administrators access, and validate owner read/write/delete/list plus non-owner read/write/delete/list denial. The active service, broker connection and source tree are not cut over in this package.
+- Verify backup restoration only into a new literal scratch path under the protected backup root, compare integrity/counts with the preserved source, and remove only that disposable restore after evidence is recorded. Cutover and rollback remain a separate reviewed operation.
+- Distinguish the clean repository Python audit environment from the operator-installed official IBKR SDK environment. Inspect the latter's exact interpreter, `ibapi`/protobuf versions, metadata constraints, consistency and audit outcome. Review every skipped backend test so optional SDK absence is not presented as executed adapter coverage. Check current official remediation only; do not alter pins or metadata.
+- Record the exact Supabase plan/configuration requirement for compromised-password protection without purchasing or changing it. Continue only read-only validator-clock investigation; absence of a reproduction is not resolution and neither token validation nor write behavior may be weakened.
+
+### Delivery evidence checklist
+
+- [x] Two disposable cloud users explicitly authorized, created without email, tested and deleted with action-time confirmation; both exact UUID searches returned no users afterward and the real owner was not selected or changed.
+- [ ] Deployed REST ownership/reassignment and refreshed/revoked-session outcomes are recorded without secrets. Anonymous and malformed tokens failed closed. Auth revocation was immediate, but the already-issued one-hour access JWT continued to authorize its own read for the full 30.3-second observation; actual expiry was not awaited and remains unverified.
+- [ ] Signed-in local A/B transitions were observed through ordinary controls against preview `edefd2cd+d.dc895c42`: history stayed isolated, an A plan restored after A→B→A, review state invalidated on the scope change, a delayed A request was canceled fail-closed, and disconnected history recovered through Retry. A delivered late response after the switch is automated-only evidence, and same-user account/environment switching is unavailable to these cloud-only fixtures.
+- [x] Runtime/backup ACLs were directly inspected. The shell is non-elevated and no suitable disposable Windows identity exists, so distinct-user denial was not executed; the exact literal-path elevated procedure and missing `MELVIN\BrontideAclProbe` identity remain open in the private-storage runbook.
+- [x] Repository and operator IBKR dependency environments were reconciled; the four normally skipped SDK-dependent backend cases passed when run against the active operator environment with mocked transport.
+- [x] Compromised-password subscription/configuration and validator-clock status are reported without mutation or overclaim. The Pro-or-higher protection gate and unexplained intermittent clock error remain open.
+- [x] Focused SDK checks and authenticated direct browser verification were completed and reported separately. No executable or rendered source changed in this package, so the already-current full `npm run verify` result was carried forward and the frontend-verification implementation workflow was not rerun.
+- [x] Scoped documentation is committed locally; the exact SHA and clean post-commit preview identifier are reported in the review handoff. No push, merge or deployment.
+
+## 12. COORD-02 identity-boundary review — September 20, 2026
+
+This bounded package starts from `746b25ec8b999520cbaecd990f4a7ea86e2cd194` on `codex/local-first-security-closure`. It reviews existing authentication and isolation guarantees without creating cloud users, changing cloud configuration, touching the installed owner binding, connecting to TWS, restarting services or exercising broker actions. Existing unrelated and generated working-tree files remain outside the scoped commit.
+
+### Questions and evidence standard
+
+1. Map Journal cloud reads, local paper endpoints, exact-order review state and managed paper authority to the identity check they perform, their revocation/expiry behavior, and their residual exposure. The observed Supabase behavior is the starting fact: Auth rejected the revoked session after 0.2 seconds, while PostgREST continued to accept its already-issued one-hour JWT through the 30.3-second observation window.
+2. Inspect deterministic coverage for same-user paper account/environment changes, a prior-session response that actually resolves after a transition, review expiry and managed-authority expiry. Add only missing isolated fixture/mock regressions, and distinguish those tests from real token-expiry, real account-transition and broker evidence.
+3. Fix only demonstrated defects within the existing authentication/isolation design. Do not add a parallel cloud authorization architecture, weaken token validation, retry uncertain writes or alter the submission-policy block.
+
+### COORD-02 checklist
+
+- [x] Boundary matrix records validation, revocation/expiry guarantee, tests and residual limits for Journal reads, local paper endpoints, order reviews and managed authority.
+- [x] Same-user account/environment coverage now proves account-binding selection and rejection of non-paper records with isolated service fixtures. The only enabled execution environment remains paper; live configuration fails closed.
+- [x] A prior-user Journal response is held until after sign-out and sign-in as a second user, then allowed to resolve; the regression proves it cannot replace the second user's row.
+- [x] Expired order review and expired 60-second managed-authority lease both fail closed, clear in-memory authority and perform no real broker action.
+- [x] Focused checks passed: 43 authentication/readiness backend tests and 20 paper UI tests. Because test-harness source changed, full `npm run verify` passed all five stages. No rendered behavior changed, so a separate frontend-verification implementation review was not triggered.
+- [x] The evidence report separates deterministic coverage from real token-expiry, account-transition and broker evidence; external gates remain open.
+- [x] Scoped tests and documentation are committed locally; the exact SHA/source identifier is reported in the review handoff. No push, merge or deployment.
+
+### Independent review follow-up — September 21, 2026
+
+- [x] Correct the late-response browser proof: wait for A's response to finish, observe its body consumption in the browser, then yield through the consuming promise continuations and render frames before checking B remains visible. Immediate already-true assertions were insufficient evidence.
+- [x] Prove sensitivity in a disposable checkout: removing stale-response guards makes the final B-visibility assertion fail after response processing; restoring the original source makes the same test pass. Active application source is unchanged.
+- [x] Focused ordinary paper UI checks: 20 passed. No screenshot baseline changed.
+- [x] Required full verification passed all five stages in 854.2 seconds: 204 Node passed / 2 skipped; 272 backend passed / 4 skipped / 2 known warnings; TypeScript passed; 67 browser passed / 3 skipped; production build passed. The reviewed local commit is reported separately in the handoff.
+- [ ] Disposable proof-checkout cleanup: automatic approval review rejected cleanup as `blocked by policy`; preserve the restored-source temporary checkout and do not retry or route around the rejection.
+
+These checks strengthen deterministic evidence only. The existing external, real-session, broker and live-release gates remain open.

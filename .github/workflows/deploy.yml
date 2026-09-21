@@ -1,9 +1,12 @@
 name: Deploy Brontide to GitHub Pages
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
+    inputs:
+      approval_reference:
+        description: "Separate owner approval reference for this publication"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,17 +19,14 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ vars.BRONTIDE_PAGES_PUBLISH_ENABLED == 'true' && inputs.approval_reference != '' }}
     runs-on: ubuntu-latest
     env:
-      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL || (github.repository == 'Melvinroy/Journal' && 'https://fsccmouzyfgcpqlmcngu.supabase.co') || '' }}
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || (github.repository == 'Melvinroy/Journal' && 'sb_publishable_Y6vTrdNqLmyZAANBBNGIgg_2mht84P8') || '' }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

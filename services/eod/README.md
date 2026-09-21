@@ -91,7 +91,7 @@ All requests use read-only connections through `ChartRepository`; they do not in
 
 Freshness uses stored authoritative session closes plus the 15-minute SIP delay. A symbol behind the latest known completed session is labeled stale. If the stored calendar does not cover today, the UI asks to check freshness instead of declaring the data current. This is a calendar-coverage signal, not a reason to rerun the historical backfill. Suspended/inactive symbols may legitimately lag the calendar.
 
-`npm run build` retains the `/Journal` GitHub Pages sample build. `npm run local` uses the same UI at the root URL. Only the exported `out` frontend is served by FastAPI, and only after the local launcher creates its build marker; `.env`, the repository, and databases are never mounted. GitHub Pages has no local-data switch and makes no local API requests. Do not publish a local build; the normal Pages workflow rebuilds the sample bundle.
+`npm run build` retains the static `/Journal` sample-build capability, but the project Pages site is unpublished and its workflow is disabled. `npm run local` uses the same UI at the root URL. Only the exported `out` frontend is served by FastAPI, and only after the local launcher creates its build marker; `.env`, the repository, and databases are never mounted. A static build has no local-data switch and makes no local API requests. Do not publish a local build; future publication is a separate manual approval gate.
 
 ### Verify AAPL, MSFT, NVDA and SPY on your Windows database
 

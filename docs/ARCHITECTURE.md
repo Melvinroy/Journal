@@ -2,7 +2,7 @@
 
 ## Decision
 
-Brontide is local-first for one swing trader and cloud-ready for a future multi-user service. The public GitHub Pages build remains a read-only demo. The working product runs the same web UI against a configurable API URL, so moving from a desktop service to a hosted API does not require rebuilding the chart or strategy logic.
+Brontide is local-first for one swing trader and cloud-ready for a future multi-user service. The former public GitHub Pages demo is unpublished and its workflow is disabled; publishing is a separate, manual approval gate. The working product runs the same web UI against a configurable API URL, so moving from a desktop service to a hosted API does not require rebuilding the chart or strategy logic.
 
 ## System boundaries
 
@@ -136,7 +136,7 @@ At that stage, add a durable queue and a time-series/columnar service only when 
 
 ## Scale and security rules
 
-- API keys remain server-side and never enter the public GitHub Pages bundle.
+- Privileged API keys remain server-side and never enter a browser or static-site bundle.
 - Every cloud row carrying private user state has `user_id` or `workspace_id` ownership and RLS.
 - Strategies, schemas, indicators and provider mappings are explicitly versioned.
 - Ingest jobs use checkpoints, retry budgets and provider rate-limit controls.

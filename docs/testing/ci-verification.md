@@ -8,7 +8,7 @@ The job supplies no production credentials. `npm run verify` assigns dummy provi
 
 On failure, the workflow uploads the captured verification log, EOD and Playwright JUnit reports when reached, the Playwright HTML report, traces, actual screenshots, and screenshot differences. A failure before a report-producing stage remains visible in `verify.log` and the Actions step log.
 
-The workflow does not deploy, change branch protection, or configure lint. Merges to `main` trigger the separate GitHub Pages deployment workflow; obtain the publication approvals required by [Journal working agreements](../../AGENTS.md) before pushing, merging or deploying.
+The workflow does not deploy, change branch protection, or configure lint. The separate GitHub Pages workflow is manually triggered, fail-closed behind `BRONTIDE_PAGES_PUBLISH_ENABLED`, and remotely disabled. Re-enabling it, setting the gate and dispatching with an approval reference each require later publication approval.
 
 ## Current operating state
 

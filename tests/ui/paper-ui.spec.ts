@@ -102,6 +102,106 @@ test("Journal leaves a persistent token rejection visible after one read retry",
   await expect.poll(() => reads).toBe(4);
 });
 
+test("Journal discards an earlier user's response even when it resolves after the account switch", async ({ page }) => {
+  await page.addInitScript(() => {
+    const readText = Response.prototype.text;
+    Response.prototype.text = function () {
+      const body = readText.call(this);
+      if (!this.url.includes("/rest/v1/trades")) return body;
+      return body.then(text => {
+        if (text.includes('"symbol":"USERA"')) {
+          // Observe the client's actual body read, then yield past its promise
+          // continuations and two render frames before inspecting the result.
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => {
+            channel.port1.close();
+            channel.port2.close();
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              document.documentElement.dataset.lateJournalResponse = "processed";
+            }));
+          };
+          channel.port2.postMessage(null);
+        }
+        return text;
+      });
+    };
+  });
+  const user = (label: "a" | "b") => ({
+    id: `00000000-0000-0000-0000-00000000000${label === "a" ? "1" : "2"}`,
+    email: `${label}@example.test`,
+    email_confirmed_at: new Date().toISOString(),
+    aud: "authenticated",
+  });
+  const row = (label: "a" | "b") => ({
+    id: `trade-${label}`,
+    symbol: `USER${label.toUpperCase()}`,
+    side: "Long",
+    setup: `Owned by ${label.toUpperCase()}`,
+    trade_date: "2026-09-20",
+    pnl: 1,
+    realized_r: 0.5,
+    dollar_risk: 2,
+    planned_r: 2,
+    grade: "B",
+  });
+  let releaseA!: () => void;
+  const holdA = new Promise<void>(resolve => { releaseA = resolve; });
+  let aReadStarted!: () => void;
+  const aRead = new Promise<void>(resolve => { aReadStarted = resolve; });
+
+  await page.route("https://brontide-test.supabase.co/**", async route => {
+    const request = route.request();
+    if (request.url().includes("/token")) {
+      const payload = request.postData() ?? "";
+      const label = payload.includes("b@example.test") || payload.includes("b%40example.test") ? "b" : "a";
+      await route.fulfill({ json: {
+        access_token: `access-${label}`,
+        refresh_token: `refresh-${label}`,
+        expires_in: 3600,
+        token_type: "bearer",
+        user: user(label),
+      } });
+      return;
+    }
+    await route.fulfill({ status: request.url().includes("/logout") ? 204 : 200, json: [] });
+  });
+  await page.route("**/v1/ibkr/paper/identity", async route => {
+    const label = route.request().headers().authorization?.includes("access-b") ? "b" : "a";
+    await route.fulfill({ json: { userId: user(label).id, email: user(label).email, linked: true, accountBinding: "test-binding", environment: "paper" } });
+  });
+  await page.route("**/v1/ibkr/paper/status", route => route.fulfill({ json: empty }));
+  await page.route("**/v1/ibkr/paper/signout", route => route.fulfill({ json: empty }));
+  await page.route("**/rest/v1/trades**", async route => {
+    const isA = route.request().headers().authorization?.includes("access-a");
+    if (isA) {
+      aReadStarted();
+      await holdA;
+    }
+    await route.fulfill({ json: [row(isA ? "a" : "b")] });
+  });
+
+  await navigate(page);
+  await page.getByLabel("Email address").fill("a@example.test");
+  await page.getByLabel("Password", { exact: true }).fill("test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await aRead;
+  await page.getByRole("button", { name: "Sign out", exact: true }).first().click();
+  await expect(page.getByLabel("Email address")).toBeVisible();
+  await page.getByLabel("Email address").fill("b@example.test");
+  await page.getByLabel("Password", { exact: true }).fill("test-only-password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await page.getByRole("button", { name: "Journal", exact: true }).click();
+  await expect(page.getByText("USERB", { exact: true })).toBeVisible();
+  const lateResponse = page.waitForResponse(response =>
+    response.url().includes("/rest/v1/trades") &&
+    response.request().headers().authorization?.includes("access-a") === true);
+  releaseA();
+  expect(await (await lateResponse).finished()).toBeNull();
+  await expect(page.locator("html")).toHaveAttribute("data-late-journal-response", "processed");
+  await expect(page.getByText("USERA", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("USERB", { exact: true })).toBeVisible();
+});
+
 test("exact confirmation, keyboard dismissal, and double-click submit guard", async ({ page }) => {
   let approvals = 0, submissions = 0;
   await page.route("**/v1/ibkr/paper/batches/batch/approve", async r => { approvals++; await r.fulfill({ json: {} }); });
