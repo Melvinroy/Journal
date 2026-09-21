@@ -285,3 +285,24 @@ The test now waits for A's specific network response to finish, observes the Sup
 - No active application source, cloud/broker state, submission lock, service configuration or installed account binding was changed. Existing `next-env.d.ts` and unrelated untracked files remain preserved.
 
 Cleanup of the disposable worktree and its dependency junction was rejected by automatic approval review with `blocked by policy`. No cleanup retry was made. The temporary checkout remains at `C:\Users\melvi\AppData\Local\Temp\brontide-coord02-proof-c4e70a8f0a1b48279a2f39034b46a32b`; its application source was restored before the successful positive control. This cleanup limitation does not change the trading-policy block or any release gate above.
+
+## COORD-03 synthetic restore and acceptance preparation — September 21, 2026
+
+Scope is fixture-only recovery verification and documentation. No application or rendered behavior changed, and no private runtime database, cloud identity/configuration, ACL, service, broker connection, order, target amendment or deployment was touched. This is not operational or broker recovery evidence.
+
+### Added deterministic proof
+
+- A fake-transport campaign is closed with missing exit commissions, alongside an immutable saved-plan revision and an unrelated synthetic campaign with distinct order/execution identities. SQLite backup is restored to a new temporary path. Complete objects/commands/events, schema and integrity agree; the original remains unchanged.
+- A fresh service object uses the restored store and the existing fake transport. Duplicate/reversed execution callbacks do not change economic executions; duplicated late fees yield exactly $0.60 fees, -$6 gross and -$6.60 net. The unrelated campaign and plan evidence survive unchanged. No transport writes occur during restored replay. This is an in-process mock rehearsal, not a process/service restart or real broker reconnection.
+- A synthetic transmission timeout leaves durable uncertainty. The restored service starts unarmed and rejects replay with the exact authority error. An isolated matching approval receipt/connection then reaches the actual arming/reconciliation path: the fake callback confirms the transmitted parent command but the incomplete campaign still blocks arming with an outstanding-reconciliation error. Command identities/requests remain intact and no second economic action is sent. No real user approval or expired-session guarantee is inferred.
+
+The existing P01–P38 matrix is preserved with a prominent historical notice and dated normal-control overlay. Legacy tooling enablement instructions are explicitly superseded by the independent policy block. The readiness summary separates completed disposable cloud/COORD-02 evidence from remaining external decisions. Two historical round trips, F failed protection, SOFI cancellation, 30 ceiling and existing limits remain unchanged.
+
+### Verification
+
+Focused readiness/lifecycle tests: **67 passed, 4 skipped, 2 known dependency deprecation warnings** using repository Python 3.11.9. The skipped adapter cases still require the optional official SDK; they are not newly executed evidence. A preliminary full run was deliberately interrupted to incorporate independent test review; it is not a verification pass. Final full verification results are recorded below after completion. Logs/reports are under `output/coord-03-verify/` and contain no private broker evidence.
+
+No frontend implementation review or fresh signed-in/manual browser observation is claimed because rendered behavior did not change. The pre-existing `next-env.d.ts` bytes, `CLAUDE.md` and unrelated generated files are preserved. Previously policy-blocked temporary proof-checkout cleanup was not retried.
+
+
+Final `npm run verify` completed successfully in **752.5 seconds** on the final executable/test source: 204 Node passed/2 skipped (6.3s); 274 backend passed/4 skipped/2 known warnings (324.9s); TypeScript passed (17.2s); 67 browser passed/3 skipped (374.0s); production build passed (29.2s). No screenshot baselines changed. Only checklist/results text was finalized afterward. Original `next-env.d.ts` bytes were restored and compared exactly; its pre-existing unrelated diff remains preserved. Exact local commit/source identity is reported separately by the delivery coordinator; no commit, push or merge is implied by this test result.

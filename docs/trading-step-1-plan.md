@@ -336,3 +336,15 @@ This bounded package starts from `746b25ec8b999520cbaecd990f4a7ea86e2cd194` on `
 - [ ] Disposable proof-checkout cleanup: automatic approval review rejected cleanup as `blocked by policy`; preserve the restored-source temporary checkout and do not retry or route around the rejection.
 
 These checks strengthen deterministic evidence only. The existing external, real-session, broker and live-release gates remain open.
+
+## 13. COORD-03 restore rehearsal and acceptance preparation — September 21, 2026
+
+This package uses isolated synthetic databases and the existing fake transport only. It does not touch private runtime data, services, cloud identities, ACLs, broker connections, submissions, the historical session target or deployment. It strengthens recovery evidence without closing operational or broker gates.
+
+- [x] Restore a synthetic ledger to a new path and compare complete objects, commands, events and schema; preserve immutable saved-plan evidence and the original database.
+- [x] Prove restored authority is not automatically rearmed, uncertain commands are not retransmitted, duplicate/reordered callbacks are idempotent and late fees update accounting once while unrelated campaigns survive.
+- [x] Add a dated normal-control acceptance overlay to the existing historical matrix and supersede legacy enablement instructions with the independent policy block.
+- [x] Reconcile historical readiness wording with the completed disposable identity and COORD-02 evidence; retain exact external gates.
+- [x] Focused readiness/lifecycle checks: 67 passed, 4 optional-SDK skips and 2 known warnings. Final full verification passed all five stages in 752.5 seconds: 204 Node passed/2 skipped; 274 backend passed/4 skipped/2 known warnings; TypeScript passed; 67 browser passed/3 skipped; production build passed. No baseline updates. Real broker, Windows denial/cutover and signed-in expiry evidence remain separate open gates.
+
+No new public API, recovery endpoint or alternate order form is planned. Distinct-user Windows denial, active cutover/rollback, vendor SDK remediation, paid password protection, real token-expiry/account-transition observations, intermittent clock diagnosis and fresh broker acceptance remain external or separately gated work.
