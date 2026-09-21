@@ -326,3 +326,13 @@ This bounded package starts from `746b25ec8b999520cbaecd990f4a7ea86e2cd194` on `
 - [x] Focused checks passed: 43 authentication/readiness backend tests and 20 paper UI tests. Because test-harness source changed, full `npm run verify` passed all five stages. No rendered behavior changed, so a separate frontend-verification implementation review was not triggered.
 - [x] The evidence report separates deterministic coverage from real token-expiry, account-transition and broker evidence; external gates remain open.
 - [x] Scoped tests and documentation are committed locally; the exact SHA/source identifier is reported in the review handoff. No push, merge or deployment.
+
+### Independent review follow-up — September 21, 2026
+
+- [x] Correct the late-response browser proof: wait for A's response to finish, observe its body consumption in the browser, then yield through the consuming promise continuations and render frames before checking B remains visible. Immediate already-true assertions were insufficient evidence.
+- [x] Prove sensitivity in a disposable checkout: removing stale-response guards makes the final B-visibility assertion fail after response processing; restoring the original source makes the same test pass. Active application source is unchanged.
+- [x] Focused ordinary paper UI checks: 20 passed. No screenshot baseline changed.
+- [x] Required full verification passed all five stages in 854.2 seconds: 204 Node passed / 2 skipped; 272 backend passed / 4 skipped / 2 known warnings; TypeScript passed; 67 browser passed / 3 skipped; production build passed. The reviewed local commit is reported separately in the handoff.
+- [ ] Disposable proof-checkout cleanup: automatic approval review rejected cleanup as `blocked by policy`; preserve the restored-source temporary checkout and do not retry or route around the rejection.
+
+These checks strengthen deterministic evidence only. The existing external, real-session, broker and live-release gates remain open.

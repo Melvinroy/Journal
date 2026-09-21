@@ -103,6 +103,29 @@ test("Journal leaves a persistent token rejection visible after one read retry",
 });
 
 test("Journal discards an earlier user's response even when it resolves after the account switch", async ({ page }) => {
+  await page.addInitScript(() => {
+    const readText = Response.prototype.text;
+    Response.prototype.text = function () {
+      const body = readText.call(this);
+      if (!this.url.includes("/rest/v1/trades")) return body;
+      return body.then(text => {
+        if (text.includes('"symbol":"USERA"')) {
+          // Observe the client's actual body read, then yield past its promise
+          // continuations and two render frames before inspecting the result.
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => {
+            channel.port1.close();
+            channel.port2.close();
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              document.documentElement.dataset.lateJournalResponse = "processed";
+            }));
+          };
+          channel.port2.postMessage(null);
+        }
+        return text;
+      });
+    };
+  });
   const user = (label: "a" | "b") => ({
     id: `00000000-0000-0000-0000-00000000000${label === "a" ? "1" : "2"}`,
     email: `${label}@example.test`,
@@ -169,7 +192,12 @@ test("Journal discards an earlier user's response even when it resolves after th
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.getByRole("button", { name: "Journal", exact: true }).click();
   await expect(page.getByText("USERB", { exact: true })).toBeVisible();
+  const lateResponse = page.waitForResponse(response =>
+    response.url().includes("/rest/v1/trades") &&
+    response.request().headers().authorization?.includes("access-a") === true);
   releaseA();
+  expect(await (await lateResponse).finished()).toBeNull();
+  await expect(page.locator("html")).toHaveAttribute("data-late-journal-response", "processed");
   await expect(page.getByText("USERA", { exact: true })).toHaveCount(0);
   await expect(page.getByText("USERB", { exact: true })).toBeVisible();
 });

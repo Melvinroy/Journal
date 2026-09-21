@@ -269,3 +269,19 @@ The frontend paper storage key includes user and account binding. The server rec
 - Fresh broker accounting, protection, reconnect, flat-quantity and cleared-order evidence, the separately audited 30-round-trip target and all live-trading gates remain open. The previous submission-policy rejection remains independently binding.
 
 The exact scoped commit SHA and post-commit preview identifier are reported in the review handoff. This report does not authorize a push, merge, deployment, service restart, broker execution or submission unlock.
+
+## Independent review follow-up — September 21, 2026
+
+Read-only review of `7e2a8dcad5109258d83e839a569d2130e1a73fc5` found a gap in the new late-Journal-response regression: releasing A's route and immediately checking the already-visible B did not establish that A's response had been processed. No application defect was demonstrated; the production code retains both a cancelled-request check and a current-owner setter guard.
+
+The test now waits for A's specific network response to finish, observes the Supabase client's `Response.text()` body consumption, and uses a queued browser task plus two animation frames before asserting A is absent and B remains visible. It adds no fixed delay or application behavior change.
+
+- Focused paper UI: **20 passed** (2.6 minutes).
+- Negative sensitivity: a detached disposable checkout at the same baseline removed the stale-request and owner guards only in its local application copy. The body/render marker passed, but the final `USERB` visibility assertion failed after its full 10-second assertion timeout. Its owner-tagged bucket still hid A; loss of B is the demonstrated failure. The proof does not claim every possible asynchronous race is covered.
+- Positive control: restoring the disposable application's original source made the same test pass (**1 passed**, 43.6 seconds).
+- The disposable server used webpack on isolated port 3117 with fixture-only Supabase endpoints. An initial cold-server startup timeout and a cold-run global timeout were infrastructure iterations, not the final sensitivity evidence. The final negative run used a 90-second test budget in the disposable configuration, leaving the actual assertion timeout at 10 seconds.
+- Negative trace and browser error context are retained under `output/coord-02-response-proof/sensitivity/`. These are automated artifacts, not separately inspected manual screenshots.
+- Full `npm run verify`: **all five stages passed in 854.2 seconds** — 204 Node passed / 2 skipped; 272 backend passed / 4 SDK-dependent skipped / 2 known warnings; TypeScript passed; 67 browser passed / 3 skipped; production build passed. Reports are under `output/coord-02-response-proof/`; the runner log is `output/coord-02-response-proof-verify.log`. No screenshot baselines were changed.
+- No active application source, cloud/broker state, submission lock, service configuration or installed account binding was changed. Existing `next-env.d.ts` and unrelated untracked files remain preserved.
+
+Cleanup of the disposable worktree and its dependency junction was rejected by automatic approval review with `blocked by policy`. No cleanup retry was made. The temporary checkout remains at `C:\Users\melvi\AppData\Local\Temp\brontide-coord02-proof-c4e70a8f0a1b48279a2f39034b46a32b`; its application source was restored before the successful positive control. This cleanup limitation does not change the trading-policy block or any release gate above.
