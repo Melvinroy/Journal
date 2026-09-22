@@ -351,15 +351,26 @@ No new public API, recovery endpoint or alternate order form is planned. Distinc
 
 ## 14. Phase 1 final security checks — September 21, 2026
 
-The user approved this bounded execution package from `8611ff4d48cca94f7846423112f5c139db1caacb`. Work is on `codex/phase1-final-security-checks`. The user is available for narrow elevated Windows operator steps and explicitly chose **no paid upgrade**. Existing unrelated changes and private records remain preserved.
+Historical September 21 authorization: the user approved this bounded execution package from `8611ff4d48cca94f7846423112f5c139db1caacb` on `codex/phase1-final-security-checks`, was available for narrow elevated Windows steps, and chose **no paid upgrade**. Section 15 supersedes operator availability: all such steps are now deferred. Existing unrelated changes and private records remain preserved.
 
 | Item | Work and acceptance | Current status |
 | --- | --- | --- |
-| Windows protection | Exact private roots, harmless sentinels, owner success and genuine standard-user list/read/write/delete denial; account cleanup separately confirmed | Owner-positive check passed unelevated at 11:26:54 UTC; distinct-user proof awaits the user's elevated operator run and separate cleanup |
-| Protected storage | Exact cutover/configuration/backup/rollback operator checklist; do not enact cutover or restart | Preparation passed: runbook updated; actual cutover and rollback remain blocked/separately gated |
+| Windows protection | Exact private roots, harmless sentinels, owner success and genuine standard-user list/read/write/delete denial; account cleanup separately confirmed | Blocked: historical owner-positive result is agent-session only; desktop normal/elevated roots absent. Administrator probe suspended pending path reconciliation |
+| Protected storage | Exact cutover/configuration/backup/rollback operator checklist; do not enact cutover or restart | Checklist prepared; candidate paths not confirmed on desktop. Actual cutover and rollback blocked/separately gated |
 | Compromised-password protection | Preserve no-upgrade decision; no billing or authentication setting change | Deferred, not passed |
 | Broker dependency | Official package metadata and separate repository/operator audits; no unsupported pin override | Blocked: official 10.50.2 still pins affected protobuf 5.29.5; repository audits passed, operator audit failed |
 | Real login expiry | One bounded disposable session, empty own-scope read, observed JWT expiry without automatic refresh or project lifetime change, recovery and verified cleanup | Blocked before creation: dashboard blank and no connector Auth-admin create operation; no user/session created, observation not started |
 | Validator clock | Sanitized session timing and bounded reproduction investigation; no reproduced failure is not resolution | Unresolved: three public Auth-health timing samples are not JWT-validator clock proof |
 
 No application behavior change is assumed. Fix only demonstrated in-scope defects. Documentation-only evidence updates need targeted checks; executable/test-harness changes require full verification, with frontend verification for visible behavior changes. No push, merge, deployment, broker connection/action, submission unlock, target amendment, active-service restart/cutover or retry of rejected cleanup is authorized. Any unresolved gate remains explicit in the final readiness decision.
+
+## 15. Independent Phase 1 closure — September 22, 2026
+
+User requested that all operator/approval-dependent work be deferred without further action requests during this package. [Operator actions](trading/OPERATOR_ACTIONS.md) is the single do-later checklist; it does not authorize any listed action.
+
+- [x] Reconcile desktop screenshots: normal and elevated PowerShell reported the private roots missing; normal `LOCALAPPDATA` is the expected path and a direct child-name search found neither Brontide nor Journal folders. Preserve prior agent observations without treating them as desktop proof. No claim of data loss or established virtualization cause.
+- [x] Trace storage selection read-only: explicit database argument, then database environment override, then local AppData/home Brontide default; owner uses its environment override or local AppData/home Brontide default; verification requires its configured path. Changing the repository name does not rename these directories.
+- [x] Prepare deferred Windows, cutover, real-session, account-transition, external-decision and release procedures. Preserve no-upgrade decision and independent policy blocks.
+- [x] Independently reviewed the narrow missing authentication-network-failure regression; reused existing clock/isolation/restore coverage. Focused auth tests: 22 passed, 2 known warnings. Full verification: all five stages passed in 879.9 seconds (204 Node/2 skipped; 276 backend/4 skipped/2 warnings; TypeScript; 67 browser/3 skipped; production build). No baseline changes. Operator command block passed static parsing only; it was not executed.
+
+Fresh agent-side process inventory did not find Python/uvicorn. This cannot prove desktop service state or another host's configuration. Storage-view mismatch and intermittent validator-clock root cause remain unresolved. Real session/account/broker checks remain unperformed; no cloud users or operator changes are part of this package.

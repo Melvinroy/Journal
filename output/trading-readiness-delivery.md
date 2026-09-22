@@ -309,6 +309,8 @@ Final `npm run verify` completed successfully in **752.5 seconds** on the final 
 
 ## Phase 1 final security checks — September 21, 2026
 
+**Historical section:** its next-action recommendations and unexecuted-helper description are superseded by the September 22 section below. The desktop attempt failed before fixtures; the probe is now suspended and no operator action is requested.
+
 This bounded package starts from local commit `8611ff4d48cca94f7846423112f5c139db1caacb` on `codex/phase1-final-security-checks`. Sub-agents performed independent Windows preparation, dependency inspection and session-access checks; the coordinator reviewed their reports and the operator script. Application and regression source were not changed. The unrelated `next-env.d.ts` diff and untracked files remain preserved.
 
 | Item | Result and remaining requirement |
@@ -324,4 +326,34 @@ Detailed local artifacts: `output/phase1-final-checks/dependencies.md`, `session
 
 Documentation checks include whitespace/diff review. No fresh full suite or frontend behavior inspection is claimed for this documentation-only delivery; the earlier full suite above is historical executable-source evidence. No broker connection, order, target amendment, submission unlock, cloud identity mutation, ACL change, cutover, push, merge or deployment occurred. Previously rejected cleanup was not retried.
 
-**Readiness: Phase 1 remains incomplete; live trading remains no-go.** Immediate operator dependencies are the Windows denial probe and restoration of normal authenticated dashboard access. Vendor remediation, deferred paid protection, real account-transition evidence and the independent broker acceptance block remain separate gates.
+**Historical September 21 readiness:** Phase 1 remained incomplete; live trading remained no-go. The subsequent desktop discrepancy below supersedes the suggestion to run the Windows denial probe immediately.
+
+## Independent Phase 1 package — September 22, 2026
+
+Baseline `277e8bf10f6b60419ea1a608aeab7dbb74b546cd`, branch `codex/phase1-final-security-checks`. The user deferred all approval/operator-dependent actions. `docs/trading/OPERATOR_ACTIONS.md` now holds prerequisites, procedures, expected results and evidence requirements for those later actions. No user action is requested during this package.
+
+### Corrected storage evidence
+
+The user's supplied screenshots show that normal and elevated desktop PowerShell cannot find `BrontidePrivate`; normal `LOCALAPPDATA` is `C:\Users\melvi\AppData\Local`, and its direct child-name listing returned no Brontide/Journal folders. Identity and hostname match the agent reports, but that does not establish identical filesystem views. The administrator probe stopped at its first root lookup, before account or fixture creation. The helper is suspended until paths agree. Prior agent-only ACL, owner access and backup/restore observations are preserved as history, not proof of a protected desktop installation.
+
+Fresh read-only agent inspection at approximately 13:23 UTC found the original data paths and candidate private roots visible. Database/owner overrides are unset in process/user/machine scopes; the verification path is explicitly set in process/user scope. Windows PowerShell 5.1 x64 launched within the agent session sees the same roots as PowerShell 7, so shell version alone is not an explanation. No Python process or listener on inspected ports 8765/8766/8787/3000/8000 was observed. This does not prove desktop service state. No restart or connection was attempted.
+
+Source trace: `paper_store.py:18` selects an explicit constructor path, then `BRONTIDE_PAPER_DATABASE`, then local AppData/home `Brontide/paper-lifecycle.sqlite3`; `paper_auth.py:15` selects owner override/default; `ibkr_tws.py:247` requires a configured verification path. `scripts/local.mjs` loads root dotenv and passes the environment to the service; `config.py:37` supports `BRONTIDE_ENV_FILE` or dotenv discovery. Agent-side allowlisted configuration inspection is not observation of a running service's environment. Renaming the code folder does not rename private storage. **Cause remains unresolved.** No folders, databases or configuration were changed to make observations agree.
+
+### Independent coverage review and narrow addition
+
+Existing deterministic tests cover clock retry bounds and cancellation (`tests/auth-ready.test.mjs`), stale Journal responses after identity changes (`tests/ui/paper-ui.spec.ts`), missing owner and review/lease expiry (`test_paper_auth.py`), account isolation and restored uncertain commands/late-fee idempotency (`test_paper_readiness.py`), and persistence failure before transmission (`test_paper_lifecycle.py`). These tests do not replace actual expiry, desktop ACL, account-transition or broker evidence. Missing database paths may create a new ledger by design; this review does not claim every missing-path case rejects startup.
+
+The only new regression parametrizes Auth `TimeoutException` and `ConnectError`. Valid status and submit requests must each perform one lookup and return the exact sanitized 503 response, without reaching owner lookup, authority refresh or endpoint service dispatch. Failure sentinels prevent a false pass if those request paths are reached. Existing TestClient shutdown still runs; no claim of zero application lifecycle activity is made. No production implementation changed.
+
+Focused verification reported by the implementation sub-agent: repository Python 3.11.9, **22 passed, 2 known deprecation warnings** in 3.19 seconds. A separate reviewer inspected endpoint dependency wiring, valid payloads, failure sentinels and response assertions and found no blocking issue. Full verification results are recorded below when complete. No rendered behavior changed; no new manual frontend observation is claimed.
+
+Supabase session/password guidance and the changelog were rechecked for the deferred procedure. The Markdown changelog required a direct read after the browser fetch rejected its content type. No cloud fixture, settings, token or real login action occurred. Revocation and expiry are treated separately; deleting a user is not proof of invalidating an issued JWT.
+
+### Final verification and review
+
+`npm run verify` passed all five stages in **879.9 seconds**: Node **204 passed / 2 skipped** (16.2s); backend **276 passed / 4 skipped / 2 known warnings** (370.3s); TypeScript passed (31.6s); browser **67 passed / 3 skipped** (412.0s); production build passed (44.5s). Runtime: Node 22.22.2, repository Python 3.11.9, pytest 9.1.1, Chromium 153.0.8010.12. Logs/reports remain local under `output/phase1-independent-verify.log` and `output/phase1-independent-verify/`. Skips remain limitations. No screenshot baselines changed; no manual signed-in or physical-display proof is claimed.
+
+Independent documentation review corrected historical operator-availability wording and required a final consistent SQLite snapshot after writer quiescence in both cutover procedures. Reviewer confirmed corrections and zero syntax errors in the deferred diagnostic block without executing it. Local document links and scoped whitespace checks passed. Only checklist/evidence text was finalized after verification. Unrelated `next-env.d.ts` bytes are preserved (Git blob `a419cbe4e3a5e8d4b481b851dbf4ac767de069e6`), along with other unrelated/untracked artifacts.
+
+**Readiness:** this independent package is complete; Phase 1 is not. Operator paths/ACL/cutover and actual session/account evidence remain deferred or blocked; password protection remains deferred without upgrade; vendor SDK remediation and broker acceptance remain blocked; storage visibility and intermittent validator-clock cause remain unresolved. No push, merge, deployment, broker request, target amendment, submission unlock or previously rejected cleanup occurred. No operator action is requested now.

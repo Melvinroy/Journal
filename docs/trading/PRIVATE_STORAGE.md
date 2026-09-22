@@ -1,5 +1,7 @@
 # Private paper-storage installation
 
+**Current gate, September 22:** follow [deferred operator actions](OPERATOR_ACTIONS.md) before any procedure below. The administrator probe is suspended because the user's normal and elevated shells cannot see the private roots that the agent sees. Earlier copy/ACL/restore results below are historical agent-session observations, not proof of a protected desktop installation. A fresh agent process inventory found no Python/uvicorn process; the historical active-service description is not a current service-state claim.
+
 Brontide's paper ledger, owner binding, operator verification, raw broker evidence and backups are private operational data. The development checkout is not the production security boundary. The default `%LOCALAPPDATA%\Brontide` directory currently inherits development-platform grants and is therefore not approved as a least-privilege production installation.
 
 ## Required layout
@@ -55,9 +57,11 @@ This procedure deliberately does not stop or restart the active service, reconne
 
 ### September 21 owner proof and prepared operator probe
 
+**Subsequent operator discrepancy — gate blocked:** the user's elevated Windows PowerShell reported both `BrontidePrivate` and `BrontidePrivate\Runtime` absent, while `whoami` and `hostname` matched `melvin\melvi` and `Melvin`. The agent shell still resolves both prepared roots under the same reported identity and hostname. The cause of these conflicting filesystem observations is not established. Prior agent-session ACL/owner/backup results must not be treated as proof that the operator-visible installation exists or is protected. The probe stopped at its initial root lookup, before fixture/account creation. Do not recreate, move or replace private data to conceal this discrepancy; establish the actual filesystem view and paths first.
+
 At `2026-09-21T11:26:54Z`, the **non-elevated** `MELVIN\melvi` session successfully listed, created, read, updated and deleted unique harmless scratch files in both literal roots above. The scratch files were verified absent afterward. No private data, directory ACLs, accounts or service settings were modified. Fresh inspection found the same owner and three allowed principals on both roots; neither root nor its ancestors was a reparse point. These are owner-positive results, not distinct-user denial evidence.
 
-An inspectable operator helper is prepared locally at `C:\Users\melvi\Projects\Journal\output\phase1-final-checks\Invoke-BrontideAclProbe.ps1`. Its PowerShell syntax was checked; it has **not** been executed as administrator. It is an operational artifact, not a service launcher. After reviewing the script, the operator runs this in an elevated **Windows PowerShell** as `MELVIN\melvi`:
+An inspectable operator helper is prepared locally at `C:\Users\melvi\Projects\Journal\output\phase1-final-checks\Invoke-BrontideAclProbe.ps1`. Its PowerShell syntax was checked. The user's administrator attempt stopped at the first root lookup, before any fixture/account creation; no denial proof was obtained. **Do not rerun until the storage discrepancy is resolved.** It is an operational artifact, not a service launcher. Only after that prerequisite and script/path review, the operator would run this in an elevated **Windows PowerShell** as `MELVIN\melvi`:
 
 ```powershell
 & 'C:\Users\melvi\Projects\Journal\output\phase1-final-checks\Invoke-BrontideAclProbe.ps1'
@@ -77,7 +81,7 @@ Before any future permitted change:
 - [ ] Resolve the active source filenames from the actual configuration. The paper-store and owner defaults are `C:\Users\melvi\AppData\Local\Brontide\paper-lifecycle.sqlite3` and `C:\Users\melvi\AppData\Local\Brontide\paper-owner.json`; the verification path has no safe assumed default. Preserve account/client/endpoint values and owner binding unchanged.
 - [ ] Establish separately authorized broker reconciliation and a safe maintenance window. No cached snapshot proves current protection or flatness. Preserve the halted session, submission locks and managed-rule pause; do not invoke connect/resume/order endpoints as a storage test.
 - [ ] Record a consistent SQLite online backup, timestamp, hash, integrity result, schema version and object/command/event counts. The September 20 prepared copy is historical and must not replace a newer ledger. Copy owner/verification files without regenerating their identities; preserve original files and configuration for rollback.
-- [ ] After the authorized service stop and confirmed writer quiescence, update **only the private process configuration** to the following destinations; do not put these values or private configuration in browser assets or a public deployment.
+- [ ] After the authorized service stop and confirmed writer quiescence, take a **final SQLite-consistent snapshot** from the authoritative source. Preserve the earlier backup as the pre-maintenance fallback. Restore this final snapshot at the candidate destination, compare complete objects/commands/events, schema and integrity, and verify unchanged owner/verification identities. Do not use a bare live database copy or the stale prepared ledger. Only then update **the private process configuration** to the following destinations; do not put these values or private configuration in browser assets or a public deployment.
 
 | Setting | Reviewed candidate destination |
 | --- | --- |
