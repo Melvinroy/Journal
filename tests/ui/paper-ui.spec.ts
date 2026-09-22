@@ -181,6 +181,78 @@ for (const loss of ["connection", "submission lock"] as const) {
   });
 }
 
+function recordedCampaign(symbol: string) {
+  const plan = { schemaVersion: 1, legs: [{ id: "T1", role: "Target", allocationPercent: 100, target: { mode: "R", multipleR: 2 } }], breakeven: { activationR: 1, favorableOffset: { unit: "Dollar", value: 0 } } };
+  return { id: `record-${symbol}`, batchId: `batch-${symbol}`, revision: 1, symbol, direction: "Long", state: "Open", message: null,
+    automation: "Paused", createdAt: "2026-09-20T14:00:00Z", accountBinding: "test-binding", contract: { conId: symbol === "ALFA" ? 101 : 102, currency: "USD" },
+    ticket: { planId: `plan-${symbol}`, planRevision: "saved", symbol, direction: "Long", method: "Limit", quantity: 2, planningPrice: 100, hardCap: 100, stopPrice: 98, cleanupFloor: 98, sessionMode: "Regular", duration: "DAY", protectionOrderType: "STP", exitPlan: plan }, activeExitPlan: plan,
+    summary: { entered: 1, exited: 0, openQuantity: 1, averageEntry: 100, grossRealized: 0, netRealized: null, fees: null, finalNetR: null, initialRisk: 2, costsComplete: false }, draft: null,
+    executions: [{ executionId: `${symbol}-entry`, orderId: symbol === "ALFA" ? 10 : 20, effect: "entry", role: "entry", quantity: 1, price: 100, occurredAt: "2026-09-20T14:00:00Z", commission: null }],
+    slots: [{ id: "0", open: 1, entryStatus: "Filled", stopStatus: "Submitted", confirmedStop: 98, whyHeld: "", exitStatus: null, exitPrice: null, leg: { ...plan.legs[0], quantity: 1 } },
+      { id: "1", open: 0, entryStatus: "Submitted", stopStatus: "Pending", confirmedStop: null, whyHeld: "", exitStatus: null, exitPrice: null, leg: null }] };
+}
+
+test("recorded campaign and Journal survive reload while connection fails", async ({ page }) => {
+  let unexpected = 0, connects = 0;
+  await page.route("**/v1/ibkr/paper/**", route => { unexpected++; return route.fulfill({ status: 409, json: { detail: "Unexpected fixture request" } }); });
+  await page.route("**/v1/ibkr/paper/connect", route => { connects++; return route.fulfill({ status: 409, json: { detail: "TWS is unavailable" } }); });
+  await signIn(page, { ...empty, connected: false, campaigns: [recordedCampaign("ALFA")], broker: { mode: "read-only", source: "IBKR TWS", connectionStatus: "disconnected", dataStatus: "stale", lastSuccessfulUpdate: "2026-09-20T14:00:00Z", error: null, account: { id: "fixture", maskedId: "DU••10", value: 12345, currency: "USD", source: "IBKR accountSummary", observedAt: "2026-09-20T14:00:00Z", available: true }, positions: [], openOrders: [] } });
+  for (const reload of [false, true]) {
+    if (reload) await page.reload();
+    await expect(page.getByText("TWS is unavailable", { exact: true })).toBeVisible();
+    await expect(page.getByText("12,345 USD · Stale", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Open ALFA position details" }).click();
+    const drawer = page.getByRole("dialog", { name: "ALFA position details" });
+    await expect(drawer).toContainText("Protection unconfirmed");
+    await expect(drawer).toContainText("Last TWS confirmation · stale");
+    await expect(drawer.locator(".position-detail-grid > span").filter({ has: page.getByText("Remaining", { exact: true }) })).toContainText("1 sh");
+    await drawer.getByRole("button", { name: "Open Journal trade" }).click();
+    await expect(page.locator('[data-journal-trade-id="paper:record-ALFA"]')).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "ALFA entry and exit details" })).toContainText("1 / 0 / 1");
+    await expect(page.getByText("No records yet", { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Open linked Plan & Position" }).click();
+  }
+  expect(connects).toBeGreaterThanOrEqual(2); expect(unexpected).toBe(0);
+});
+
+test("two campaigns keep cancel and cleanup actions attributed to the selected campaign", async ({ page }) => {
+  const a = recordedCampaign("ALFA"), b = recordedCampaign("BETA");
+  const beforeB = JSON.stringify(b);
+  const actions: { path: string; body: Record<string, unknown> }[] = [];
+  let unexpected = 0;
+  await page.route("**/v1/ibkr/paper/**", route => { unexpected++; return route.fulfill({ status: 409, json: { detail: "Unexpected fixture request" } }); });
+  await page.route("**/v1/ibkr/paper/campaigns/*/actions", route => {
+    actions.push({ path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    a.revision++; return route.fulfill({ json: {} });
+  });
+  await signIn(page, { ...empty, submissionsEnabled: true, campaigns: [a, b] });
+  await page.getByRole("button", { name: "Open ALFA position details" }).click();
+  const drawer = page.getByRole("dialog", { name: "ALFA position details" });
+  await drawer.getByRole("button", { name: "Cancel unfilled entry", exact: true }).click();
+  expect(actions).toHaveLength(0);
+  await drawer.getByRole("button", { name: "Confirm cancel unfilled entry", exact: true }).click();
+  await expect(drawer.getByRole("group", { name: "Confirm paper position action" })).toHaveCount(0);
+  await drawer.getByRole("button", { name: "Close with bounded limit", exact: true }).click();
+  await expect(drawer.getByRole("group", { name: "Confirm paper position action" })).toContainText("Revision 2");
+  await drawer.getByRole("button", { name: "Confirm close with bounded limit", exact: true }).click();
+  await expect.poll(() => actions.length).toBe(2);
+  expect(actions.map(action => [action.path, action.body.action, action.body.revision])).toEqual([
+    ["/v1/ibkr/paper/campaigns/record-ALFA/actions", "cancel-entry", 1],
+    ["/v1/ibkr/paper/campaigns/record-ALFA/actions", "cleanup", 2],
+  ]);
+  expect(actions[0].body.commandId).not.toBe(actions[1].body.commandId);
+  expect(actions.every(action => action.body.connectionId === "connection-1")).toBe(true);
+  await drawer.press("Escape");
+  await page.getByRole("button", { name: "Open BETA position details" }).click();
+  const other = page.getByRole("dialog", { name: "BETA position details" });
+  await expect(other).toContainText("1/1 confirmed");
+  await expect(other.getByText("IBKR paper execution", { exact: true })).toHaveCount(1);
+  await other.getByRole("button", { name: "Open Journal trade" }).click();
+  await expect(page.getByRole("region", { name: "BETA entry and exit details" })).toContainText("1 / 0 / 1");
+  await expect(page.locator('[data-journal-trade-id="paper:record-BETA"]')).toHaveCount(1);
+  expect(JSON.stringify(b)).toBe(beforeB); expect(unexpected).toBe(0);
+});
+
 test("Journal discards an earlier user's response even when it resolves after the account switch", async ({ page }) => {
   await page.addInitScript(() => {
     const readText = Response.prototype.text;
@@ -295,6 +367,68 @@ test("exact confirmation, keyboard dismissal, and double-click submit guard", as
   await dialog.getByRole("button", { name: "Confirm and submit paper order" }).click({ clickCount: 2 });
   await expect(page.getByText("Order request recorded.", { exact: false })).toBeVisible();
   expect(approvals).toBe(1); expect(submissions).toBe(1);
+});
+
+test("order review expires on its own timer without a status refresh", async ({ page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let economicRequests = 0;
+  await page.route("**/v1/ibkr/paper/**", route => { economicRequests++; return route.fulfill({ status: 409, json: { detail: "Unexpected fixture request" } }); });
+  await page.route("**/v1/ibkr/paper/batches", async route => {
+    const now = await page.evaluate(() => Date.now());
+    const { tickets } = route.request().postDataJSON();
+    await route.fulfill({ json: { id: "expiry-batch", digest: "a".repeat(64), tickets, sourceIdentity: "fixture", validUntil: new Date(now + 1000).toISOString() } });
+  });
+  await signIn(page, { ...empty, submissionsEnabled: true }); await savePlan(page);
+  await page.clock.runFor(2000);
+  await page.getByRole("button", { name: "Review order", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Review TEST paper order" });
+  const confirm = dialog.getByRole("button", { name: "Confirm and submit paper order" });
+  await expect(confirm).toBeEnabled();
+  await page.clock.runFor(1001);
+  await expect(confirm).toBeDisabled();
+  expect(economicRequests).toBe(0);
+});
+
+test("editing and resaving a plan requires a fresh order review", async ({ page }) => {
+  const prices: number[] = [];
+  await page.route("**/v1/ibkr/paper/batches", async route => {
+    const { tickets } = route.request().postDataJSON(); prices.push(tickets[0].planningPrice);
+    await route.fulfill({ json: { id: `revision-${prices.length}`, digest: "b".repeat(64), tickets, sourceIdentity: "fixture", validUntil: new Date(Date.now()+60000).toISOString() } });
+  });
+  await signIn(page); await savePlan(page);
+  await page.getByRole("button", { name: "Review order", exact: true }).click();
+  await page.getByRole("dialog", { name: "Review TEST paper order" }).press("Escape");
+  await page.getByLabel("Captured planning entry price").fill("101");
+  await expect(page.getByRole("button", { name: "Review order", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Save plan", exact: true }).click();
+  await page.getByRole("button", { name: "Review order", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Review TEST paper order" })).toContainText("Entry cap $101.00");
+  expect(prices).toEqual([100, 101]);
+});
+
+test("expiry during pending approval prevents the subsequent submit request", async ({ page }) => {
+  await page.clock.install(); await page.clock.pauseAt(new Date());
+  let approvals = 0, submissions = 0, unexpected = 0;
+  let releaseApproval!: () => void;
+  const heldApproval = new Promise<void>(resolve => { releaseApproval = resolve; });
+  await page.route("**/v1/ibkr/paper/**", route => { unexpected++; return route.fulfill({ status: 409, json: { detail: "Unexpected fixture request" } }); });
+  await page.route("**/v1/ibkr/paper/batches", async route => {
+    const now = await page.evaluate(() => Date.now());
+    const { tickets } = route.request().postDataJSON();
+    await route.fulfill({ json: { id: "held-batch", digest: "a".repeat(64), tickets, sourceIdentity: "fixture", validUntil: new Date(now+1000).toISOString() } });
+  });
+  await page.route("**/v1/ibkr/paper/batches/held-batch/approve", async route => { approvals++; await heldApproval; await route.fulfill({ json: {} }); });
+  await page.route("**/v1/ibkr/paper/submit", route => { submissions++; return route.fulfill({ json: {} }); });
+  await signIn(page, { ...empty, submissionsEnabled: true }); await savePlan(page); await page.clock.runFor(2000);
+  await page.getByRole("button", { name: "Review order", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Review TEST paper order" });
+  await dialog.getByRole("button", { name: "Confirm and submit paper order" }).click();
+  await expect.poll(() => approvals).toBe(1);
+  await page.clock.runFor(1001); releaseApproval();
+  await expect(dialog).toContainText("Review expired or plan changed during approval.");
+  await expect(dialog.getByRole("button", { name: "Cancel", exact: true })).toBeEnabled();
+  expect(submissions).toBe(0); expect(unexpected).toBe(0);
 });
 
 test("automatic connection uses one service and reconnect invalidates an open review", async ({ page }) => {

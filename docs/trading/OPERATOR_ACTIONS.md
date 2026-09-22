@@ -110,3 +110,11 @@ Revoke the disposable session, obtain exact-UUID deletion confirmation, delete o
 ## Completion record
 
 For each gate record: status (passed/failed/deferred/blocked), exact source, observation time/context, evidence location, limitations and next prerequisite. A failed prerequisite stops dependent steps. No deadline overrides a gate. There are no operator actions to perform now.
+
+## September 23 Phase 3 preparation update
+
+Phase 2 PR #10 merged as `edca6055961dd620e404378f74f801b1be9bd875` after its required Windows gate passed on diagnostic follow-up `99c0929188f8c3cb27bea916d4bddcfdec87bf4e` ([run 35771433023](https://github.com/Melvinroy/Journal/actions/runs/35771433023)). The original `2ce19c0` was not that passing CI source. The approved [Phase 3 package A](../trading-step-3-plan.md) now maps eleven ordinary trading journeys and fills selected browser-fixture gaps. Seven new focused browser checks and independent direct inspection passed; full verification passed. A four-second mocked order-review deadline is not actual cloud-token expiry. This does not close or request any operator action above: no elevated probe, cloud identity, paid change, active cutover, broker connection or submission is part of package A.
+
+Historical broker completion remains **2/30**; F retains its failed protection scenario, SOFI had no fill, and the persisted session remains halted at **200** pending a separately permitted authenticated audited amendment. Fresh operational/account/broker evidence remains blocked. Continue to retain each outstanding gate until its own observation passes; a Phase 3 fixture or merged commit cannot substitute for it.
+
+Phase 3A independent preparation is complete: full verification passed all five stages in 823.4 seconds (207 Node, 278 backend, 77 browser passed; 2/4/3 respective skips and 2 known backend warnings). This does not request or complete any deferred operator action. Phase 3B remains blocked; the historical count, target and submission restrictions above are unchanged.
