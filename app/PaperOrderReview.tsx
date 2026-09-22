@@ -18,6 +18,7 @@ export function PaperOrderReview({ paper, ticket, saved }: { paper: PaperExecuti
   const blockers = paperTicketBlockers(ticket, paper.status?.capabilities);
   const fingerprint = JSON.stringify(ticket);
   const generation = useRef(0);
+  useEffect(() => () => { generation.current++; }, []);
   useEffect(() => { generation.current++; setBatch(null); setMessage(""); }, [fingerprint, saved, paper.status?.connectionId, paper.status?.connected, paper.status?.account, paper.status?.submissionsEnabled, paper.signedIn]);
   useEffect(() => {
     const remaining = batch ? Date.parse(batch.validUntil) - Date.now() : NaN;

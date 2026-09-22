@@ -229,6 +229,47 @@ def test_target_amendment_retains_approval_and_never_runs(service):
         assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
 
 
+def test_target_reduction_counts_outside_pilot_once_and_preserves_history(service):
+    pilot = opened(service)
+    for slot in pilot["slots"]:
+        service.client.fill(slot["stop"]["orderId"], 98)
+    service._events()
+    pilot = service.store.all("campaign")[0]
+    assert pilot["state"] == "Closed"
+    service.authenticated("owner")
+    session_campaign = deepcopy(pilot)
+    session_campaign["id"] = "session-owned"
+    unrelated = deepcopy(pilot)
+    unrelated.update(id="other-account", accountBinding="different-binding")
+    prior = {"id": "historical", "userId": "owner", "accountBinding": pilot["accountBinding"],
+             "target": 200, "completed": 1, "state": "Halted",
+             "attempts": [{"campaignId": session_campaign["id"]}]}
+    with service.store.transaction() as db:
+        for campaign in (session_campaign, unrelated):
+            service.store.put(db, "campaign", campaign["id"], campaign)
+        service.store.put(db, "test-session", prior["id"], prior)
+        service.store.event(db, "original-approval", prior)
+        original_events = db.execute("SELECT * FROM events ORDER BY rowid").fetchall()
+    original_campaigns = deepcopy(service.store.all("campaign"))
+    writes = deepcopy(service.client.writes)
+    first = service.test_sessions.amend_target("historical", 30, "reduce-30")
+    assert (first["target"], first["completed"], first["baselineCompleted"], first["state"]) == (30, 2, 1, "Halted")
+    second = service.test_sessions.amend_target("historical", 29, "reduce-29")
+    assert (second["target"], second["completed"], second["baselineCompleted"]) == (29, 2, 1)
+    assert [a["previousTarget"] for a in second["approvalAmendments"]] == [200, 30]
+    service.test_sessions.amend_target("historical", 29, "reduce-29")
+    with pytest.raises(PaperSafetyError):
+        service.test_sessions.amend_target("historical", 1, "below-completed")
+    with pytest.raises(PaperSafetyError):
+        service.test_sessions.amend_target("historical", 30, "raise-back")
+    assert service.client.writes == writes
+    assert service.store.all("campaign") == original_campaigns
+    with service.store.transaction() as db:
+        events = db.execute("SELECT * FROM events ORDER BY rowid").fetchall()
+        assert events[:len(original_events)] == original_events
+        assert len(events) == len(original_events) + 2
+
+
 def test_security_headers_cover_unauthorized_and_html():
     from fastapi import FastAPI
     from fastapi.responses import HTMLResponse, JSONResponse
