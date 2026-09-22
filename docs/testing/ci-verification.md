@@ -8,6 +8,14 @@ The job supplies no production credentials. `npm run verify` assigns dummy provi
 
 On failure, the workflow uploads the captured verification log, EOD and Playwright JUnit reports when reached, the Playwright HTML report, traces, actual screenshots, and screenshot differences. A failure before a report-producing stage remains visible in `verify.log` and the Actions step log.
 
+### Windows browser diagnostics
+
+The CI job opts into `BRONTIDE_UI_DIAGNOSTICS=1`. When a report directory is set, an additional reporter captures bounded read-only Windows summaries before the browser tests and at the first failed, timed-out or interrupted test. Each collection has a 15-second process deadline. The first-failure snapshot also makes one bounded HEAD request to the fixture server on loopback port 3107. Collection errors remain unavailable evidence, not successful measurements; they do not replace or suppress the original test result.
+
+Snapshots under the existing report directory contain resource totals and test-process/socket summaries, not command lines, credentials, HTTP bodies or financial records. Normal local verification leaves this diagnostic collector disabled unless explicitly opted in. The existing one-worker, zero-retry policy, assertions, screenshot comparisons and required check remain unchanged.
+
+This instrumentation addresses missing evidence from PR #10's two initial-navigation `ERR_NO_BUFFER_SPACE` failures in different tests. It is not a fix for a proven socket-resource cause. Both affected journeys passed three isolated local repetitions each; that result does not replace Windows CI. Diagnose the collected measurements before changing networking, browser settings or test behaviour.
+
 The workflow does not deploy, change branch protection, or configure lint. The separate GitHub Pages workflow is manually triggered, fail-closed behind `BRONTIDE_PAGES_PUBLISH_ENABLED`, and remotely disabled. Re-enabling it, setting the gate and dispatching with an approval reference each require later publication approval.
 
 ## Current operating state
