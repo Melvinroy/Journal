@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 20
     env:
       BRONTIDE_VERIFY_REPORT_DIR: ${{ github.workspace }}\artifacts
+      BRONTIDE_UI_DIAGNOSTICS: "1"
 
     steps:
       - name: Check out source

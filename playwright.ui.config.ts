@@ -19,6 +19,7 @@ export default defineConfig({
         ["line"],
         ["html", { outputFolder: path.join(reportDirectory, "playwright-report"), open: "never" }],
         ["junit", { outputFile: path.join(reportDirectory, "playwright-junit.xml") }],
+        ["./scripts/ui-diagnostics-reporter.mjs"],
       ]
     : "line",
   snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",

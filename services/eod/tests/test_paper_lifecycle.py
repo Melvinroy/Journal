@@ -385,6 +385,86 @@ def test_cleanup_modifies_target_in_place_and_pause_retains_oca_protection(servi
     assert all(s["stop"]["status"] == "Cancelled" for s in c["slots"])
 
 
+@pytest.mark.parametrize("accepted", [False, True], ids=["before-acceptance", "after-acceptance"])
+def test_uncertain_cleanup_reprice_survives_restart_without_retry(service, monkeypatch, accepted):
+    c = opened(service)
+    service._automate(c); service._events()
+    c = service.store.all("campaign")[0]
+    slot = c["slots"][0]
+    target_id = slot["exit"]["orderId"]
+    old_fields = deepcopy(slot["exit"]["confirmed"])
+    stop_id = slot["stop"]["orderId"]
+    group = slot["group"]
+    writes_before = len(service.client.writes)
+    original_write = service.client.write
+    attempts = []
+
+    def uncertain(order_id, contract, fields):
+        attempts.append(order_id)
+        if accepted:
+            original_write(order_id, contract, fields)
+        raise TimeoutError("synthetic cleanup outcome unknown")
+
+    monkeypatch.setattr(service.client, "write", uncertain)
+    with pytest.raises(TimeoutError):
+        service._cleanup_slot(c, slot, 99)
+    # Simulate loss of callbacks at process termination, not a broker cancel.
+    service.client.events.clear()
+    restarted = PaperService(PaperStore(service.store.path), factory=lambda: service.client,
+                             source=lambda: "reviewed-source")
+    restarted.client = service.client
+    try:
+        assert restarted.armed is None
+        assert not restarted.reviewed_campaigns
+        restored = restarted.store.all("campaign")[0]
+        pending = restored["slots"][0]["exit"]["pendingCommand"]
+        assert restored["slots"][0]["cleanupAttempts"] == 1
+        assert restored["slots"][0]["exit"]["fields"]["lmtPrice"] == 99
+        assert restored["slots"][0]["exit"]["orderId"] == target_id
+        assert service.client.orders[stop_id]["status"] == "Submitted"
+        assert service.client.orders[stop_id]["fields"]["ocaGroup"] == group
+        assert service.client.orders[target_id]["fields"]["lmtPrice"] == (99 if accepted else old_fields["lmtPrice"])
+
+        def assert_pending_without_retry():
+            current = restarted.store.all("campaign")[0]
+            target_slot = current["slots"][0]
+            assert target_slot["exit"]["pendingCommand"] == pending
+            assert target_slot["cleanupAttempts"] == 1
+            for _ in range(2):
+                restarted._cleanup_slot(current, target_slot, 99)
+            assert attempts == [target_id]
+            assert len(service.client.writes) == writes_before + int(accepted)
+            with restarted.store.transaction() as db:
+                assert db.execute("SELECT state FROM commands WHERE id=?", (pending,)).fetchone()[0] != "confirmed"
+
+        assert_pending_without_retry()
+        # A delayed pre-amendment echo cannot acknowledge the newly requested price.
+        restarted.client.events.append({"kind": "open-order", "orderId": target_id, "conId": 42,
+                                        "status": "Submitted", "fields": old_fields})
+        restarted._events()
+        assert_pending_without_retry()
+        assert restarted.store.all("campaign")[0]["slots"][0]["exit"]["confirmed"]["lmtPrice"] == old_fields["lmtPrice"]
+
+        # A fresh snapshot can acknowledge the accepted variant, never the unaccepted variant.
+        restarted.reconcile()
+        current = restarted.store.all("campaign")[0]
+        if accepted:
+            assert "pendingCommand" not in current["slots"][0]["exit"]
+            with restarted.store.transaction() as db:
+                assert db.execute("SELECT state FROM commands WHERE id=?", (pending,)).fetchone()[0] == "confirmed"
+            restarted.reconcile()  # Callback/execution replay is idempotent.
+        else:
+            assert_pending_without_retry()
+        assert restarted.armed is None
+        assert attempts == [target_id]
+        assert len(service.client.writes) == writes_before + int(accepted)
+        assert service.client.orders[stop_id]["status"] == "Submitted"
+        assert service.client.orders[target_id]["fields"]["ocaGroup"] == group
+        assert summarize(restarted.store.all("campaign")[0])["openQuantity"] == 3
+    finally:
+        restarted.shutdown()
+
+
 def test_cancelled_oca_recovery_is_closure_only_and_retains_floor(service):
     c = opened(service)
     service._automate(c); service._events()

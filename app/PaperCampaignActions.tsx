@@ -9,8 +9,17 @@ export function PaperCampaignActions({ campaign: c, paper }: { campaign: PaperCa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const inFlight = useRef(false);
+  const eligible = (action: string) => Boolean(paper.status?.connected &&
+    (action === "recover" || paper.status.submissionsEnabled) &&
+    !["Closed", "Cancelled"].includes(c.state) && (action !== "apply-amendment" || c.draft));
+  const reviewCurrent = review && review.revision === c.revision && review.connectionId === paper.status?.connectionId &&
+    (review.action !== "apply-amendment" || review.digest === c.draft?.digest);
   async function apply() {
     if (!review || inFlight.current) return;
+    if (!eligible(review.action) || !reviewCurrent) {
+      setError("Action unavailable or position changed. Cancel this review and inspect the latest state.");
+      return;
+    }
     inFlight.current = true; setBusy(true); setError("");
     try {
       await paper.request(`campaigns/${encodeURIComponent(c.id)}/actions`, { revision: review.revision, commandId: review.commandId,
@@ -25,8 +34,7 @@ export function PaperCampaignActions({ campaign: c, paper }: { campaign: PaperCa
     <div className="editor-actions">{([
       ["cancel-entry", "Cancel unfilled entry"], ["cancel-exits", "Pause managed rules"], ["cleanup", "Close with bounded limit"],
       ["resume", "Review and resume exits"], ["apply-amendment", "Review saved amendment"], ["recover", "Reconcile owned campaign"],
-    ] as const).map(([action,label]) => <button key={action} disabled={busy || !paper.status?.connected || (action !== "recover" && !paper.status.submissionsEnabled) ||
-      ["Closed", "Cancelled"].includes(c.state) || (action === "apply-amendment" && !c.draft)} onClick={() => {
+    ] as const).map(([action,label]) => <button key={action} disabled={busy || !eligible(action)} onClick={() => {
         setError(""); setReview({ action, label, connectionId: paper.status?.connectionId ?? null, revision: c.revision, commandId: crypto.randomUUID(), digest: action === "apply-amendment" ? c.draft?.digest : undefined });
       }}>{label}</button>)}</div>
     {review && <div className="workspace-notice" role="group" aria-label="Confirm paper position action">
@@ -34,9 +42,10 @@ export function PaperCampaignActions({ campaign: c, paper }: { campaign: PaperCa
       <p>Revision {review.revision}. {review.action === "cancel-entry" ? "Cancel only this campaign's unfilled entries. Any fills received during cancellation must be reconciled and remain protected." : review.action === "cancel-exits" ? "Pause application-managed rules without cancelling broker orders." : review.action === "recover" ? "Rebuild from fresh broker evidence. This sends no orders and keeps managed exits paused." : `Existing broker orders are retained until execution. Bounded closure cannot go below $${c.ticket.cleanupFloor.toFixed(2)} or a tighter confirmed stop.`}</p>
       {c.state === "Unprotected" && <p role="alert">No active stop is confirmed. Recovery and bounded closure are required before further trading.</p>}
       {review.action === "apply-amendment" && c.draft && <><p>Exact saved exit rules:</p><ul>{exitDescriptions(c.draft.exitPlan, c.draft.quantity).map(line => <li key={line}>{line}</li>)}</ul><p>Breakeven {c.draft.exitPlan.breakeven.activationR}R · {c.draft.exitPlan.breakeven.favorableOffset.value} {c.draft.exitPlan.breakeven.favorableOffset.unit}</p></>}
-      {(review.revision !== c.revision || review.connectionId !== paper.status?.connectionId) && <p role="alert">Position changed. Cancel this review and inspect the latest state.</p>}
+      {!reviewCurrent && <p role="alert">Position changed. Cancel this review and inspect the latest state.</p>}
+      {!eligible(review.action) && <p role="alert">Action unavailable. Check the connection and submission lock before reviewing again.</p>}
       <button disabled={busy} onClick={() => setReview(null)}>Cancel action review</button>
-      <button disabled={busy || (review.revision !== c.revision || review.connectionId !== paper.status?.connectionId)} onClick={() => void apply()}>Confirm {review.label.toLowerCase()}</button>
+      <button disabled={busy || !eligible(review.action) || !reviewCurrent} onClick={() => void apply()}>Confirm {review.label.toLowerCase()}</button>
     </div>}
     {error && <p className="persistence-alert" role="alert">{error}</p>}
   </section>;

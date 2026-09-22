@@ -35,6 +35,45 @@ test("paper compatibility link requires sign-in and opens the existing planner",
   }
 });
 
+test("late fees update the same Position and Journal record with exact net and R", async ({ page }) => {
+  const plan = { schemaVersion: 1, legs: [{ id: "T1", role: "Target", allocationPercent: 100, target: { mode: "R", multipleR: 2 } }], breakeven: { activationR: 1, favorableOffset: { unit: "Dollar", value: 0 } } };
+  const campaign = { id: "fee-campaign", batchId: "batch", revision: 1, symbol: "FEES", direction: "Long", state: "Closed", message: null,
+    automation: "Complete", createdAt: new Date().toISOString(), accountBinding: "test-binding", contract: { conId: 43, currency: "USD" },
+    ticket: { planId: "plan", planRevision: "saved", symbol: "FEES", direction: "Long", method: "Limit", quantity: 1, planningPrice: 100, hardCap: 100, stopPrice: 98, cleanupFloor: 98, sessionMode: "Regular", duration: "DAY", protectionOrderType: "STP", exitPlan: plan }, activeExitPlan: plan,
+    summary: { entered: 1, exited: 1, openQuantity: 0, averageEntry: 100, grossRealized: 4, netRealized: null as number | null, fees: null as number | null, finalNetR: null as number | null, initialRisk: 2, costsComplete: false }, draft: null,
+    executions: [{ executionId: "fee-entry", orderId: 1, effect: "entry", role: "entry", quantity: 1, price: 100, occurredAt: new Date().toISOString(), commission: null as number | null },
+      { executionId: "fee-exit", orderId: 2, effect: "exit", role: "target", quantity: 1, price: 104, occurredAt: new Date().toISOString(), commission: null as number | null }],
+    slots: [{ id: "0", open: 0, entryStatus: "Filled", stopStatus: "Cancelled", confirmedStop: 98, whyHeld: "", exitStatus: "Filled", exitPrice: 104, leg: { ...plan.legs[0], quantity: 1 } }] };
+  await signIn(page, { ...empty, campaigns: [campaign] });
+  await page.getByRole("button", { name: /Recently closed \(1\)/ }).click();
+  await page.getByRole("button", { name: "Open FEES position details" }).click();
+  const drawer = page.getByRole("dialog", { name: "FEES position details" });
+  const positionValue = (label: string) => drawer.locator(".position-detail-grid > span").filter({ has: page.getByText(label, { exact: true }) }).locator("b");
+  await expect(positionValue("Realized P&L")).toHaveText("Unavailable");
+  await expect(positionValue("Filled entry")).toHaveText("1 sh");
+  await expect(positionValue("Exited")).toHaveText("1 sh");
+  await expect(positionValue("Remaining")).toHaveText("0 sh");
+  await drawer.getByRole("button", { name: "Open Journal trade" }).click();
+  const row = page.locator('[data-journal-trade-id="paper:fee-campaign"]');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText(/unavailable/i);
+  Object.assign(campaign.summary, { netRealized: 3, fees: 1, finalNetR: 1.5, costsComplete: true });
+  campaign.executions.forEach(execution => { execution.commission = .5; });
+  campaign.revision++;
+  await expect(row).toContainText("+1.50R");
+  await expect(row).toContainText("+$3.00");
+  const details = page.getByRole("region", { name: "FEES entry and exit details" });
+  await expect(details).toContainText("1 / 1 / 0");
+  await expect(details).toContainText("+$4.00 / +$1.00 / +$3.00");
+  await expect(details.locator(".journal-fill-row")).toHaveCount(2);
+  await expect(row).toHaveCount(1);
+  await details.getByRole("button", { name: "Open linked Plan & Position" }).click();
+  await page.getByRole("button", { name: "Open FEES position details" }).click();
+  await expect(positionValue("Realized P&L")).toHaveText("+$3.00");
+  await expect(positionValue("Actual initial risk")).toHaveText("$2.00");
+  await expect(positionValue("Remaining")).toHaveText("0 sh");
+});
+
 test("draft saving never submits; exact review errors remain in the planner", async ({ page }) => {
   let writes = 0;
   await page.route("**/v1/ibkr/paper/submit", r => { writes++; return r.fulfill({ json: {} }); });
@@ -101,6 +140,46 @@ test("Journal leaves a persistent token rejection visible after one read retry",
   await page.getByRole("button", { name: "Retry cloud history" }).click();
   await expect.poll(() => reads).toBe(4);
 });
+
+for (const loss of ["connection", "submission lock"] as const) {
+  test(`position action review blocks confirmation after loss of ${loss}`, async ({ page }) => {
+    const plan = { schemaVersion: 1, legs: [{ id: "T1", role: "Target", allocationPercent: 100, target: { mode: "R", multipleR: 2 } }], breakeven: { activationR: 1, favorableOffset: { unit: "Dollar", value: 0 } } };
+    const campaign = { id: "action-campaign", batchId: "batch", revision: 1, symbol: "TEST", direction: "Long", state: "Open", message: null,
+      automation: "Paused", createdAt: new Date().toISOString(), accountBinding: "test-binding", contract: { conId: 42, currency: "USD" },
+      ticket: { planId: "plan", planRevision: "saved", symbol: "TEST", direction: "Long", method: "Limit", quantity: 1, planningPrice: 100, hardCap: 100, stopPrice: 98, cleanupFloor: 98, sessionMode: "Regular", duration: "DAY", protectionOrderType: "STP", exitPlan: plan }, activeExitPlan: plan,
+      summary: { entered: 1, exited: 0, openQuantity: 1, averageEntry: 100, grossRealized: 0, netRealized: null, fees: null, finalNetR: null, initialRisk: 2, costsComplete: false }, draft: null,
+      executions: [{ executionId: "entry", orderId: 1, effect: "entry", role: "entry", quantity: 1, price: 100, occurredAt: new Date().toISOString(), commission: null }],
+      slots: [{ id: "0", open: 1, entryStatus: "Filled", stopStatus: "Submitted", confirmedStop: 98, whyHeld: "", exitStatus: null, exitPrice: null, leg: { ...plan.legs[0], quantity: 1 } }] };
+    const status = { ...empty, submissionsEnabled: true, campaigns: [campaign] };
+    const actions: Record<string, unknown>[] = [];
+    await page.route("**/v1/ibkr/paper/campaigns/*/actions", route => { actions.push(route.request().postDataJSON()); return route.fulfill({ json: {} }); });
+    await page.route("**/v1/ibkr/paper/connect", route => route.fulfill({ json: status }));
+    await signIn(page, status);
+    await page.getByRole("button", { name: "Open TEST position details" }).click();
+    const drawer = page.getByRole("dialog", { name: "TEST position details" });
+    const launch = drawer.getByRole("button", { name: "Cancel unfilled entry", exact: true });
+    await launch.click();
+    const confirm = drawer.getByRole("button", { name: "Confirm cancel unfilled entry", exact: true });
+    await expect(confirm).toBeEnabled();
+    if (loss === "connection") status.connected = false;
+    else status.submissionsEnabled = false;
+    // Polling must consume the changed status before asserting the review state.
+    await expect(launch).toBeDisabled();
+    await expect(confirm).toBeDisabled();
+    expect(actions).toEqual([]);
+    await drawer.getByRole("button", { name: "Cancel action review" }).click();
+    const recover = drawer.getByRole("button", { name: "Reconcile owned campaign", exact: true });
+    if (loss === "connection") {
+      await expect(recover).toBeDisabled();
+    } else {
+      await expect(recover).toBeEnabled();
+      await recover.click();
+      await drawer.getByRole("button", { name: "Confirm reconcile owned campaign", exact: true }).click();
+      await expect.poll(() => actions.length).toBe(1);
+      expect(actions[0]).toMatchObject({ action: "recover", revision: 1, connectionId: "connection-1" });
+    }
+  });
+}
 
 test("Journal discards an earlier user's response even when it resolves after the account switch", async ({ page }) => {
   await page.addInitScript(() => {
