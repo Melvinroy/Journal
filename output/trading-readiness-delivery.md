@@ -285,3 +285,75 @@ The test now waits for A's specific network response to finish, observes the Sup
 - No active application source, cloud/broker state, submission lock, service configuration or installed account binding was changed. Existing `next-env.d.ts` and unrelated untracked files remain preserved.
 
 Cleanup of the disposable worktree and its dependency junction was rejected by automatic approval review with `blocked by policy`. No cleanup retry was made. The temporary checkout remains at `C:\Users\melvi\AppData\Local\Temp\brontide-coord02-proof-c4e70a8f0a1b48279a2f39034b46a32b`; its application source was restored before the successful positive control. This cleanup limitation does not change the trading-policy block or any release gate above.
+
+## COORD-03 synthetic restore and acceptance preparation — September 21, 2026
+
+Scope is fixture-only recovery verification and documentation. No application or rendered behavior changed, and no private runtime database, cloud identity/configuration, ACL, service, broker connection, order, target amendment or deployment was touched. This is not operational or broker recovery evidence.
+
+### Added deterministic proof
+
+- A fake-transport campaign is closed with missing exit commissions, alongside an immutable saved-plan revision and an unrelated synthetic campaign with distinct order/execution identities. SQLite backup is restored to a new temporary path. Complete objects/commands/events, schema and integrity agree; the original remains unchanged.
+- A fresh service object uses the restored store and the existing fake transport. Duplicate/reversed execution callbacks do not change economic executions; duplicated late fees yield exactly $0.60 fees, -$6 gross and -$6.60 net. The unrelated campaign and plan evidence survive unchanged. No transport writes occur during restored replay. This is an in-process mock rehearsal, not a process/service restart or real broker reconnection.
+- A synthetic transmission timeout leaves durable uncertainty. The restored service starts unarmed and rejects replay with the exact authority error. An isolated matching approval receipt/connection then reaches the actual arming/reconciliation path: the fake callback confirms the transmitted parent command but the incomplete campaign still blocks arming with an outstanding-reconciliation error. Command identities/requests remain intact and no second economic action is sent. No real user approval or expired-session guarantee is inferred.
+
+The existing P01–P38 matrix is preserved with a prominent historical notice and dated normal-control overlay. Legacy tooling enablement instructions are explicitly superseded by the independent policy block. The readiness summary separates completed disposable cloud/COORD-02 evidence from remaining external decisions. Two historical round trips, F failed protection, SOFI cancellation, 30 ceiling and existing limits remain unchanged.
+
+### Verification
+
+Focused readiness/lifecycle tests: **67 passed, 4 skipped, 2 known dependency deprecation warnings** using repository Python 3.11.9. The skipped adapter cases still require the optional official SDK; they are not newly executed evidence. A preliminary full run was deliberately interrupted to incorporate independent test review; it is not a verification pass. Final full verification results are recorded below after completion. Logs/reports are under `output/coord-03-verify/` and contain no private broker evidence.
+
+No frontend implementation review or fresh signed-in/manual browser observation is claimed because rendered behavior did not change. The pre-existing `next-env.d.ts` bytes, `CLAUDE.md` and unrelated generated files are preserved. Previously policy-blocked temporary proof-checkout cleanup was not retried.
+
+
+Final `npm run verify` completed successfully in **752.5 seconds** on the final executable/test source: 204 Node passed/2 skipped (6.3s); 274 backend passed/4 skipped/2 known warnings (324.9s); TypeScript passed (17.2s); 67 browser passed/3 skipped (374.0s); production build passed (29.2s). No screenshot baselines changed. Only checklist/results text was finalized afterward. Original `next-env.d.ts` bytes were restored and compared exactly; its pre-existing unrelated diff remains preserved. Exact local commit/source identity is reported separately by the delivery coordinator; no commit, push or merge is implied by this test result.
+
+## Phase 1 final security checks — September 21, 2026
+
+**Historical section:** its next-action recommendations and unexecuted-helper description are superseded by the September 22 section below. The desktop attempt failed before fixtures; the probe is now suspended and no operator action is requested.
+
+This bounded package starts from local commit `8611ff4d48cca94f7846423112f5c139db1caacb` on `codex/phase1-final-security-checks`. Sub-agents performed independent Windows preparation, dependency inspection and session-access checks; the coordinator reviewed their reports and the operator script. Application and regression source were not changed. The unrelated `next-env.d.ts` diff and untracked files remain preserved.
+
+| Item | Result and remaining requirement |
+| --- | --- |
+| Windows protection | **Partial pass / blocked:** non-elevated `MELVIN\melvi` list/create/read/update/delete succeeded on harmless unique files in both private roots at 11:26:54 UTC; files removed and absence verified. ACL/reparse inspection and helper syntax/static review passed. The user must run the narrowly scoped elevated helper for genuine distinct-user denial. No test account was created by the agents. Recheck normal-owner access afterward and separately confirm exact-account cleanup. |
+| Protected storage | **Preparation passed; operation blocked:** runbook now records exact destination settings, fresh-backup requirements and rollback without losing post-cutover events. No active service was stopped, repointed or restarted. Actual cutover/reconciliation/rollback remain unperformed. |
+| Password protection | **Deferred, not passed:** explicit no-paid-upgrade choice retained. No billing/authentication configuration change. |
+| Broker dependency | **Blocked:** repository npm and Python advisory audits and dependency consistency passed. Protected operator dependency consistency passed, but its audit found protobuf 5.29.5 affected by CVE-2026-0994 (alias GHSA-7gcm-g887-7qv7). Fresh official 10.50.2 archive inspection still shows the exact affected pin. No supported patched candidate or forced override installed. Non-PyPI editable/SDK packages skipped by the auditor are not security passes. |
+| Real token expiry | **Blocked before creation:** healthy project connector access exists, but the normal Auth dashboard remained blank after navigation/reload, and no Auth-admin create operation is exposed. No disposable user, JWT, session, trade row or email was created; the one-hour test never started. Restore authenticated dashboard access before this check. |
+| Validator clock | **Unresolved:** three public Auth-health requests returned 200 with sanitized local/HTTP timing. These are not JWT-validation-clock measurements and do not close the intermittent failure. |
+
+Detailed local artifacts: `output/phase1-final-checks/dependencies.md`, `session.md`, and `Invoke-BrontideAclProbe.ps1`. The helper is a prepared, unexecuted operator artifact; parser/static review is not administrator-execution evidence. Its independent review identified and corrected misleading elevated-owner labeling; genuine non-elevated owner evidence is recorded separately in the private-storage runbook. Local output artifacts remain available separately from the scoped documentation commit.
+
+Documentation checks include whitespace/diff review. No fresh full suite or frontend behavior inspection is claimed for this documentation-only delivery; the earlier full suite above is historical executable-source evidence. No broker connection, order, target amendment, submission unlock, cloud identity mutation, ACL change, cutover, push, merge or deployment occurred. Previously rejected cleanup was not retried.
+
+**Historical September 21 readiness:** Phase 1 remained incomplete; live trading remained no-go. The subsequent desktop discrepancy below supersedes the suggestion to run the Windows denial probe immediately.
+
+## Independent Phase 1 package — September 22, 2026
+
+Baseline `277e8bf10f6b60419ea1a608aeab7dbb74b546cd`, branch `codex/phase1-final-security-checks`. The user deferred all approval/operator-dependent actions. `docs/trading/OPERATOR_ACTIONS.md` now holds prerequisites, procedures, expected results and evidence requirements for those later actions. No user action is requested during this package.
+
+### Corrected storage evidence
+
+The user's supplied screenshots show that normal and elevated desktop PowerShell cannot find `BrontidePrivate`; normal `LOCALAPPDATA` is `C:\Users\melvi\AppData\Local`, and its direct child-name listing returned no Brontide/Journal folders. Identity and hostname match the agent reports, but that does not establish identical filesystem views. The administrator probe stopped at its first root lookup, before account or fixture creation. The helper is suspended until paths agree. Prior agent-only ACL, owner access and backup/restore observations are preserved as history, not proof of a protected desktop installation.
+
+Fresh read-only agent inspection at approximately 13:23 UTC found the original data paths and candidate private roots visible. Database/owner overrides are unset in process/user/machine scopes; the verification path is explicitly set in process/user scope. Windows PowerShell 5.1 x64 launched within the agent session sees the same roots as PowerShell 7, so shell version alone is not an explanation. No Python process or listener on inspected ports 8765/8766/8787/3000/8000 was observed. This does not prove desktop service state. No restart or connection was attempted.
+
+Source trace: `paper_store.py:18` selects an explicit constructor path, then `BRONTIDE_PAPER_DATABASE`, then local AppData/home `Brontide/paper-lifecycle.sqlite3`; `paper_auth.py:15` selects owner override/default; `ibkr_tws.py:247` requires a configured verification path. `scripts/local.mjs` loads root dotenv and passes the environment to the service; `config.py:37` supports `BRONTIDE_ENV_FILE` or dotenv discovery. Agent-side allowlisted configuration inspection is not observation of a running service's environment. Renaming the code folder does not rename private storage. **Cause remains unresolved.** No folders, databases or configuration were changed to make observations agree.
+
+### Independent coverage review and narrow addition
+
+Existing deterministic tests cover clock retry bounds and cancellation (`tests/auth-ready.test.mjs`), stale Journal responses after identity changes (`tests/ui/paper-ui.spec.ts`), missing owner and review/lease expiry (`test_paper_auth.py`), account isolation and restored uncertain commands/late-fee idempotency (`test_paper_readiness.py`), and persistence failure before transmission (`test_paper_lifecycle.py`). These tests do not replace actual expiry, desktop ACL, account-transition or broker evidence. Missing database paths may create a new ledger by design; this review does not claim every missing-path case rejects startup.
+
+The only new regression parametrizes Auth `TimeoutException` and `ConnectError`. Valid status and submit requests must each perform one lookup and return the exact sanitized 503 response, without reaching owner lookup, authority refresh or endpoint service dispatch. Failure sentinels prevent a false pass if those request paths are reached. Existing TestClient shutdown still runs; no claim of zero application lifecycle activity is made. No production implementation changed.
+
+Focused verification reported by the implementation sub-agent: repository Python 3.11.9, **22 passed, 2 known deprecation warnings** in 3.19 seconds. A separate reviewer inspected endpoint dependency wiring, valid payloads, failure sentinels and response assertions and found no blocking issue. Full verification results are recorded below when complete. No rendered behavior changed; no new manual frontend observation is claimed.
+
+Supabase session/password guidance and the changelog were rechecked for the deferred procedure. The Markdown changelog required a direct read after the browser fetch rejected its content type. No cloud fixture, settings, token or real login action occurred. Revocation and expiry are treated separately; deleting a user is not proof of invalidating an issued JWT.
+
+### Final verification and review
+
+`npm run verify` passed all five stages in **879.9 seconds**: Node **204 passed / 2 skipped** (16.2s); backend **276 passed / 4 skipped / 2 known warnings** (370.3s); TypeScript passed (31.6s); browser **67 passed / 3 skipped** (412.0s); production build passed (44.5s). Runtime: Node 22.22.2, repository Python 3.11.9, pytest 9.1.1, Chromium 153.0.8010.12. Logs/reports remain local under `output/phase1-independent-verify.log` and `output/phase1-independent-verify/`. Skips remain limitations. No screenshot baselines changed; no manual signed-in or physical-display proof is claimed.
+
+Independent documentation review corrected historical operator-availability wording and required a final consistent SQLite snapshot after writer quiescence in both cutover procedures. Reviewer confirmed corrections and zero syntax errors in the deferred diagnostic block without executing it. Local document links and scoped whitespace checks passed. Only checklist/evidence text was finalized after verification. Unrelated `next-env.d.ts` bytes are preserved (Git blob `a419cbe4e3a5e8d4b481b851dbf4ac767de069e6`), along with other unrelated/untracked artifacts.
+
+**Readiness:** this independent package is complete; Phase 1 is not. Operator paths/ACL/cutover and actual session/account evidence remain deferred or blocked; password protection remains deferred without upgrade; vendor SDK remediation and broker acceptance remain blocked; storage visibility and intermittent validator-clock cause remain unresolved. No push, merge, deployment, broker request, target amendment, submission unlock or previously rejected cleanup occurred. No operator action is requested now.

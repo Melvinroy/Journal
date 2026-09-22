@@ -55,3 +55,23 @@ Outstanding security gates:
 **No-go for live trading.** The future candidate is USD whole-share long limit entries, regular hours, DAY duration, broker-held stop, one target and verified breakeven. It requires repaired broker evidence, closed critical/high findings, restorable private backups, alerts, an exact reviewed release and explicit live configuration/approval. A supervised one-share, one-campaign live pilot is a separate gate.
 
 Automatic approval review previously rejected enabling paper submissions with “blocked by policy.” No source repair, test result, standing paper approval or target amendment bypasses that boundary. Final automated, direct-browser and untested evidence must be reported separately for the delivered source.
+
+
+## Current evidence and remaining decisions — September 21, 2026
+
+The September 19 review above remains historical. Later disposable A/B REST ownership and signed-in transition evidence was completed and cleaned up. Auth rejected a revoked session after 0.2 seconds while REST accepted its existing JWT through the 30.3-second observation window; actual one-hour expiry was not observed. COORD-02 tests local authority expiry and same-user account/environment isolation deterministically, not a real account transition.
+
+COORD-03 adds synthetic backup-to-new-path restoration, durable command/plan/event equality, locked uncertain submissions, duplicate/reordered callback replay and late-fee accounting. It does not touch active private data or prove operational cutover, Windows denial or broker recovery. The current normal-control preparation matrix is the dated overlay in `docs/trading/IBKR_PAPER_ACCEPTANCE_QC.md`; historical rows remain intact.
+
+| Gate | Next required action and completion evidence |
+| --- | --- |
+| Windows denial | Elevated operator follows the existing private-storage runbook with a genuine disposable standard user; prove owner access and non-owner list/read/write/delete denial |
+| Active cutover/rollback | Separate reviewed operation after access/policy clearance; preserve originals, lock submissions, record exact configuration and demonstrate reconciliation and rollback |
+| IBKR protobuf advisory | Official supported compatible SDK/runtime; exact operator runtime consistency/advisory evidence; no pin override |
+| Password protection | User decides paid entitlement/configuration; verify enforcement after approved change |
+| JWT expiry/account transition | Separately authorized disposable session and suitable account; timestamped actual expiry/transition observations |
+| Validator clock | Reproduce with sanitized session/REST timing, identify root cause and supported fix; normal clock samples alone do not close it |
+| Repaired broker acceptance | Legitimate policy resolution, audited 30-target amendment, fresh normal-control observations and separate flat/cleared/accounting proofs |
+| Alerts/live gate | Approve alert channel and limited release separately; demonstrate delivery and review exact release; no current live mode |
+
+No live readiness or broker progression is approved by completion of this local rehearsal.

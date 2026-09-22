@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from brontide_eod import paper_auth
+from brontide_eod import paper_auth, paper_api
 from brontide_eod.api import app
 from test_paper_lifecycle import service, ticket, opened
 from brontide_eod.ibkr_tws import PaperSafetyError
@@ -53,6 +53,30 @@ def test_expired_and_unverified_identity_rejected(auth, monkeypatch):
     monkeypatch.setattr(paper_auth.httpx, "get", lambda *a, **k: SimpleNamespace(status_code=200, json=lambda: {"id": USER}))
     with pytest.raises(HTTPException) as error: paper_auth.verified_user("Bearer valid-test-token")
     assert error.value.status_code == 403
+
+
+@pytest.mark.parametrize("failure", [paper_auth.httpx.TimeoutException, paper_auth.httpx.ConnectError])
+def test_identity_outage_blocks_requests_before_authority_or_dispatch(auth, monkeypatch, failure):
+    attempts = []
+    def unavailable(url, headers, timeout):
+        attempts.append(url)
+        raise failure("private upstream diagnostic must not escape")
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unavailable identity must not reach owner lookup, authority or broker dispatch")
+    monkeypatch.setattr(paper_auth.httpx, "get", unavailable)
+    monkeypatch.setattr(paper_api, "require_owner", forbidden)
+    monkeypatch.setattr(paper_api, "service", SimpleNamespace(authenticated=forbidden, status=forbidden, submit=forbidden))
+    headers = {"Authorization": "Bearer valid-test-token", "X-Brontide-Local": "1"}
+    with TestClient(app) as client:
+        responses = [
+            client.get("/v1/ibkr/paper/status", headers=headers),
+            client.post("/v1/ibkr/paper/submit", headers=headers,
+                        json={"batchId": "fixture-batch", "ticketIndex": 0, "commandId": "fixture-command"}),
+        ]
+    for response in responses:
+        assert response.status_code == 503
+        assert response.json() == {"detail": "Brontide identity verification is unavailable; trading remains locked."}
+    assert attempts == ["https://project.supabase.co/auth/v1/user"] * 2
 
 
 @pytest.mark.parametrize("body", [None, [], "invalid", {"id": None}, {"id": USER, "email_confirmed_at": "yes", "is_anonymous": True}])

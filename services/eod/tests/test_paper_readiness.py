@@ -260,3 +260,115 @@ def test_new_operational_routes_require_authentication(monkeypatch):
             response = client.post("/v1/ibkr/paper/" + path, headers={"X-Brontide-Local": "1"}, json={"target": 30, "commandId": "test"})
             assert response.status_code == 401
             assert response.headers["cache-control"] == "no-store"
+
+
+def _ledger_rows(path):
+    """Compare exact durable content, not merely counts or a selected campaign."""
+    with sqlite3.connect(path) as db:
+        return {
+            "objects": db.execute("SELECT * FROM objects ORDER BY kind,id").fetchall(),
+            "commands": db.execute("SELECT * FROM commands ORDER BY id").fetchall(),
+            "events": db.execute("SELECT * FROM events ORDER BY id").fetchall(),
+            "version": db.execute("PRAGMA user_version").fetchone()[0],
+            "integrity": db.execute("PRAGMA integrity_check").fetchall(),
+        }
+
+
+def test_restored_ledger_replays_and_applies_late_fees_without_changing_source(service, tmp_path):
+    from brontide_eod.paper_domain import summarize
+
+    campaign = opened(service)
+    for slot in campaign["slots"]:
+        service.client.fill(slot["stop"]["orderId"], 98, fee=None)
+    service._events()
+    campaign = service.store.all("campaign")[0]
+    assert summarize(campaign)["netRealized"] is None
+    service.authenticated("owner")
+    service.prepare_batch([customer_ticket()])
+    unrelated = deepcopy(campaign)
+    unrelated.update(id="unrelated-synthetic", accountBinding="other-binding")
+    for slot in unrelated["slots"]:
+        for order in (slot.get("entry"), slot.get("stop"), slot.get("exit")):
+            if order and order.get("orderId") is not None:
+                order["orderId"] += 10000
+    for execution in unrelated["executions"]:
+        execution["orderId"] += 10000
+        execution["executionId"] = "OTHER-" + execution["executionId"]
+    with service.store.transaction() as db:
+        service.store.put(db, "campaign", unrelated["id"], unrelated)
+    before = _ledger_rows(service.store.path)
+    assert before["commands"] and service.store.all("plan-revision")
+    restored = service.store.backup(tmp_path / "new-runtime" / "restored.sqlite3")
+    assert _ledger_rows(restored) == before
+    replay = PaperService(PaperStore(restored), factory=lambda: service.client, source=lambda: "reviewed-source")
+    replay.client = service.client
+    writes = deepcopy(service.client.writes)
+    try:
+        assert replay.armed is None
+        service.client.events.extend(deepcopy(list(reversed(service.client.fills))))
+        service.client.events.extend(deepcopy(service.client.fills))
+        replay._events()
+        current = next(c for c in replay.store.all("campaign") if c["id"] == campaign["id"])
+        assert current["executions"] == campaign["executions"]
+        assert summarize(current) == summarize(campaign)
+        for fill in service.client.fills:
+            if fill["side"] == "SLD":
+                event = {"kind": "commission", "executionId": fill["executionId"], "commission": .1, "currency": "USD"}
+                service.client.events.extend([deepcopy(event), deepcopy(event)])
+        replay._events()
+        current = next(c for c in replay.store.all("campaign") if c["id"] == campaign["id"])
+        result = summarize(current)
+        assert result["fees"] == pytest.approx(.6)
+        assert result["grossRealized"] == pytest.approx(-6)
+        assert result["netRealized"] == pytest.approx(-6.6)
+        without_fees = lambda executions: [{k: v for k, v in e.items() if k != "commission"} for e in executions]
+        assert without_fees(current["executions"]) == without_fees(campaign["executions"])
+        assert next(c for c in replay.store.all("campaign") if c["id"] == unrelated["id"]) == unrelated
+        assert replay.store.all("plan-revision") == service.store.all("plan-revision")
+        assert service.client.writes == writes
+        assert _ledger_rows(service.store.path) == before
+    finally:
+        replay.shutdown()
+
+
+def test_restored_uncertain_submission_stays_locked_without_transmission(service, tmp_path, monkeypatch):
+    from test_paper_lifecycle import approved
+
+    batch = approved(service)
+    original = service.client.write
+    def uncertain(*args):
+        original(*args)
+        raise TimeoutError("synthetic uncertain transmission")
+    monkeypatch.setattr(service.client, "write", uncertain)
+    with pytest.raises(TimeoutError):
+        service.submit(batch["id"], 0, "uncertain-command")
+    before = _ledger_rows(service.store.path)
+    assert any(row[3] == "unknown" for row in before["commands"])
+    restored = service.store.backup(tmp_path / "isolated-restored.sqlite3")
+    assert _ledger_rows(restored) == before
+    replay = PaperService(PaperStore(restored), factory=lambda: service.client, source=lambda: "reviewed-source")
+    replay.client = service.client
+    writes = deepcopy(service.client.writes)
+    try:
+        assert replay.armed is None
+        for command in ("uncertain-command", "replacement-command"):
+            with pytest.raises(PaperSafetyError, match="not armed for this connection"):
+                replay.submit(batch["id"], 0, command)
+        assert replay.store.all("campaign")[0]["state"] == "Needs reconciliation"
+        assert service.client.writes == writes
+        assert _ledger_rows(restored) == before
+        # Match the isolated fixture receipt so the arming attempt reaches
+        # reconciliation, rather than failing an unrelated approval check.
+        replay.connection_id = service.connection_id
+        with pytest.raises(PaperSafetyError, match="Resolve outstanding campaign reconciliation before arming"):
+            replay.arm(batch["id"])
+        assert replay.armed is None
+        assert service.client.writes == writes
+        with sqlite3.connect(restored) as db:
+            commands = db.execute("SELECT * FROM commands ORDER BY id").fetchall()
+            assert [row[:3] for row in commands] == [row[:3] for row in before["commands"]]
+            assert next(row[3] for row in commands if row[0] == "uncertain-command:0:E") == "confirmed"
+        assert replay.store.all("campaign")[0]["state"] == "Needs reconciliation"
+        assert _ledger_rows(service.store.path) == before
+    finally:
+        replay.shutdown()

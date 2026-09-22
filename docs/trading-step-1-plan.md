@@ -336,3 +336,41 @@ This bounded package starts from `746b25ec8b999520cbaecd990f4a7ea86e2cd194` on `
 - [ ] Disposable proof-checkout cleanup: automatic approval review rejected cleanup as `blocked by policy`; preserve the restored-source temporary checkout and do not retry or route around the rejection.
 
 These checks strengthen deterministic evidence only. The existing external, real-session, broker and live-release gates remain open.
+
+## 13. COORD-03 restore rehearsal and acceptance preparation — September 21, 2026
+
+This package uses isolated synthetic databases and the existing fake transport only. It does not touch private runtime data, services, cloud identities, ACLs, broker connections, submissions, the historical session target or deployment. It strengthens recovery evidence without closing operational or broker gates.
+
+- [x] Restore a synthetic ledger to a new path and compare complete objects, commands, events and schema; preserve immutable saved-plan evidence and the original database.
+- [x] Prove restored authority is not automatically rearmed, uncertain commands are not retransmitted, duplicate/reordered callbacks are idempotent and late fees update accounting once while unrelated campaigns survive.
+- [x] Add a dated normal-control acceptance overlay to the existing historical matrix and supersede legacy enablement instructions with the independent policy block.
+- [x] Reconcile historical readiness wording with the completed disposable identity and COORD-02 evidence; retain exact external gates.
+- [x] Focused readiness/lifecycle checks: 67 passed, 4 optional-SDK skips and 2 known warnings. Final full verification passed all five stages in 752.5 seconds: 204 Node passed/2 skipped; 274 backend passed/4 skipped/2 known warnings; TypeScript passed; 67 browser passed/3 skipped; production build passed. No baseline updates. Real broker, Windows denial/cutover and signed-in expiry evidence remain separate open gates.
+
+No new public API, recovery endpoint or alternate order form is planned. Distinct-user Windows denial, active cutover/rollback, vendor SDK remediation, paid password protection, real token-expiry/account-transition observations, intermittent clock diagnosis and fresh broker acceptance remain external or separately gated work.
+
+## 14. Phase 1 final security checks — September 21, 2026
+
+Historical September 21 authorization: the user approved this bounded execution package from `8611ff4d48cca94f7846423112f5c139db1caacb` on `codex/phase1-final-security-checks`, was available for narrow elevated Windows steps, and chose **no paid upgrade**. Section 15 supersedes operator availability: all such steps are now deferred. Existing unrelated changes and private records remain preserved.
+
+| Item | Work and acceptance | Current status |
+| --- | --- | --- |
+| Windows protection | Exact private roots, harmless sentinels, owner success and genuine standard-user list/read/write/delete denial; account cleanup separately confirmed | Blocked: historical owner-positive result is agent-session only; desktop normal/elevated roots absent. Administrator probe suspended pending path reconciliation |
+| Protected storage | Exact cutover/configuration/backup/rollback operator checklist; do not enact cutover or restart | Checklist prepared; candidate paths not confirmed on desktop. Actual cutover and rollback blocked/separately gated |
+| Compromised-password protection | Preserve no-upgrade decision; no billing or authentication setting change | Deferred, not passed |
+| Broker dependency | Official package metadata and separate repository/operator audits; no unsupported pin override | Blocked: official 10.50.2 still pins affected protobuf 5.29.5; repository audits passed, operator audit failed |
+| Real login expiry | One bounded disposable session, empty own-scope read, observed JWT expiry without automatic refresh or project lifetime change, recovery and verified cleanup | Blocked before creation: dashboard blank and no connector Auth-admin create operation; no user/session created, observation not started |
+| Validator clock | Sanitized session timing and bounded reproduction investigation; no reproduced failure is not resolution | Unresolved: three public Auth-health timing samples are not JWT-validator clock proof |
+
+No application behavior change is assumed. Fix only demonstrated in-scope defects. Documentation-only evidence updates need targeted checks; executable/test-harness changes require full verification, with frontend verification for visible behavior changes. No push, merge, deployment, broker connection/action, submission unlock, target amendment, active-service restart/cutover or retry of rejected cleanup is authorized. Any unresolved gate remains explicit in the final readiness decision.
+
+## 15. Independent Phase 1 closure — September 22, 2026
+
+User requested that all operator/approval-dependent work be deferred without further action requests during this package. [Operator actions](trading/OPERATOR_ACTIONS.md) is the single do-later checklist; it does not authorize any listed action.
+
+- [x] Reconcile desktop screenshots: normal and elevated PowerShell reported the private roots missing; normal `LOCALAPPDATA` is the expected path and a direct child-name search found neither Brontide nor Journal folders. Preserve prior agent observations without treating them as desktop proof. No claim of data loss or established virtualization cause.
+- [x] Trace storage selection read-only: explicit database argument, then database environment override, then local AppData/home Brontide default; owner uses its environment override or local AppData/home Brontide default; verification requires its configured path. Changing the repository name does not rename these directories.
+- [x] Prepare deferred Windows, cutover, real-session, account-transition, external-decision and release procedures. Preserve no-upgrade decision and independent policy blocks.
+- [x] Independently reviewed the narrow missing authentication-network-failure regression; reused existing clock/isolation/restore coverage. Focused auth tests: 22 passed, 2 known warnings. Full verification: all five stages passed in 879.9 seconds (204 Node/2 skipped; 276 backend/4 skipped/2 warnings; TypeScript; 67 browser/3 skipped; production build). No baseline changes. Operator command block passed static parsing only; it was not executed.
+
+Fresh agent-side process inventory did not find Python/uvicorn. This cannot prove desktop service state or another host's configuration. Storage-view mismatch and intermittent validator-clock root cause remain unresolved. Real session/account/broker checks remain unperformed; no cloud users or operator changes are part of this package.

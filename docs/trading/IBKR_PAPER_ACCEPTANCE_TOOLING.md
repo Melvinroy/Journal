@@ -1,5 +1,7 @@
 # Paper acceptance tooling
 
+> **September 21, 2026 supersession:** the commands and enablement sequence below are historical tooling documentation, not current authorization. The independent submission-policy rejection remains in force; do not restart, unlock or route around it. Historical tickets/receipts cannot authorize a new source or session. Use the dated current normal-control overlay in [the acceptance matrix](IBKR_PAPER_ACCEPTANCE_QC.md#current-normal-control-acceptance-overlay--september-21-2026-coord-03); target amendment, broker execution and operational cutover remain gated.
+
 The canonical preparation package is [IBKR_PAPER_ACCEPTANCE_PACKAGE.json](IBKR_PAPER_ACCEPTANCE_PACKAGE.json). It preserves the approved R2 prices and cleanup floors, holds the separately identified premarket ticket, leaves postmarket numeric fields pending same-session evidence, and keeps both overnight modes blocked.
 
 `scripts/ibkr-paper-acceptance.py` extends the existing read-only service and `prepare_paper_intent` validator. It contains no submission, modification or cancellation command. TWS Read-Only and `BRONTIDE_IBKR_SUBMISSIONS_ENABLED=false` remain unchanged while using it.
