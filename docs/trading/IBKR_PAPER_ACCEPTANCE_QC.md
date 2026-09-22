@@ -82,3 +82,15 @@ All future cases use ordinary Plan, Positions and Journal controls and the share
 | Final Position/Journal agreement; P24/P38 | Open corresponding Position and Journal records after confirmed closure; refresh after late fee | Same identity, entered/exited/remaining, weighted prices, gross/net, fees and Execution R; missing fee stays unknown; flat, orders cleared and accounting complete are separate proofs | Shared-projection deterministic evidence; fresh broker-backed final reconciliation unobserved. Never infer closure from position absence alone |
 
 Shorts, auctions, overnight and four-leg execution remain unsupported/blocked. Invalid inputs, expiry, duplicate/reordered callbacks, rejected protection, exact race timing and inaccessible market events stay deterministic where unsafe or impractical to induce. Cancellation without fill does not add a round trip. At 30, require exact owned flat positions, cleared orders and complete accounting plus restored submission locks; report actual coverage and residual gaps rather than live readiness.
+
+## September 22 Phase 2 independent overlay
+
+This adds fixture-only coverage to the matrix above, not broker passes. The [Step 2 plan](../trading-step-2-plan.md) and delivery report record final checks/source identity. No real broker/account/service operation is authorized.
+
+| Area | Independent evidence added | Remaining broker/operational limitation |
+| --- | --- | --- |
+| P20/P27 review validity | Existing position confirmation now rechecks connectivity, submission eligibility, terminal state and revision/connection/amendment digest at button and handler boundaries. Mock status changes exercise loss of connection and submission permission; reconciliation keeps its existing connected-only exception. | No real connection loss or broker action performed. Backend authorization remains independent. |
+| P18–P23/P35 cleanup protection and uncertainty | Two synthetic cases lose transport outcome before/after acceptance of an existing target reprice. Pending command/attempt survives in-process service reconstruction; stale echo cannot confirm it; matching snapshot confirms only the accepted case; same order/OCA/stop retained without retry. | Not an actual process restart/reconnect. F's historical protection failure remains failed until separately repaired-path broker evidence exists. |
+| P24/P38 accounting | Mocked late-fee status transition checks one closed campaign updates ordinary Position and Journal quantities/net/Execution R without duplicating its row. Existing backend fee/replay tests remain complementary. | Mock summaries do not prove broker-reported fee completeness or a new round trip. |
+
+Phase 1 operator gates and the submission-policy block remain in force. Record each automated result in the delivery report; the historical broker count remains two.
