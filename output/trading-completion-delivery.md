@@ -1,5 +1,23 @@
 # Independent trading-readiness completion evidence
 
+## PR #12 verification repair — September 23 follow-up
+
+Published head `01f56de287b1bcc1cfea74326fc4e696a4702e48` failed Windows run [35809523185](https://github.com/Melvinroy/Journal/actions/runs/35809523185): 81 browser tests passed, three skipped, one failed. The earlier complete local pass below does not override that failure. PR #11 remains open/passing; PR #12 remains open/failing until a separately approved replacement is pushed and checked.
+
+The downloaded trace records Back-to-workspace click at monotonic 173461.266 ms; scanner, report and chart requests start at 174186.012–174379.237 ms, after navigation. Static inspection found no service calls in the Verification page. The failure was a test attributing destination-workspace requests to Verification, not established application trading behaviour.
+
+The shared fixture now intercepts an exact GET allowlist for the original root workspace only (scanner, NVDA chart, fixture report reads). Every other service request is recorded as unexpected and fulfilled locally; Verification and its popup receive no exception. Assertions remain before and after return navigation. A controlled scanner fetch from the Verification document proves the guard detects even a workspace-shaped service request. No application code, retry policy, skipped cases or screenshot baselines changed.
+
+Focused verification: three tests passed in 35.0 seconds, including the controlled fault injection. Independent read-only review found no blocking issue; its historical/current documentation clarifications were applied. Full `npm run verify` passed all five stages in 774.3 seconds: 207 Node passed / two skipped; 279 backend passed / four skipped / two existing deprecation warnings; TypeScript passed; 83 browser passed / three skipped; production build passed. Logs and reports remain under `output/pr12-verification-repair.log` and `output/pr12-verification-repair/`. Direct rendered-behaviour verification is not newly claimed: this follow-up changes test attribution and documentation only.
+
+The build-generated next-env.d.ts change was restored to the preserved pre-existing bytes (Git content hash `a419cbe4e3a5e8d4b481b851dbf4ac767de069e6`). Only the test and three readiness documents belong in the repair commit. No push, merge, workflow rerun, deployment or trading action was performed for this repair. A local pass is not a replacement GitHub pass.
+
+Operational recheck: the agent can still see ordinary Runtime/Backups directories. No paired desktop evidence, administrator proof, service cutover, cloud fixture or broker permission became available. Existing operator/security/policy blockers therefore remain. No private storage was modified.
+
+## Historical package evidence (before this repair)
+
+All remaining sections describe the pre-repair `01f56de` package and its original local delivery. Their local-pass, no-push and preview statements are historical; the follow-up above governs the current publication status.
+
 September 23, 2026 (Singapore). Independent package complete: focused checks, full verification and independent review passed. Branch: `codex/trading-independent-completion`, baseline `b27ff02e87a8a698d3ff1137c75c8424fb1c3959`.
 
 ## Publishing baseline

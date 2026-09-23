@@ -2,6 +2,8 @@
 
 Prepared September 22, 2026. This is a checklist, not authorization to execute it. No action is requested from the user during the independent closure package. Phase 1 and live readiness remain incomplete.
 
+**September 23 follow-up:** the current agent session again sees the Runtime and Backups directories as ordinary directories. This is only an agent-session observation; it does not resolve the user's earlier normal/elevated PowerShell absence reports or prove active-service paths. No paired desktop observation is available, so A remains unresolved and B/C must not proceed. Login expiry/account-transition prerequisites and vendor/password gates remain open. PR #12's failed Windows browser check is a separate publication blocker being repaired locally; no push or merge is implied by operator preparation.
+
 Use the [Phase 1 plan](../trading-step-1-plan.md), [private-storage runbook](PRIVATE_STORAGE.md) and [delivery evidence](../../output/trading-readiness-delivery.md) together. Each future result must identify UTC time, checkout/commit, execution context and pass/fail/blocked outcome. Never retain passwords, bearer tokens, private configuration contents or raw financial records in this public repository.
 
 ## A. Resolve storage visibility first — blocked

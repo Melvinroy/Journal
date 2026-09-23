@@ -1,20 +1,34 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+
+async function interceptServices(context: BrowserContext, workspace: Page) {
+  const unexpected: string[] = [];
+  const workspaceReads: string[] = [];
+  await context.route("**/*", route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.hostname === "127.0.0.1" && !url.pathname.startsWith("/v1/") && !url.pathname.startsWith("/api/")) {
+      return route.continue();
+    }
+    const frame = request.frame();
+    const document = new URL(frame.url());
+    const expectedRead = request.method() === "GET" && (
+      url.hostname === "127.0.0.1" && ["/v1/scanners/biggest-one-month", "/v1/chart/NVDA"].includes(url.pathname)
+      || url.hostname === "brontide-test.supabase.co" && url.pathname === "/rest/v1/catalyst_reports"
+    );
+    // Only these intercepted reads belong to the original workspace document.
+    // Verification (including its popup) gets no service-request exception.
+    if (frame.page() === workspace && document.pathname === "/" && expectedRead) {
+      workspaceReads.push(`${url.hostname}${url.pathname}`);
+    } else {
+      unexpected.push(`${url.hostname}${url.pathname}`);
+    }
+    return route.fulfill({ status: 503, json: { detail: "No external service in this fixture" } });
+  });
+  return { unexpected, workspaceReads };
+}
 
 test("Verification opens separately, preserves the planner draft and makes no service requests", async ({ page, context }) => {
-  const serviceRequests: string[] = [];
-  await context.route("**/*", route => {
-    const url = new URL(route.request().url());
-    // The original demo workspace loads its scanner before Trading is selected.
-    // This fixture never contacts it; the separate Verification page gets no such exception.
-    if (url.hostname === "127.0.0.1" && url.pathname === "/v1/scanners/biggest-one-month" && route.request().frame().page() === page) {
-      return route.fulfill({ status: 503, json: { detail: "Scanner is outside this fixture" } });
-    }
-    if (url.hostname !== "127.0.0.1" || url.pathname.startsWith("/v1/") || url.pathname.startsWith("/api/")) {
-      serviceRequests.push(`${url.hostname}${url.pathname}`);
-      return route.fulfill({ status: 503, json: { detail: "No external service in this fixture" } });
-    }
-    return route.continue();
-  });
+  const { unexpected: serviceRequests } = await interceptServices(context, page);
   await page.goto("/?demo=1");
   await page.getByRole("button", { name: "Workspace navigation" }).click();
   await page.getByRole("button", { name: "Trading", exact: true }).click();
@@ -41,15 +55,7 @@ test("Verification opens separately, preserves the planner draft and makes no se
 });
 
 test("Verification keeps failed and historical evidence distinct from automated and unobserved results", async ({ page, context }) => {
-  const serviceRequests: string[] = [];
-  await context.route("**/*", route => {
-    const url = new URL(route.request().url());
-    if (url.hostname !== "127.0.0.1" || url.pathname.startsWith("/v1/") || url.pathname.startsWith("/api/")) {
-      serviceRequests.push(`${url.hostname}${url.pathname}`);
-      return route.fulfill({ status: 503, json: { detail: "No external service in this fixture" } });
-    }
-    return route.continue();
-  });
+  const { unexpected: serviceRequests } = await interceptServices(context, page);
   await page.goto("/verification/");
   const failed = page.locator('[data-scenario-id="f-protection"]');
   await expect(failed).toContainText("Failed");
@@ -63,8 +69,20 @@ test("Verification keeps failed and historical evidence distinct from automated 
   const references = await page.locator('a[href*="github.com/Melvinroy/Journal/blob/"]').evaluateAll(links => links.map(link => link.getAttribute("href")));
   expect(references.length).toBeGreaterThan(0);
   for (const reference of references) expect(reference).toMatch(/\/blob\/[0-9a-f]{40}\//);
+  expect(serviceRequests).toEqual([]);
   await page.getByRole("link", { name: "Back to workspace", exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("button", { name: "Workspace navigation" })).toBeVisible();
   expect(serviceRequests).toEqual([]);
+});
+
+test("Verification request guard detects even workspace-shaped reads from the evidence document", async ({ page, context }) => {
+  const { unexpected, workspaceReads } = await interceptServices(context, page);
+  await page.goto("/verification/");
+  await expect(page.getByRole("heading", { name: "Trading verification", exact: true })).toBeVisible();
+  expect(unexpected).toEqual([]);
+  // Controlled fault injection: same URL allowed for workspace, forbidden here.
+  await page.evaluate(() => fetch("/v1/scanners/biggest-one-month"));
+  expect(unexpected).toEqual(["127.0.0.1/v1/scanners/biggest-one-month"]);
+  expect(workspaceReads).toEqual([]);
 });

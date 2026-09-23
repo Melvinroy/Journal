@@ -44,7 +44,19 @@ Independent sub-agent review covers evidence, execution safeguards and acceptanc
 
 Completion means independent work and usable handoff, not completed Phase 3B or live readiness.
 
-## Outcome checklist
+## Follow-up — PR #12 verification and operational gates (September 23)
+
+PR #12 published head `01f56de287b1bcc1cfea74326fc4e696a4702e48` failed Windows run `35809523185`: 81 browser passes, three skips and one failure. The earlier local pass remains historical evidence, not a passing remote gate. PR #11 remains open with a successful required check at `b27ff02e87a8a698d3ff1137c75c8424fb1c3959`; PR #12 is stacked on that branch. Main remains unchanged.
+
+Approved follow-up: inspect the failed trace, correct request attribution between Verification and its destination workspace, retain strict intercepted-service isolation and a negative control, run focused and full verification, obtain independent review, and deliver a local commit. Any replacement push needs approval of that exact SHA; merges and deployment remain separately gated.
+
+Operational order remains: paired desktop/agent storage diagnostics; distinct-user denial proof; separately approved cutover/rollback; authorized real login expiry/account transitions; external security decisions. Do not manufacture missing evidence with repeated fixture tests. Stop when only unavailable prerequisites or external decisions remain. Phase 1 is incomplete, Phase 2 implementation is merged but broker evidence remains open, Phase 3A is implemented but publication gates remain, Phase 3B is blocked, and Phase 4 live release is not enabled. Phase 5 is the consolidated operator/external checklist, not a waiver.
+
+No API, database, application interface, broker connection, service cutover or permission change is needed for the demonstrated test defect. Update the delivery report with separate local and remote outcomes; leave earlier results intact.
+
+Follow-up outcome: trace timing confirmed destination-workspace attribution; the shared fixture now permits only exact intercepted GET reads from that workspace, with a negative Verification request control. Three focused tests passed; full verification passed all five stages (207 Node, 279 backend, 83 browser passes; skips 2/4/3, two backend warnings) in 774.3 seconds. Independent review completed. This closes the local repair package only; replacement publishing/CI and operational prerequisites remain open.
+
+## Historical independent-package outcome checklist (before PR #12 repair)
 
 - [x] PR #11 Windows check passed at exact baseline; PR remains open.
 - [x] Five new review-boundary cases pass; repair only proven defects.
