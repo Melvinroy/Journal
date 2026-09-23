@@ -1,0 +1,27 @@
+.trading-verification { max-width:1100px; margin:0 auto; padding:28px 24px 56px; color:var(--ink); font-size:14px; line-height:1.6; }
+.trading-verification a { color:#075e36; text-decoration:underline; text-underline-offset:3px; overflow-wrap:anywhere; }
+.trading-verification a:focus-visible { outline:3px solid #07883f; outline-offset:4px; border-radius:2px; }
+.trading-verification h1 { margin:4px 0 12px; font-size:clamp(27px,4vw,38px); line-height:1.2; }
+.trading-verification h2 { margin:0 0 8px; font-size:22px; line-height:1.3; }
+.trading-verification h3 { margin:8px 0; font-size:18px; line-height:1.35; }
+.trading-verification p { margin:8px 0; }
+.verification-kicker { padding-top:24px; color:#53645b; letter-spacing:.06em; font-size:12px; text-transform:uppercase; }
+.verification-preview, .verification-note { color:#53645b; font-size:12px; overflow-wrap:anywhere; }
+.verification-overview { margin:24px 0; padding:22px; border:1px solid #d5b98e; border-left:5px solid #92600f; border-radius:10px; background:#fff9ed; }
+.verification-baseline { margin:24px 0; padding:22px; background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+.verification-navigation { display:flex; flex-wrap:wrap; gap:10px 24px; margin:26px 0; padding:12px 0; border-block:1px solid var(--line); }
+.verification-section { margin:32px 0; scroll-margin-top:16px; }
+.verification-cards { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; margin-top:18px; }
+.verification-card { min-width:0; padding:20px; border:1px solid var(--line); border-radius:10px; background:var(--surface); overflow-wrap:anywhere; }
+.verification-state { display:inline-block; padding:3px 9px; border-radius:5px; font-size:12px; font-weight:700; background:#eef1ef; color:#374b3e; }
+.verification-state[data-state="Failed"] { background:#fbe8e5; color:#8a2821; }
+.verification-state[data-state="Blocked"] { background:#fff0d7; color:#76500b; }
+.verification-state[data-state="Deterministic"] { background:#e8eefb; color:#284777; }
+.verification-state[data-state="Broker-observed"] { background:#e6f4eb; color:#086433; }
+.verification-limitation { color:#53645b; }
+.verification-card dl { margin:18px 0 10px; padding-top:12px; border-top:1px solid var(--line-soft); font-size:12px; }
+.verification-card dl div { margin-bottom:8px; }
+.verification-card dt { color:#53645b; }
+.verification-card dd { margin:0; }
+.verification-card ul { padding-left:18px; margin:12px 0 0; font-size:13px; }
+@media(max-width:650px) { .trading-verification { padding:20px 16px 36px; } .verification-cards { grid-template-columns:minmax(0,1fr); } .verification-card,.verification-baseline,.verification-overview { padding:18px; } }

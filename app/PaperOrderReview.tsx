@@ -10,6 +10,7 @@ export function PaperOrderReview({ paper, ticket, saved }: { paper: PaperExecuti
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [expired, setExpired] = useState(false);
   const [ids, setIds] = useState({ approval: "", submit: "" });
   const inFlight = useRef(false);
   const drawer = useRef<HTMLElement>(null);
@@ -17,7 +18,14 @@ export function PaperOrderReview({ paper, ticket, saved }: { paper: PaperExecuti
   const blockers = paperTicketBlockers(ticket, paper.status?.capabilities);
   const fingerprint = JSON.stringify(ticket);
   const generation = useRef(0);
-  useEffect(() => { generation.current++; setBatch(null); setMessage(""); }, [fingerprint, saved, paper.status?.connectionId, paper.status?.connected, paper.status?.account, paper.signedIn]);
+  useEffect(() => { generation.current++; setBatch(null); setMessage(""); }, [fingerprint, saved, paper.status?.connectionId, paper.status?.connected, paper.status?.account, paper.status?.submissionsEnabled, paper.signedIn]);
+  useEffect(() => {
+    const remaining = batch ? Date.parse(batch.validUntil) - Date.now() : NaN;
+    setExpired(!Number.isFinite(remaining) || remaining <= 0);
+    if (!Number.isFinite(remaining) || remaining <= 0) return;
+    const timer = setTimeout(() => setExpired(true), Math.min(remaining, 2147483647));
+    return () => clearTimeout(timer);
+  }, [batch]);
   useModalAccessibility(Boolean(batch), drawer, () => { if (!busy) setBatch(null); }, reviewButton);
   async function review() {
     if (inFlight.current) return;
@@ -32,9 +40,14 @@ export function PaperOrderReview({ paper, ticket, saved }: { paper: PaperExecuti
   }
   async function confirm() {
     if (!batch || inFlight.current) return;
+    const eligible = () => saved && blockers.length === 0 && paper.signedIn && paper.status?.connected &&
+      paper.status.submissionsEnabled && Number.isFinite(Date.parse(batch.validUntil)) && Date.parse(batch.validUntil) > Date.now();
+    if (!eligible()) { setError("Review expired or trading is unavailable. Cancel and review the current plan again."); return; }
+    const current = generation.current;
     inFlight.current = true; setBusy(true); setError("");
     try {
       await paper.request(`batches/${batch.id}/approve`, { digest: batch.digest, commandId: ids.approval });
+      if (generation.current !== current || !eligible()) throw new Error("Review expired or plan changed during approval. Review again before submitting.");
       await paper.request("submit", { batchId: batch.id, ticketIndex: 0, commandId: ids.submit });
       setBatch(null); setMessage("Order request recorded. Watch Positions for broker acknowledgement and actual fills."); await paper.refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "Submission outcome unknown. Reconcile before retrying."); }
@@ -55,7 +68,8 @@ export function PaperOrderReview({ paper, ticket, saved }: { paper: PaperExecuti
       <p>Expires {new Date(batch.validUntil).toLocaleString()} · source {batch.sourceIdentity}. Planned stop risk is not a guaranteed loss limit.</p>
       {!paper.status?.submissionsEnabled && <p role="status">Server submissions are locked. No order can be sent until the operator enables this reviewed paper test.</p>}
       {error && <p role="alert">{error}</p>}
-      <div className="modal-actions"><button disabled={busy} onClick={() => setBatch(null)}>Cancel</button><button disabled={busy || !paper.status?.connected || !paper.status.submissionsEnabled || Date.parse(batch.validUntil) <= Date.now()} onClick={() => void confirm()}>Confirm and submit paper order</button></div>
+      {expired && <p role="alert">Review expired. Cancel and review the current plan again.</p>}
+      <div className="modal-actions"><button disabled={busy} onClick={() => setBatch(null)}>Cancel</button><button disabled={busy || expired || !saved || blockers.length > 0 || !paper.signedIn || !paper.status?.connected || !paper.status.submissionsEnabled || !Number.isFinite(Date.parse(batch.validUntil)) || Date.parse(batch.validUntil) <= Date.now()} onClick={() => void confirm()}>Confirm and submit paper order</button></div>
     </section></div>}
   </div>;
 }
