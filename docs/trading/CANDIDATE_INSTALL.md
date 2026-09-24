@@ -16,6 +16,7 @@ No Git, Node, Python, Supabase account, IBKR password, or IBKR API installation 
 
 - The browser session is short-lived and permits only a sample view. A separate local profile stores the selected Connect/Trading/Journal view; its Windows access-denial proof remains pending. Broker account binding and imported records are not implemented.
 - The package is unsigned. There is no trusted public download or one-command installation link yet.
+- A second launcher currently stops instead of guessing a local port or issuing a browser session. An authenticated handoff would need an IPC endpoint created only after the first process owns the instance lock, a fresh one-use browser capability minted and opened by that owner, and proof that the IPC server belongs to that same process, Windows user and profile. Windows can report a named-pipe server PID and enforce pipe ACLs, but those facts alone do not bind that server to the named-mutex holder. The current unsigned, same-user candidate has no such proof, so second-launch handoff remains a future gate.
 - Real TWS connection, paper acceptance, historical session target amendment, submissions and live orders are outside this candidate and remain blocked by their existing gates.
 - Use [the modular product plan](../trading-modular-product-plan.md) for feature scope and [operator actions](OPERATOR_ACTIONS.md) for later manual qualification.
 

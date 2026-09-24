@@ -374,14 +374,29 @@ Current independent restrictions: no real broker connection/submission, target a
 - [x] Existing UI/logics reused; deviations justified with defect or setup need.
 - [x] Shell offers Trading and Journal views over the reused accounting components; the installed build remains sample-only.
 - [x] Local session and standalone preference storage work without cloud credentials; Windows ACL proof remains external.
-- [ ] Brontide installer/launcher candidate opens the browser without developer tools in tested conditions.
-- [ ] Guided TWS setup and account confirmation implemented and fixture-tested.
+- [x] Brontide installer/launcher candidate opens the browser without developer tools in the tested installed-user context; clean-machine proof and authenticated second-launch handoff remain open.
+- [x] Guided TWS setup and account-choice walkthrough fixture-tested; it neither binds an account nor contacts TWS.
 - [x] Full-planner engineering coverage status recorded; unverified real execution remains locked.
 - [ ] Journal/recovery/backup/update behaviour tested with isolated durable fixtures.
 - [x] GitHub README and versioned candidate install instructions prepared honestly; optional static landing preview is deferred.
-- [ ] Full required verification, direct UI checks and independent reviews complete.
-- [ ] Local commit/artifact/source identities and preview URL reported; unrelated files preserved.
-- [ ] Remaining user/vendor/policy/signing/publication gates consolidated with executable procedures.
+- [x] Full required verification, direct UI checks and independent reviews passed for the locked sample source `f5bf9ccd`; later source changes require fresh checks.
+- [x] Local commit/artifact/source identities and preview URL reported for `f5bf9ccd`; unrelated files preserved.
+- [x] Remaining user/vendor/policy/signing/publication gates consolidated in `docs/trading/OPERATOR_ACTIONS.md`; external proof remains open.
+
+### September 24 package checkpoint
+
+| Package | State / owner | Source and checks | Artifact / blocker | Next action |
+| --- | --- | --- | --- | --- |
+| A — inventory and contracts | Independently verified / coordinator | Local modular commits through `f5bf9ccd`; inventory and original source reviewed | This plan and the existing acceptance matrix | Reconcile against any later broker qualification; preserve historical evidence. |
+| B — shell and Trading reuse | Independently verified for sample mode / shell team | `f5bf9ccd`; full verify and exact-source desktop/mobile browser inspection passed | Installed Trading and Journal views reuse ordinary components. They remain labelled sample data. | Do not mix the standalone sample store with future recorded account history; add a separate scoped source mode before real Journal binding. |
+| C — local session and storage | Independently verified in isolated fixtures / runtime team; needs operator for real data | `f5bf9ccd`; session/profile and migration dry-run tests passed | One-use browser bootstrap, loopback controls and isolated profile; owner ledger not migrated. | Prove Windows ACLs and exact source/destination before separately authorized real-data cutover. |
+| D — Windows candidate package | Independently verified in one installed-user context / package team; needs operator for release | `f5bf9ccd`; synthetic lifecycle and real ZIP install/update/rollback/re-update passed | Unsigned ZIP with exact manifest/hash; clean machine, signing and secure second-launch handoff open. | Keep second launch fail closed; obtain trusted package and clean-machine proof before public download. |
+| E — Connect guidance | Independently verified as synthetic walkthrough / shell team; external blocker for TWS | `f5bf9ccd`; fixture cases cover missing/incompatible SDK, read-only TWS, multiple accounts and stale responses | No SDK/broker connection or persisted account binding in installed build. | Resolve supported SDK/license and execution boundary before real binding tests. |
+| F — full planner | External blocker / trading review | Existing domain tests and feature inventory retained at `f5bf9ccd` | Unsupported shorts, GTC/overnight and four-leg execution remain blocked. | Implement and qualify each supported combination separately; never infer real support from fixture coverage. |
+| G — Journal and recovery | Independently verified as an unmounted fixture / Journal team | Focused 21-case Journal/recovery check and all five repository verification stages passed on the current checkout | Read-only sanitized fixture DTO is unmounted. Installed Journal remains sample data. | Add verified account binding and source-specific frontend adapter before displaying real history. |
+| H — candidate qualification | In progress / coordinator and independent reviewer | `f5bf9ccd` installed ZIP checked; current checkout passed all five verification stages | Existing ZIP and preview identities are recorded in `output/modular-candidate/delivery.md`. | Create scoped commit and rebuild the ZIP from that exact clean source; keep clean-machine and signed-release gates open. |
+| I — paper/live qualification | External blocker / later operator run | Historical broker evidence stays 2/30; F failed, SOFI unfilled | Submission-policy rejection, operator checks and supported dependency unresolved. | Continue only after legitimate gate changes; use ordinary controls and final flat/cleared/accounted/locked proof. |
+| J — public release | Needs operator / later release owner | No exact-commit publication approval for this branch | No signed public download, GitHub release or deployment. | Obtain exact-SHA push, merge and release approvals plus trusted artifact and independent install proof. |
 
 Do not mark a whole-roadmap goal complete when only this candidate exists. Name the goal **independent modular Trading candidate**, and report the remaining release qualification separately. Do not promise the candidate can execute real trades until broker prerequisites and policy gates actually pass.
 
