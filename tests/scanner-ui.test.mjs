@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("../app/ScannerDashboard.tsx", import.meta.url), "utf8");
-const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+const page = readFileSync(new URL("../app/WorkspaceApp.tsx", import.meta.url), "utf8");
 const taskInstaller = readFileSync(new URL("../services/eod/scripts/register-eod-task.ps1", import.meta.url), "utf8");
 const scheduledRunner = readFileSync(new URL("../services/eod/scripts/run-scheduled-update.ps1", import.meta.url), "utf8");
 

@@ -1,5 +1,5 @@
 """Private SQLite command/event ledger. Durable intent precedes every broker write."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import json
 import os
 from pathlib import Path
@@ -48,8 +48,8 @@ class PaperStore:
         destination = Path(destination)
         if destination.exists(): raise PaperSafetyError("Backup destination already exists.")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True) as source:
-            with sqlite3.connect(destination) as target:
+        with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as source:
+            with closing(sqlite3.connect(destination)) as target:
                 source.backup(target)
                 if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise PaperSafetyError("Backup integrity verification failed.")

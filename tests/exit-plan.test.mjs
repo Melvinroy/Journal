@@ -51,6 +51,23 @@ test('one target and two runners allocate confirmed whole shares exactly and det
   assert.throws(() => domain.validateExitPlan(plan({ legs: definition.legs.map((leg, index) => ({ ...leg, allocationPercent: index === 0 ? 34 : leg.allocationPercent })) })), /total 100/);
 });
 
+test('two targets and two runners require four confirmed shares before every leg can be active', () => {
+  const definition = plan({ legs: [
+    { id: 'T1', role: 'Target', allocationPercent: 25, target: { mode: 'R', multipleR: 1 } },
+    { id: 'T2', role: 'Target', allocationPercent: 25, target: { mode: 'Price', price: 104 } },
+    { id: 'Runner A', role: 'Runner', allocationPercent: 25, activationR: 1, trailing: { mode: 'SMA', period: 10 } },
+    { id: 'Runner B', role: 'Runner', allocationPercent: 25, activationR: 2, trailing: { mode: 'Dollar', distance: 1 } },
+  ] });
+  assert.equal(domain.validateExitPlan(definition), definition);
+  assert.deepEqual(domain.exitLegQuantities(4, definition), [
+    { legId: 'T1', role: 'Target', quantity: 1 },
+    { legId: 'T2', role: 'Target', quantity: 1 },
+    { legId: 'Runner A', role: 'Runner', quantity: 1 },
+    { legId: 'Runner B', role: 'Runner', quantity: 1 },
+  ]);
+  assert.throws(() => domain.exitLegQuantities(3, definition), /at least one share/);
+});
+
 test('partial-entry threshold touches are recorded but never advance protection or survive a retrace', () => {
   const planned = reference('Planned');
   const touch = domain.observePartialEntryThreshold({ plannedReference: planned, quote: quote('Long', 102.25), thresholdR: 1, confirmedFilledQuantity: 40, confirmedProtectionQuantity: 40 });

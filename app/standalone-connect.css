@@ -1,0 +1,88 @@
+.standalone-connect {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 36px);
+  color: var(--ink);
+}
+
+.standalone-connect header h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(25px, 3vw, 36px);
+  line-height: 1.15;
+}
+
+.standalone-connect header p:last-child,
+.standalone-connect-lock p,
+.standalone-connect-steps li {
+  max-width: 72ch;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.standalone-connect-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.standalone-connect-grid .metric-card {
+  gap: 8px;
+  min-height: 118px;
+}
+
+.standalone-connect-grid .metric-card strong {
+  font-size: 18px;
+}
+
+.standalone-connect-grid .metric-card small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.standalone-connect-lock,
+.standalone-connect-steps {
+  margin: 16px 0;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.standalone-connect-fixture {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #d5caeb;
+  border-radius: 8px;
+  background: #f6f2fc;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.standalone-connect-steps label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 600; }
+.standalone-connect-steps select { display: block; width: min(100%, 320px); min-height: 40px; margin-bottom: 10px; }
+.standalone-connect-steps > button { margin: 8px 12px 8px 0; }
+
+.standalone-connect-lock {
+  border-color: #ead49e;
+  background: #fff8e8;
+}
+
+.standalone-connect-lock p { margin: 6px 0 0; }
+.standalone-connect-steps h2 { margin: 0 0 10px; font-size: 18px; }
+.standalone-connect-steps ol { margin: 0 0 16px; padding-left: 22px; }
+.standalone-connect-steps li + li { margin-top: 8px; }
+.standalone-connect-links, .standalone-connect-actions { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.standalone-connect-links a { color: #155b3b; text-underline-offset: 3px; font-size: 14px; }
+.standalone-connect-actions { margin-top: 20px; }
+.standalone-connect-actions :is(.primary-button, .secondary-button) { display: inline-flex; align-items: center; min-height: 42px; }
+
+@media (max-width: 620px) {
+  .standalone-connect { padding: 18px 12px 32px; }
+  .standalone-connect-grid { grid-template-columns: minmax(0, 1fr); }
+  .standalone-connect-lock, .standalone-connect-steps { padding: 16px; }
+  .standalone-connect-actions :is(.primary-button, .secondary-button) { width: 100%; justify-content: center; }
+}
