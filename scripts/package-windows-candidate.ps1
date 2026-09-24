@@ -95,9 +95,15 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/trading/CANDIDATE_INSTALL.md') -Destination (Join-Path $stage 'README-CANDIDATE.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/install-windows-candidate.ps1') -Destination (Join-Path $stage 'Install-Brontide.ps1')
+    # Windows PowerShell 5.1 uses .NET Framework, which has no Path.GetRelativePath.
+    $stagePrefix = [System.IO.Path]::GetFullPath($stage).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
     $files = Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
+        $fileFullPath = [System.IO.Path]::GetFullPath($_.FullName)
+        if (-not $fileFullPath.StartsWith($stagePrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Packaged file escaped the candidate staging directory.'
+        }
         [ordered]@{
-            path = [System.IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\', '/')
+            path = $fileFullPath.Substring($stagePrefix.Length).Replace('\', '/')
             sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             bytes = $_.Length
         }
