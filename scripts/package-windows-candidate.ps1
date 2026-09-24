@@ -112,6 +112,8 @@ try {
         platform = 'windows-x64'
         brokerExecution = 'disabled'
         signed = $false
+        profileSchema = 1
+        storeSchema = 0
         generatedUtc = [DateTime]::UtcNow.ToString('o')
         files = @($files)
     }

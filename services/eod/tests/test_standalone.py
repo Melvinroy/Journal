@@ -73,8 +73,13 @@ def test_missing_static_dependency_or_legacy_export_fails_package_check(tmp_path
 
 def test_foreign_host_and_origin_cannot_access_shell(tmp_path):
     client, _ = _client(tmp_path)
-    assert client.get("/launch", headers={"Host": "attacker.invalid"}).status_code == 403
-    assert client.get("/standalone/", headers={"Origin": "https://attacker.invalid"}).status_code == 403
+    host_rejection = client.get("/launch", headers={"Host": "attacker.invalid"})
+    assert host_rejection.status_code == 403
+    assert host_rejection.headers["cache-control"] == "no-store"
+    assert host_rejection.headers["x-content-type-options"] == "nosniff"
+    origin_rejection = client.get("/standalone/", headers={"Origin": "https://attacker.invalid"})
+    assert origin_rejection.status_code == 403
+    assert origin_rejection.headers["x-frame-options"] == "DENY"
 
 
 def test_one_use_local_launch_cannot_enable_execution(tmp_path):

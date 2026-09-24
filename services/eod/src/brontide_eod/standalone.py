@@ -89,20 +89,23 @@ def create_app(assets: Path, *, port: int, manager: LocalSessionManager,
 
     @app.middleware("http")
     async def local_boundary(request: Request, call_next):
+        def apply_common_headers(response):
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+            if request.url.path.startswith("/v1/") or request.url.path == "/launch":
+                response.headers["Cache-Control"] = "no-store"
+            return response
+
         peer = request.client.host if request.client else None
         allowed_peers = {HOST, "::1", "testclient"} if allow_testclient else {HOST, "::1"}
         if peer not in allowed_peers or request.headers.get("host") != f"{HOST}:{port}":
-            return JSONResponse({"detail": "Local browser access only."}, status_code=403)
+            return apply_common_headers(JSONResponse({"detail": "Local browser access only."}, status_code=403))
         supplied_origin = request.headers.get("origin")
         if supplied_origin and supplied_origin != origin:
-            return JSONResponse({"detail": "Cross-origin access is not permitted."}, status_code=403)
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if request.url.path.startswith("/v1/") or request.url.path == "/launch":
-            response.headers["Cache-Control"] = "no-store"
+            return apply_common_headers(JSONResponse({"detail": "Cross-origin access is not permitted."}, status_code=403))
+        response = apply_common_headers(await call_next(request))
         if "text/html" in response.headers.get("content-type", ""):
             marker = root / "standalone" / "index.html"
             evidence_marker = root / "verification" / "index.html"

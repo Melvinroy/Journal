@@ -215,18 +215,18 @@ The execution goal should implement packages A through H as far as prerequisites
 
 ### Progress checkpoint — 24 September 2026
 
-This table reports the isolated `codex/modular-trading-desktop` worktree from baseline `b7fd102d3c614c449fef15f5c143bdeb8d9b285c`. Results are for uncommitted candidate source until the final checks and scoped commit. The [M01–M16 source inventory](trading/IBKR_PAPER_ACCEPTANCE_QC.md#modular-trading-baseline-inventory--24-september-2026) is a feature map, not broker qualification.
+This table reports the isolated `codex/modular-trading-desktop` worktree from baseline `b7fd102d3c614c449fef15f5c143bdeb8d9b285c`. The revised source passed full verification before its final package build and scoped commit. The [M01–M16 source inventory](trading/IBKR_PAPER_ACCEPTANCE_QC.md#modular-trading-baseline-inventory--24-september-2026) is a feature map, not broker qualification.
 
 | Package | State | Owner | Commit / tests | Artifact or blocker | Next action |
 | --- | --- | --- | --- | --- | --- |
 | A Inventory and contracts | Independently reviewed | Inventory agent + coordinator | M01–M16 mapping; 13 Node domain fixtures passed | `MODULAR_CONTRACTS.md`; SDK redistribution/use clarification still external | Keep unsupported combinations blocked |
 | B Shell and Trading extraction | Candidate implemented | Shell agent + coordinator | 13 focused standalone browser checks passed | Existing Plan/Positions/Journal reused; Connect/Trading/Journal only. Unused cloud auth code remains in compiled bundle, although startup needs no cloud project | Narrow static bundle further before public release |
 | C Local session, storage and migration | Candidate implemented; operator proof open | Local-auth agent + coordinator | Local auth/profile/migration focused checks passed | One-use launcher capability, session, profile, dry-run assessor, synthetic ledger backup; Windows ACL and active data cutover unverified | Complete actual desktop/ACL/restore gates later |
-| D Packaging and GitHub onboarding | Unsigned candidate in progress | Coordinator | PyInstaller package and isolated installer positive test; revised package retest pending | README and manifest prepared; no trusted public asset, signing, hash-locked dependency build, smooth second-launch handoff or update/rollback flow | Finish final package checks; retain public release gate |
+| D Packaging and GitHub onboarding | Unsigned lifecycle candidate; package retest pending | Coordinator + lifecycle agent | Install/update/rollback/uninstall fixture tests pass; initial installed package opened directly | README and manifest prepared; no trusted public asset, signing, clean-machine proof or smooth second-launch handoff | Rebuild and inspect the revised real package; retain public release gate |
 | E Connect and broker adapter | Fixture walkthrough only | Shell agent | 13 focused browser tests; no broker calls | Missing SDK/TWS, environment, multiple-account and stale-response states are synthetic. No production adapter/account binding | Implement broker contract only when policy and vendor gates allow; keep locked |
-| F Full planner gaps | Inventory/fixture partial | Inventory agent | Deterministic four-leg rejection/parity fixture passed | Shorts, GTC, overnight and four populated legs still blocked for broker execution | Implement and separately qualify each feasible family later |
-| G Journal and recovery | Synthetic store proof partial | Inventory/local-auth agents | Ledger backup/replay and uncertainty fixture tests passed | Standalone Journal currently shows labeled sample records; no imported owner ledger or broker reconnect | Keep actual migration and reconciliation separate |
-| H Candidate qualification | Source verified; final package check pending | Coordinator + independent reviewer | Final `npm run verify` passed: 208 Node, 327 backend, 96 browser; 2/5/3 skipped respectively | Direct source and first package browser pass; package revealed and repaired profile virtualization and missing Verification route | Rebuild and inspect the final exact-source package |
+| F Full planner gaps | Inventory/fixture partial | Inventory + parity agents | Four-leg rejection fixture and whole-share runner protection regression pass | Shorts, GTC, overnight and four populated legs still blocked for broker execution | Implement and separately qualify each feasible family later |
+| G Journal and recovery | Synthetic store proof partial | Inventory/local-auth/Journal agents | Ledger backup/replay, unknown fees and fixture-scoped read-only projection tests pass | Standalone Journal currently shows labeled sample records; fixture reader is unmounted, no owner ledger or broker reconnect | Keep actual migration and reconciliation separate |
+| H Candidate qualification | Revised source verified; final package retest pending | Coordinator + independent reviewers | `npm run verify` passed: 209 Node (2 skipped), 334 backend (5 skipped, 1 warning), 96 browser (3 skipped), TypeScript and build | Direct source and first package browser pass; review found and repaired source-prefix collision and fixture timestamp handling | Rebuild and inspect exact-source package |
 
 Packages I/J remain future broker qualification and approved publication; neither is completed by this checkpoint.
 
@@ -370,15 +370,15 @@ Current independent restrictions: no real broker connection/submission, target a
 
 ## 11. Definition of independent completion
 
-- [ ] Plan/feature inventory and interface decisions recorded.
-- [ ] Existing UI/logics reused; deviations justified with defect or setup need.
-- [ ] Shell offers Trading and Journal views over shared accounting.
-- [ ] Local session and storage work without cloud credentials.
+- [x] Plan/feature inventory and interface decisions recorded.
+- [x] Existing UI/logics reused; deviations justified with defect or setup need.
+- [x] Shell offers Trading and Journal views over the reused accounting components; the installed build remains sample-only.
+- [x] Local session and standalone preference storage work without cloud credentials; Windows ACL proof remains external.
 - [ ] Brontide installer/launcher candidate opens the browser without developer tools in tested conditions.
 - [ ] Guided TWS setup and account confirmation implemented and fixture-tested.
-- [ ] Full-planner engineering coverage status recorded; unverified real execution remains locked.
+- [x] Full-planner engineering coverage status recorded; unverified real execution remains locked.
 - [ ] Journal/recovery/backup/update behaviour tested with isolated durable fixtures.
-- [ ] GitHub README, versioned install instructions and optional static landing preview prepared honestly.
+- [x] GitHub README and versioned candidate install instructions prepared honestly; optional static landing preview is deferred.
 - [ ] Full required verification, direct UI checks and independent reviews complete.
 - [ ] Local commit/artifact/source identities and preview URL reported; unrelated files preserved.
 - [ ] Remaining user/vendor/policy/signing/publication gates consolidated with executable procedures.

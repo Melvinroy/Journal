@@ -122,6 +122,18 @@ test('each runner has an independent activation threshold and trailing configura
   assert.equal(domain.evaluateRunnerAdvancement({ ...base, runner: runnerB, quote: quote('Long', 103.5) }).state, 'Not reached');
 });
 
+test('runner advancement requires matching protected whole shares before moving a stop', () => {
+  const execution = reference();
+  const runner = plan().legs.find(leg => leg.role === 'Runner');
+  const base = { executionReference: execution, quote: quote('Long', 104.25), runner, currentStopPrice: 98, sma10: 101.5 };
+  for (const [open, protectedShares] of [[1.5, 1.5], [2, 1.5], [0, 0]]) {
+    const result = domain.evaluateRunnerAdvancement({ ...base, confirmedOpenQuantity: open, confirmedProtectionQuantity: protectedShares });
+    assert.equal(result.state, 'Blocked');
+    assert.match(result.reason, /complete broker-confirmed protection/);
+  }
+  assert.equal(domain.evaluateRunnerAdvancement({ ...base, confirmedOpenQuantity: 2, confirmedProtectionQuantity: 2 }).state, 'Advance');
+});
+
 test('general and symbol presets preserve isolation and authoritative target modes', () => {
   const definition = plan();
   const general = { schemaVersion: 1, presetId: 'p1', name: 'One plus two runners', scope: 'General', definition, createdAt: now, updatedAt: now };

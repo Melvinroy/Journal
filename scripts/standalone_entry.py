@@ -6,6 +6,7 @@ import sys
 
 from brontide_eod.local_session import LocalSessionManager
 from brontide_eod.local_instance import InstanceUnavailable
+from brontide_eod.local_profile import LocalProfileStore
 from brontide_eod.standalone import create_app
 from brontide_eod.standalone import run
 
@@ -14,7 +15,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Brontide desktop candidate")
     parser.add_argument("--check-assets", action="store_true",
                         help="Validate packaged assets without starting a service")
+    parser.add_argument("--check-profile-schema", action="store_true",
+                        help="Read-only check of the current user's profile schema")
     args = parser.parse_args()
+    if args.check_profile_schema:
+        try:
+            LocalProfileStore().check_existing_schema()
+        except (OSError, ValueError):
+            parser.exit(3, "Brontide profile is unavailable or incompatible; installation stayed locked.\n")
+        print("Brontide profile schema is compatible; no private data was changed.")
+        return
     if getattr(sys, "frozen", False):
         assets = Path(sys._MEIPASS) / "out"  # type: ignore[attr-defined]
     else:

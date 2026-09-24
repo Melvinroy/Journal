@@ -106,6 +106,23 @@ def test_reparse_profile_path_is_not_read_or_overwritten(tmp_path):
     assert outside.read_text() == "private elsewhere"
 
 
+def test_update_schema_probe_is_read_only_and_rejects_unknown_profile(tmp_path):
+    store = LocalProfileStore(base=tmp_path)
+    store.check_existing_schema()
+    assert not store.root.exists()
+
+    store.load_or_create()
+    before = store.path.read_bytes()
+    store.check_existing_schema()
+    assert store.path.read_bytes() == before
+
+    unsupported = before.replace(b'"schemaVersion":1', b'"schemaVersion":2')
+    store.path.write_bytes(unsupported)
+    with pytest.raises(ValueError, match="schema"):
+        store.check_existing_schema()
+    assert store.path.read_bytes() == unsupported
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows Known Folder API")
 def test_default_path_ignores_spoofed_localappdata_environment(tmp_path, monkeypatch):
     expected = local_profile.windows_local_app_data()

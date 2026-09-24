@@ -160,6 +160,22 @@ class LocalProfileStore:
         with self.path.open("rb") as stored:
             return _validated_profile(stored.read(MAX_PROFILE_BYTES + 1))
 
+    def check_existing_schema(self) -> None:
+        """Read-only compatibility check for an incoming desktop update.
+
+        A missing profile is valid for a first install. Existing private data
+        must never be created, migrated, or overwritten by this probe.
+        """
+        _reject_reparse(self.base)
+        if not self.base.is_dir():
+            raise OSError("Windows LocalAppData is unavailable.")
+        _reject_reparse(self.root)
+        if not self.root.exists():
+            return
+        if not self.root.is_dir() or self.root.parent != self.base:
+            raise OSError("Standalone profile directory is invalid.")
+        self._read()
+
     def _write(self, profile: LocalProfile) -> None:
         document = {"schemaVersion": PROFILE_VERSION, "profileId": profile.profile_id,
                     "selectedView": profile.selected_view}

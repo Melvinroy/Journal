@@ -892,6 +892,8 @@ export function evaluateRunnerAdvancement(input: {
       reason: "Runner rules require a frozen Execution R reference.",
     };
   if (
+    !Number.isSafeInteger(input.confirmedOpenQuantity) ||
+    !Number.isSafeInteger(input.confirmedProtectionQuantity) ||
     input.confirmedProtectionQuantity !== input.confirmedOpenQuantity ||
     input.confirmedOpenQuantity <= 0
   )
