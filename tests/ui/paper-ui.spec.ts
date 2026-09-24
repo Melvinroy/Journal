@@ -709,3 +709,79 @@ test("ordinary planner saves account-scoped records without replacing legacy dat
   await expect(page.getByRole("region",{name:"Quick trade actions"}).getByRole("button",{name:"Review order",exact:true})).toBeVisible();
   await expect(page.getByText("TWS paper execution",{exact:true})).toHaveCount(0);
 });
+
+test("malformed review expiry fails closed without approval or submission", async ({ page }) => {
+  let economicRequests = 0;
+  await page.route("**/v1/ibkr/paper/**", route => { economicRequests++; return route.fulfill({ status: 409, json: { detail: "Unexpected fixture request" } }); });
+  await page.route("**/v1/ibkr/paper/batches", route => route.fulfill({ json: {
+    id: "malformed-batch", digest: "a".repeat(64), tickets: route.request().postDataJSON().tickets,
+    sourceIdentity: "fixture", validUntil: "not-a-date",
+  } }));
+  await signIn(page, { ...empty, submissionsEnabled: true }); await savePlan(page);
+  await page.getByRole("button", { name: "Review order", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Review TEST paper order" });
+  await expect(dialog.getByRole("button", { name: "Confirm and submit paper order" })).toBeDisabled();
+  await expect(dialog.getByRole("alert")).toContainText("Review expired");
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(economicRequests).toBe(0);
+});
+
+for (const change of ["logout", "account", "connection", "submission lock"] as const) {
+  test(`${change} during pending approval invalidates review and prevents submission`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const readJson = Response.prototype.json;
+      Response.prototype.json = function () {
+        const body = readJson.call(this);
+        if (!this.url.endsWith("/batches/batch/approve")) return body;
+        return body.then(value => {
+          // Observe the client's body consumption, then yield past its promise
+          // continuations and render frames, as in the late Journal response test.
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => {
+            channel.port1.close(); channel.port2.close();
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+              document.documentElement.dataset.lateApprovalResponse = "processed";
+            }));
+          };
+          channel.port2.postMessage(null);
+          return value;
+        });
+      };
+    });
+    let approvals = 0, submissions = 0, unexpected = 0;
+    let releaseApproval!: () => void;
+    const heldApproval = new Promise<void>(resolve => { releaseApproval = resolve; });
+    const status = { ...empty, submissionsEnabled: true };
+    await page.route("**/v1/ibkr/paper/**", route => { unexpected++; return route.fulfill({ status: 409, json: { detail: "Unexpected fixture request" } }); });
+    await mockReview(page);
+    await page.route("**/v1/ibkr/paper/batches/batch/approve", async route => { approvals++; await heldApproval; await route.fulfill({ json: {} }); });
+    await page.route("**/v1/ibkr/paper/submit", route => { submissions++; return route.fulfill({ json: {} }); });
+    await page.route("**/v1/ibkr/paper/signout", route => route.fulfill({ json: {} }));
+    await signIn(page, status); await savePlan(page);
+    await page.getByRole("button", { name: "Review order", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Review TEST paper order" });
+    await dialog.getByRole("button", { name: "Confirm and submit paper order" }).click();
+    await expect.poll(() => approvals).toBe(1);
+    if (change === "logout") {
+      // Invoke the existing logout handler to model a session ending while its modal is busy.
+      await page.getByRole("button", { name: "Sign out", exact: true }).first().evaluate(button => (button as HTMLButtonElement).click());
+      await expect(page.getByLabel("Email address")).toBeVisible();
+    } else {
+      if (change === "account") status.account = "DU••20";
+      if (change === "connection") status.connectionId = "connection-2";
+      if (change === "submission lock") status.submissionsEnabled = false;
+    }
+    await expect(dialog).toHaveCount(0, { timeout: 10000 });
+    const approvalResponse = page.waitForResponse(response => response.url().endsWith("/batches/batch/approve"));
+    releaseApproval();
+    expect(await (await approvalResponse).finished()).toBeNull();
+    await expect(page.locator("html")).toHaveAttribute("data-late-approval-response", "processed");
+    if (change !== "logout") {
+      await expect(page.getByRole("alert").filter({ hasText: "Review expired or plan changed during approval" })).toBeVisible();
+    } else {
+      await expect(page.getByLabel("Email address")).toBeVisible();
+    }
+    await expect(dialog).toHaveCount(0);
+    expect(submissions).toBe(0); expect(unexpected).toBe(0);
+  });
+}
