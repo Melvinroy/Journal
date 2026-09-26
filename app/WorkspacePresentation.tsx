@@ -21,7 +21,7 @@ export function Disclosure({ title, name, scope = "account", children, className
 
 // Both panes stay mounted: presentation changes must never reset planning or broker state.
 export function PlannerWorkspace({ children, positions, count = 0, exposure, scope = "account" }: {
-  children: ReactNode; positions: ReactNode; count?: number; exposure?: ReactNode; scope?: string;
+  children: ReactNode; positions: ReactNode; count?: number | null; exposure?: ReactNode; scope?: string;
 }) {
   const preference = useBrowserStore<"plan" | "positions">(`brontide.ui.v1.${scope}.planner-pane`, "plan", value => value === "plan" || value === "positions");
   const [pane, setPane] = useState<"plan" | "positions">("plan");
@@ -58,7 +58,7 @@ export function PlannerWorkspace({ children, positions, count = 0, exposure, sco
               event.preventDefault(); const next = event.key === "Home" ? "plan" : event.key === "End" ? "positions" : pane === "plan" ? "positions" : "plan";
               select(next); document.getElementById(`${id}-${next}-tab`)?.focus();
             }
-          }}>{value === "plan" ? "Plan" : `Positions (${count})`}</button>)}
+          }}>{value === "plan" ? "Plan" : count === null ? "Positions" : `Positions (${count})`}</button>)}
       </div>
     </div>
     <div className="planner-position-layout">

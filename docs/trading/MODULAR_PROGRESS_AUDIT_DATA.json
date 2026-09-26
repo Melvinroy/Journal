@@ -1,0 +1,340 @@
+{
+  "checked": "2026-09-27",
+  "source": "codex/modular-trading-desktop; exact qualified source, scoped commit and installed hashes are recorded in output/phase-2-qualification/qualification-report.md",
+  "phase_readiness": {
+    "1": "Product decisions recorded; implementation is assessed in later phases.",
+    "2": "14/14 under the reviewed local application scope: the same installed executable passed labelled artificial-profile acceptance. Real IBKR identity, recording, protection and orders remain open in Phases 4 and 6. No release or publication approval is implied.",
+    "3": "Blocked for rebuilt package, clean Windows install and trusted distribution proof.",
+    "4": "Blocked for exact-source UI, normal launcher integration, private ledger and broker identity proof.",
+    "5": "Blocked for licence, signing, verified release and separate publication approval.",
+    "6": "Blocked by the separate submission policy gate and missing broker acceptance. Live use is not qualified."
+  },
+  "pending": {
+    "3.8": {
+      "assessment": "Package health assertions exist in source; latest executable was not checked.",
+      "evidence": "source implemented",
+      "blocker": "Qualified package build.",
+      "owner": "Agent",
+      "next_action": "Run packaged diagnostics and confirm valid assets with execution locked.",
+      "acceptance": "Versioned executable output and package hash.",
+      "category": "unverified behavior"
+    },
+    "3.9": {
+      "assessment": "Second-launch correction passed isolated fixtures; installed handoff remains open.",
+      "evidence": "automated tests",
+      "blocker": "Rebuilt installer and Windows session cases.",
+      "owner": "Agent",
+      "next_action": "Exercise duplicate launch, changed profile, other session and cross-user denial on the installed candidate.",
+      "acceptance": "Process/session and browser-handoff evidence with one engine only.",
+      "category": "unverified behavior"
+    },
+    "3.10": {
+      "assessment": "No clean Windows account installation has been shown.",
+      "evidence": "installed verified (older sample only)",
+      "blocker": "Trusted candidate and disposable clean Windows user.",
+      "owner": "User",
+      "next_action": "Install as a standard user without developer tools and inspect private-data access.",
+      "acceptance": "OS/user context, source/package hash, shortcut/restart and access-denial record.",
+      "category": "external gate"
+    },
+    "3.11": {
+      "assessment": "Linked-asset rejection passed focused tests only.",
+      "evidence": "automated tests",
+      "blocker": "Current full verification and rebuilt installer.",
+      "owner": "Agent",
+      "next_action": "Qualify the asset boundary in a rebuilt package after legitimate file resolution.",
+      "acceptance": "Focused regressions plus package scan on exact source.",
+      "category": "unverified behavior"
+    },
+    "3.13": {
+      "assessment": "Available ZIP is unsigned and local; trusted release is absent.",
+      "evidence": "installed verified (older sample only)",
+      "blocker": "Signing, immutable artifact and release approval.",
+      "owner": "User",
+      "next_action": "Arrange publisher provenance and validate one approved versioned download.",
+      "acceptance": "Signature, immutable hash, clean install and matching download/install command.",
+      "category": "external gate"
+    },
+    "3.14": {
+      "assessment": "Locked sample accepts store schema 0; prepared ledger uses schema 1.",
+      "evidence": "source implemented",
+      "blocker": "Reviewed migration, consistent backup/restore and installed update.",
+      "owner": "Agent",
+      "next_action": "Specify and fixture-test schema transition before any broker-enabled update.",
+      "acceptance": "Read-only preflight, migration rollback and restored schema-1 data proven on installed candidate.",
+      "category": "missing integration"
+    },
+    "4.27": {
+      "assessment": "No real account is connected; source-only discovery cannot prove paper identity.",
+      "evidence": "automated tests",
+      "blocker": "Approved SDK/provider, owner paper attestation and fresh broker reconciliation.",
+      "owner": "User",
+      "next_action": "After external gates, confirm the exact paper account through ordinary Connect with independent login evidence.",
+      "acceptance": "Broker-observed account/environment and disconnected/locked state before submission.",
+      "category": "external gate"
+    },
+    "4.28": {
+      "assessment": "Shared projections pass fixtures, but the normal installed screens and broker record are not joined.",
+      "evidence": "automated tests",
+      "blocker": "Private ledger provisioning, launcher integration and broker acceptance.",
+      "owner": "Agent",
+      "next_action": "Qualify ordinary Trading, Positions and Journal against one owner-scoped saved record.",
+      "acceptance": "Exact-source installed UI agrees on shares, fees and result for open and closed records.",
+      "category": "missing integration"
+    },
+    "4.29": {
+      "assessment": "Normal Save controls are wired in source and focused tests; rebuilt UI is unverified.",
+      "evidence": "automated tests",
+      "blocker": "Generated-file gate, qualified browser and account-scoped ledger.",
+      "owner": "Agent",
+      "next_action": "Test Save plan/Save exits across valid, changed, missing and uncertain scope in the normal screen.",
+      "acceptance": "Current-source browser and persisted-reopen proof without sample-to-paper leakage.",
+      "category": "unverified behavior"
+    },
+    "4.30": {
+      "assessment": "Internal ledger preparation exists only in fixtures; no owner ledger is provisioned.",
+      "evidence": "automated tests",
+      "blocker": "Exact owner/account authority and installed caller.",
+      "owner": "Agent",
+      "next_action": "Design and qualify a locked, owner-scoped provisioning path after source qualification.",
+      "acceptance": "Installed read/write scope and rejection of changed reference or mixed history.",
+      "category": "missing integration"
+    },
+    "4.32": {
+      "assessment": "Bounded-closure semantics passed source tests; screen label is unobserved.",
+      "evidence": "automated tests",
+      "blocker": "Exact-source browser build.",
+      "owner": "Agent",
+      "next_action": "Inspect Position and Journal labels on desktop and mobile.",
+      "acceptance": "Visible correct label, readable detail and no misleading manual-exit wording.",
+      "category": "unverified behavior"
+    },
+    "4.33": {
+      "assessment": "Unsupported choices remain locked; the full planner is incomplete.",
+      "evidence": "source implemented",
+      "blocker": "Feature-specific implementation and broker qualification.",
+      "owner": "Agent",
+      "next_action": "Keep current locks and inventory shorts, auctions, overnight and four-part exits for later scoped work.",
+      "acceptance": "Each enabled family has contract tests, ordinary-control and broker evidence; otherwise lock remains.",
+      "category": "missing integration"
+    },
+    "4.34": {
+      "assessment": "Owner paper-reference form is implemented in source; no owner account or installed screen was checked.",
+      "evidence": "automated tests",
+      "blocker": "Exact-source browser, owner-provided paper login and qualified package.",
+      "owner": "User",
+      "next_action": "Later enter and confirm the exact paper ID in ordinary Connect, then verify read-only status after an uncertain save.",
+      "acceptance": "Masked private reference, no exposed ID and all execution locks retained.",
+      "category": "external gate"
+    },
+    "4.41": {
+      "assessment": "Generated-file repair, synthetic mask correction and current browser verification passed in Phase 2. The normal launcher still has no broker account-evidence provider.",
+      "evidence": "source implemented",
+      "blocker": "Missing normal-launcher broker evidence integration and real account-review qualification.",
+      "owner": "Agent",
+      "next_action": "Implement and qualify the normal account-evidence provider under Phase 4 approvals; keep orders locked.",
+      "acceptance": "Focused parser/browser pass, exact preview ID and explicit unavailable state in the installed sample.",
+      "category": "missing integration"
+    },
+    "4.47": {
+      "assessment": "Journal timestamp wording changed in source; rebuilt desktop/mobile view is unobserved.",
+      "evidence": "source implemented",
+      "blocker": "Exact-source browser build.",
+      "owner": "Agent",
+      "next_action": "Inspect notice, late-fee warning and responsive layout.",
+      "acceptance": "Current preview ID with desktop/mobile screenshots and direct observations.",
+      "category": "unverified behavior"
+    },
+    "5.2": {
+      "assessment": "SDK terms and pinned dependency remain unresolved for distribution.",
+      "evidence": "source inspection",
+      "blocker": "Version-specific vendor/legal and dependency resolution.",
+      "owner": "Vendor",
+      "next_action": "Obtain written interpretation and supported dependency path for the exact SDK version.",
+      "acceptance": "Reviewed rights and secure compatible package record.",
+      "category": "external gate"
+    },
+    "5.3": {
+      "assessment": "No signed, clean-machine, immutable public download has been qualified.",
+      "evidence": "installed verified (older sample only)",
+      "blocker": "Signing, package qualification and release approval.",
+      "owner": "User",
+      "next_action": "Review exact package and perform clean-machine install via the final command.",
+      "acceptance": "Signature/hash, authenticated asset, clean install and matching version.",
+      "category": "external gate"
+    },
+    "5.4": {
+      "assessment": "No approval covers a new application commit, push, merge or release.",
+      "evidence": "design",
+      "blocker": "Exact-SHA approval and separate merge/publication decisions.",
+      "owner": "User",
+      "next_action": "Review the later qualified commit and issue action-specific approvals.",
+      "acceptance": "Recorded approval of exact SHA and separately authorized release actions.",
+      "category": "external gate"
+    },
+    "6.2": {
+      "assessment": "Paper submission was separately rejected by automatic approval review.",
+      "evidence": "design",
+      "blocker": "Independent policy/support resolution; owner consent alone is insufficient.",
+      "owner": "Policy/support",
+      "next_action": "Obtain a legitimate policy decision before any submission work or broker session.",
+      "acceptance": "Explicit authorized change to the policy gate and audited 30-total limit.",
+      "category": "external gate"
+    },
+    "6.3": {
+      "assessment": "Fake-broker and historical evidence do not qualify ordinary controls; F protection remains failed.",
+      "evidence": "automated tests",
+      "blocker": "Submission policy, verified paper account, repaired protection and broker observation.",
+      "owner": "User",
+      "next_action": "After all gates, run supervised paper acceptance through ordinary controls.",
+      "acceptance": "Broker-observed protection, closure, cancellation, reconnect and shared accounting.",
+      "category": "external gate"
+    },
+    "6.4": {
+      "assessment": "No current flat/cleared/accounted/locked final proof exists.",
+      "evidence": "broker verified (historical only)",
+      "blocker": "Permitted acceptance and complete owned-state reconciliation.",
+      "owner": "User",
+      "next_action": "After authorized testing, separately verify positions, orders, accounting and locks.",
+      "acceptance": "Timestamped broker evidence and final lock status for the exact account.",
+      "category": "external gate"
+    },
+    "6.5": {
+      "assessment": "Desktop security/backup and live-pilot decisions remain open.",
+      "evidence": "automated tests",
+      "blocker": "Windows ACL/restore proof, paper acceptance and separate live authorization.",
+      "owner": "User",
+      "next_action": "Complete desktop operator gates; decide any live pilot only after paper qualification.",
+      "acceptance": "Access-denial, restore and operational proof plus explicit live decision.",
+      "category": "external gate"
+    }
+  },
+  "completed": {
+    "2.5": {
+      "assessment": "Installed preferences and hidden Journal survived restart; artificial events recorded while hidden remained available after reveal. Desktop/mobile and browser Back checked. Same installed executable and labelled artificial profile. Real IBKR recording remains explicitly open in Phases 4 and 6. Exact artifacts and observations: output/phase-2-qualification/qualification-report.md. Mobile Save views and doubled-text label containment were requalified after the scoped Connect CSS fix; the saved choice survived executable restart.",
+      "evidence": "installed and automated qualification",
+      "blocker": "None for the agreed Phase 2 scope. Later broker and release gates remain open.",
+      "owner": "Agent",
+      "next_action": "Retain this qualification; proceed only under the separate later-phase acceptance and approval gates.",
+      "acceptance": "Same installed executable with labelled artificial verification profile: saved view choices, hidden navigation, recording while hidden and restart persistence on desktop/mobile. Real IBKR recording remains in Phases 4 and 6.",
+      "category": "qualified local application"
+    },
+    "2.7": {
+      "assessment": "Normal launch, navigation, reload and restart observed. Application resource requests stayed on loopback; source import boundaries passed. Runtime isolation qualified separately from packaged-file scanning. Exact artifacts and observations: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "installed and automated qualification",
+      "blocker": "None for the agreed Phase 2 scope. Later broker and release gates remain open.",
+      "owner": "Agent",
+      "next_action": "Retain this qualification; proceed only under the separate later-phase acceptance and approval gates.",
+      "acceptance": "Clean archive scan and exact-source browser network trace.",
+      "category": "qualified local application"
+    },
+    "2.8": {
+      "assessment": "Fresh exported assets and actual packaged payload passed the complete scanner; installed asset diagnostics passed. Archive and executable hashes recorded. Unreferenced text assets were included; no emitted chunks were deleted to obtain a pass. Exact artifacts and observations: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "installed and automated qualification",
+      "blocker": "None for the agreed Phase 2 scope. Later broker and release gates remain open.",
+      "owner": "Agent",
+      "next_action": "Retain this qualification; proceed only under the separate later-phase acceptance and approval gates.",
+      "acceptance": "Rebuilt package hash and clean asset scan.",
+      "category": "qualified local application"
+    },
+    "2.10": {
+      "assessment": "Installed local ledger passed empty, open, closed, late-fee, reload/restart, wrong-scope and malformed-history cases. Quantities 2/2/0, gross $6.00, fees $0.70, net $5.30. Artificial records through real local endpoints and persistence. No broker authentication or real ledger acceptance; those remain in Phases 4 and 6. Exact artifacts and observations: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "installed and automated qualification",
+      "blocker": "None for the agreed Phase 2 scope. Later broker and release gates remain open.",
+      "owner": "Agent",
+      "next_action": "Retain this qualification; proceed only under the separate later-phase acceptance and approval gates.",
+      "acceptance": "Same installed executable and isolated artificial ledger: empty/open/closed history, late fees, persistence, malformed and changed-scope failures, with no sample fallback. Real broker identity and recordings remain in Phases 4 and 6.",
+      "category": "qualified local application"
+    },
+    "2.11": {
+      "assessment": "Direct installed desktop/mobile, resizing, keyboard, validation, loading/error/empty and enlarged-text checks completed. Fee precision and header overlap were fixed and rechecked. Emulated viewport/text checks; no physical monitor or native DPI qualification. Exact artifacts and observations: output/phase-2-qualification/qualification-report.md. Mobile Save views and doubled-text label containment were requalified after the scoped Connect CSS fix; the saved choice survived executable restart.",
+      "evidence": "installed and automated qualification",
+      "blocker": "None for the agreed Phase 2 scope. Later broker and release gates remain open.",
+      "owner": "Agent",
+      "next_action": "Retain this qualification; proceed only under the separate later-phase acceptance and approval gates.",
+      "acceptance": "Preview identity plus desktop, mobile, keyboard and failure-state observations.",
+      "category": "qualified local application"
+    },
+    "2.12": {
+      "assessment": "Cloud save/import success and rejection/lost/missing/partial/delayed acknowledgment cases passed, including A-B-A transitions, backup/draft retention and history retry without duplicate writes. Artificial accounts and controlled service responses; no live cloud account or real trade data. Exact artifacts and observations: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and direct browser qualification",
+      "blocker": "None for the agreed Phase 2 scope. Later broker and release gates remain open.",
+      "owner": "Agent",
+      "next_action": "Retain this qualification; proceed only under the separate later-phase acceptance and approval gates.",
+      "acceptance": "Browser evidence for error, retry and account transition at the current source ID.",
+      "category": "qualified local application"
+    },
+    "2.1": {
+      "assessment": "Normal and artificial-profile launches, Connect, Trading, Journal and Verification were directly inspected in the current candidate. Execution remains disabled. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and installed qualification",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    },
+    "2.2": {
+      "assessment": "Current automated profile/module tests passed. Installed saved view choices persisted across closing and restarting the same executable. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and installed qualification",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    },
+    "2.3": {
+      "assessment": "Installed Connect choices, desktop/mobile navigation and hidden-view denial were observed. Invalid or unavailable state fails closed in the current browser tests. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and installed qualification",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    },
+    "2.4": {
+      "assessment": "The existing isolated hidden-recording tests passed again. An installed verification ledger accepted the artificial entry while Journal was hidden and showed it after reveal. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and installed qualification",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    },
+    "2.6": {
+      "assessment": "Ordinary sample launch and separate labelled artificial profiles were inspected. A fresh UUID showed no records and did not expose the other profile's ledger. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and installed qualification",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    },
+    "2.9": {
+      "assessment": "Current real local verification endpoints and existing storage projected saved artificial history; scope/malformed failures showed unavailable rather than sample history. Real broker provisioning stays later. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and installed qualification",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    },
+    "2.13": {
+      "assessment": "Fresh standalone export and actual PyInstaller frontend payload scans passed, including orphan text assets. Packaged and installed asset diagnostics passed. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated and installed qualification",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    },
+    "2.14": {
+      "assessment": "Full backend verification retained the isolated session-lock/module-save concurrency coverage. This qualifies the scoped ordering result, not broker permission. Exact qualification artifacts: output/phase-2-qualification/qualification-report.md.",
+      "evidence": "automated tests",
+      "blocker": "None for this scoped Phase 2 result.",
+      "owner": "Agent",
+      "next_action": "Retain this result; later installation, broker and release gates remain separate.",
+      "acceptance": "Original scoped acceptance retained; integrated Phase 2 qualification is recorded in the reviewed plan and qualification report.",
+      "category": "qualified local application"
+    }
+  }
+}
