@@ -63,8 +63,19 @@
 }
 
 .standalone-connect-steps label { display: block; margin: 12px 0 5px; font-size: 13px; font-weight: 600; }
+.standalone-view-options { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0 16px; }
+.standalone-view-options label { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 0; font-size: 14px; }
+.standalone-view-options input { width: 18px; height: 18px; accent-color: #155b3b; }
 .standalone-connect-steps select { display: block; width: min(100%, 320px); min-height: 40px; margin-bottom: 10px; }
 .standalone-connect-steps > button { margin: 8px 12px 8px 0; }
+.standalone-paper-reference form { max-width: 480px; }
+.standalone-paper-reference form > label { display: block; margin: 12px 0; }
+.standalone-paper-reference form input[type="text"] { display: block; width: 100%; min-height: 42px; margin-top: 5px; padding: 8px 10px; }
+.standalone-paper-reference form input[type="checkbox"] { width: 18px; height: 18px; margin-right: 7px; vertical-align: middle; accent-color: #155b3b; }
+.standalone-paper-reference form button { min-height: 42px; }
+.standalone-account-review form { max-width: 480px; margin-top: 14px; }
+.standalone-account-review form input[type="text"] { display: block; width: 100%; min-height: 42px; margin: 5px 0 12px; padding: 8px 10px; }
+.standalone-account-review form button { min-height: 42px; }
 
 .standalone-connect-lock {
   border-color: #ead49e;
@@ -78,6 +89,8 @@
 .standalone-connect-links, .standalone-connect-actions { display: flex; flex-wrap: wrap; gap: 10px 16px; }
 .standalone-connect-links a { color: #155b3b; text-underline-offset: 3px; font-size: 14px; }
 .standalone-connect-actions { margin-top: 20px; }
+/* Setup actions remain available when the legacy mobile toolbar hides secondary buttons. */
+.standalone-connect .secondary-button { display: inline-flex; align-items: center; min-height: 42px; height: auto; padding: 8px 12px; }
 .standalone-connect-actions :is(.primary-button, .secondary-button) { display: inline-flex; align-items: center; min-height: 42px; }
 
 @media (max-width: 620px) {

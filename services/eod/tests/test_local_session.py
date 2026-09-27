@@ -1,7 +1,7 @@
 """Standalone local session checks; no cloud identity or broker transport."""
 
 import pytest
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from brontide_eod.local_session import LocalSessionManager, local_session_router
@@ -108,6 +108,39 @@ def test_relaunch_replaces_old_session_and_cookie_is_http_only(local_app):
         with TestClient(client.app, base_url=ORIGIN) as old_client:
             old_client.cookies.set("brontide_local_session", old_cookie)
             assert old_client.post("/v1/local/protected", headers={**HEADERS, "X-Brontide-CSRF": csrf}).status_code == 401
+
+
+def test_long_running_account_review_cannot_cross_relaunch_lock_or_expiry(local_app):
+    manager, now, client = local_app
+    with client:
+        _, csrf = unlock(manager, client)
+        original_cookie = client.cookies.get("brontide_local_session")
+        lease = manager.lease(original_cookie, csrf)
+        assert manager.require_lease(lease, original_cookie, csrf).profile_id == "profile-fixture"
+
+        _, replacement_csrf = unlock(manager, client)
+        replacement_cookie = client.cookies.get("brontide_local_session")
+        with pytest.raises(HTTPException) as old_session:
+            manager.require_lease(lease, original_cookie, csrf)
+        assert old_session.value.status_code == 401
+        with pytest.raises(HTTPException) as changed_generation:
+            manager.require_lease(lease, replacement_cookie, replacement_csrf)
+        assert changed_generation.value.status_code == 409
+
+        replacement_lease = manager.lease(replacement_cookie, replacement_csrf)
+        now[0] += 301
+        with pytest.raises(HTTPException) as expired:
+            manager.require_lease(replacement_lease, replacement_cookie, replacement_csrf)
+        assert expired.value.status_code == 401
+
+        now[0] = 500
+        _, csrf = unlock(manager, client)
+        cookie = client.cookies.get("brontide_local_session")
+        new_lease = manager.lease(cookie, csrf)
+        manager.lock()
+        with pytest.raises(HTTPException) as locked:
+            manager.require_lease(new_lease, cookie, csrf)
+        assert locked.value.status_code == 401
 
 
 @pytest.mark.parametrize("origin", ["http://evil.example:8766", "https://127.0.0.1:8766", "http://localhost:8766",

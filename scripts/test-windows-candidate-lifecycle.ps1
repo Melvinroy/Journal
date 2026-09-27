@@ -16,13 +16,20 @@ $bSource = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 $aName = 'candidate-1.0.0-aaaaaaaaaaaa'
 $bName = 'candidate-1.1.0-bbbbbbbbbbbb'
 $outsideSentinel = Join-Path $fixtureBase 'outside-sentinel.txt'
+$interruptedCopy = Join-Path $installed ".candidate-pending-$id"
 
 function Assert-Equal($actual, $expected, [string]$message) {
     if ($actual -cne $expected) { throw "$message; actual=$actual; expected=$expected" }
 }
-function Expect-Failure([scriptblock]$action, [string]$message) {
+function Expect-Failure([scriptblock]$action, [string]$message, [string]$errorPattern = '') {
     try { & $action | Out-Null }
-    catch { Write-Output "PASS rejected: $message"; return }
+    catch {
+        if ($errorPattern -and $_.Exception.Message -notmatch $errorPattern) {
+            throw "Wrong rejection for $message`: $($_.Exception.Message)"
+        }
+        Write-Output "PASS rejected: $message"
+        return
+    }
     throw "Expected rejection: $message"
 }
 function Make-Package([string]$folder, [string]$version, [string]$source, [int]$profileSchema) {
@@ -32,6 +39,8 @@ function Make-Package([string]$folder, [string]$version, [string]$source, [int]$
     Copy-Item -LiteralPath (Join-Path $fixtureBase 'stub.exe') -Destination (Join-Path $bin 'BrontideDesktop.exe')
     Copy-Item -LiteralPath $installer -Destination (Join-Path $path 'Install-Brontide.ps1')
     'locked fixture' | Set-Content -LiteralPath (Join-Path $path 'README.txt') -Encoding utf8
+    'dependency text with spaces' | Set-Content -LiteralPath (Join-Path $bin 'Lorem ipsum.txt') -Encoding utf8
+    'timezone data' | Set-Content -LiteralPath (Join-Path $bin 'GMT+0') -Encoding utf8
     $files = @(Get-ChildItem -LiteralPath $path -File -Recurse | Sort-Object FullName | ForEach-Object {
         [ordered]@{
             path = $_.FullName.Substring($path.Length + 1).Replace('\', '/')
@@ -57,6 +66,17 @@ function Invoke-Lifecycle([string]$action, [string]$package = '', [string]$targe
     if ($target) { $arguments.TargetFolder = $target }
     & $installer @arguments
 }
+function Remove-PendingFixture {
+    $absolute = [IO.Path]::GetFullPath($interruptedCopy)
+    if (-not [string]::Equals([IO.Path]::GetDirectoryName($absolute),
+            [IO.Path]::GetFullPath($installed), [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Path]::GetFileName($absolute) -cne ".candidate-pending-$id" -or
+        -not (Test-Path -LiteralPath $absolute -PathType Container) -or
+        ((Get-Item -LiteralPath $absolute -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw 'Interrupted fixture path cannot be safely removed.'
+    }
+    Remove-Item -LiteralPath $absolute -Recurse -Force
+}
 
 try {
     New-Item -ItemType Directory -Path $fixtureBase -Force | Out-Null
@@ -72,16 +92,112 @@ fn main() {
     & rustc $sourceCode -o (Join-Path $fixtureBase 'stub.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Could not compile isolated lifecycle stub.' }
     'do not remove' | Set-Content -LiteralPath $outsideSentinel -Encoding utf8
-    $a = Make-Package 'package-a' '1.0.0' $aSource 1
+    # Exercise an extracted package path with both a space and a non-ASCII
+    # character; the installed version folder itself keeps its stable name.
+    $a = Make-Package ("package-{0} sample" -f [char]0x00E9) '1.0.0' $aSource 1
     $b = Make-Package 'package-b' '1.1.0' $bSource 1
     $collision = Make-Package 'package-prefix-collision' '1.1.0' (('b' * 12) + ('c' * 28)) 1
     $future = Make-Package 'package-future-schema' '1.2.0' ('c' * 40) 2
+
+    New-Item -ItemType Directory -Path $installed -Force | Out-Null
+    New-Item -ItemType Directory -Path $interruptedCopy | Out-Null
+    'preserve for review' | Set-Content -LiteralPath (Join-Path $interruptedCopy 'partial.txt') -Encoding utf8
+    Expect-Failure { Invoke-Lifecycle 'Install' $a } 'interrupted copy blocks install' 'interrupted candidate copy'
+    if ((Test-Path -LiteralPath (Join-Path $installed 'installation.json')) -or
+        -not (Test-Path -LiteralPath (Join-Path $interruptedCopy 'partial.txt'))) {
+        throw 'Rejected install changed state or removed interrupted evidence.'
+    }
+    Remove-PendingFixture
 
     Invoke-Lifecycle 'Install' $a | Out-Null
     Assert-Equal (ActiveName) $aName 'Install did not select A'
     if (-not (Test-Path -LiteralPath $shortcut)) { throw 'Install shortcut missing.' }
     Assert-Equal (ShortcutTarget) (Join-Path $installed "$aName/BrontideDesktop/BrontideDesktop.exe") 'Initial shortcut target'
-    Write-Output 'PASS initial install and owned shortcut'
+    Assert-Equal (Get-Content -LiteralPath (Join-Path $installed "$aName/BrontideDesktop/Lorem ipsum.txt") -Raw).Trim() 'dependency text with spaces' 'Internal-space filename was not preserved'
+    Assert-Equal (Get-Content -LiteralPath (Join-Path $installed "$aName/BrontideDesktop/GMT+0") -Raw).Trim() 'timezone data' 'Plus filename was not preserved'
+    Write-Output 'PASS initial install, internal-space filename and owned shortcut'
+
+    $manifestPath = Join-Path $b 'manifest.json'
+    $manifestOriginal = Get-Content -LiteralPath $manifestPath -Raw
+    try {
+        foreach ($unsafe in @('../escape', '/absolute', 'BrontideDesktop//file',
+                'BrontideDesktop/ file', 'BrontideDesktop/file ', 'BrontideDesktop/file.',
+                'BrontideDesktop/file:stream', 'BrontideDesktop\file')) {
+            $invalid = $manifestOriginal | ConvertFrom-Json
+            $invalid.files[0].path = $unsafe
+            $invalid | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
+            Expect-Failure { Invoke-Lifecycle 'Update' $b } "unsafe inventory $unsafe" 'missing or unlisted|Unsafe inventory'
+            Assert-Equal (ActiveName) $aName 'Unsafe manifest changed active version'
+        }
+    } finally {
+        $manifestOriginal | Set-Content -LiteralPath $manifestPath -Encoding utf8
+    }
+
+    $lockPath = Join-Path $programs ('.brontide-lifecycle-' + [IO.Path]::GetFileName($installed) + '.lock')
+    $heldLock = [IO.FileStream]::new($lockPath, [IO.FileMode]::OpenOrCreate,
+        [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    try {
+        Expect-Failure { Invoke-Lifecycle 'Update' $b } 'concurrent lifecycle operation' 'Lifecycle lock unavailable'
+        Assert-Equal (ActiveName) $aName 'Concurrent attempt changed active version'
+    } finally { $heldLock.Dispose() }
+    Write-Output 'PASS concurrent lifecycle operation is rejected'
+
+    $holderScript = Join-Path $fixtureBase 'hold-lock.ps1'
+    $holderReady = Join-Path $fixtureBase 'hold-lock-ready.txt'
+    $holderRelease = Join-Path $fixtureBase 'hold-lock-release.txt'
+    @'
+$ErrorActionPreference = 'Stop'
+$held = [IO.FileStream]::new($env:BRONTIDE_TEST_LOCK_PATH, [IO.FileMode]::OpenOrCreate,
+    [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+try {
+    'ready' | Set-Content -LiteralPath $env:BRONTIDE_TEST_READY_PATH -Encoding ascii
+    for ($i = 0; $i -lt 100; $i++) {
+        if (Test-Path -LiteralPath $env:BRONTIDE_TEST_RELEASE_PATH) { break }
+        Start-Sleep -Milliseconds 100
+    }
+} finally { $held.Dispose() }
+'@ | Set-Content -LiteralPath $holderScript -Encoding utf8
+    $env:BRONTIDE_TEST_LOCK_PATH = $lockPath
+    $env:BRONTIDE_TEST_READY_PATH = $holderReady
+    $env:BRONTIDE_TEST_RELEASE_PATH = $holderRelease
+    $holder = $null
+    try {
+        $holder = Start-Process -FilePath powershell.exe -ArgumentList @('-NoProfile', '-File', "`"$holderScript`"") -WindowStyle Hidden -PassThru
+        for ($i = 0; $i -lt 50 -and -not (Test-Path -LiteralPath $holderReady); $i++) {
+            if ($holder.HasExited) { throw 'Separate lock holder exited before acquiring the lock.' }
+            Start-Sleep -Milliseconds 100
+        }
+        if (-not (Test-Path -LiteralPath $holderReady)) { throw 'Separate lock holder did not signal readiness.' }
+        Expect-Failure { Invoke-Lifecycle 'Update' $b } 'separate-process lifecycle collision' 'Lifecycle lock unavailable'
+        Assert-Equal (ActiveName) $aName 'Separate-process attempt changed active version'
+    } finally {
+        try {
+            if ($holder) {
+                $releaseFailure = $null
+                try { 'release' | Set-Content -LiteralPath $holderRelease -Encoding ascii }
+                catch { $releaseFailure = $_ }
+                if (-not $holder.WaitForExit(15000)) {
+                    $holder.Kill() # Exact helper process started above; never a Brontide process.
+                    [void]$holder.WaitForExit(3000)
+                    throw 'Separate lock holder did not exit after release.'
+                }
+                if ($releaseFailure) { throw "Could not signal separate lock holder: $releaseFailure" }
+            }
+        } finally {
+            Remove-Item Env:BRONTIDE_TEST_LOCK_PATH, Env:BRONTIDE_TEST_READY_PATH, Env:BRONTIDE_TEST_RELEASE_PATH -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Output 'PASS separate-process lifecycle collision is rejected'
+
+    New-Item -ItemType Directory -Path $interruptedCopy | Out-Null
+    'preserve for review' | Set-Content -LiteralPath (Join-Path $interruptedCopy 'partial.txt') -Encoding utf8
+    Expect-Failure { Invoke-Lifecycle 'Update' $b } 'interrupted copy blocks update' 'interrupted candidate copy'
+    Expect-Failure { Invoke-Lifecycle 'Rollback' '' $bName } 'interrupted copy blocks rollback' 'interrupted candidate copy'
+    Expect-Failure { Invoke-Lifecycle 'Uninstall' } 'interrupted copy blocks uninstall' 'interrupted candidate copy'
+    Assert-Equal (ActiveName) $aName 'Interrupted copy changed active version'
+    if (-not (Test-Path -LiteralPath (Join-Path $interruptedCopy 'partial.txt'))) { throw 'Interrupted copy was silently removed.' }
+    Remove-PendingFixture
+    Write-Output 'PASS interrupted copy is preserved and blocks lifecycle changes'
 
     Expect-Failure { Invoke-Lifecycle 'Update' (Join-Path $installed $aName) } 'self-copy from managed installation'
     Assert-Equal (ActiveName) $aName 'Rejected self-copy changed active version'

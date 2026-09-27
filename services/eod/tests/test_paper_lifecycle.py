@@ -1,6 +1,7 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import os
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -8,9 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from brontide_eod.ibkr_tws import PaperGatewayConfig, create_operator_verification, PaperSafetyError
+from brontide_eod.ibkr_execution import broker_session_phase
 from brontide_eod.paper_domain import allocations, next_stop, summarize, validate_exit_plan
 from brontide_eod.paper_store import PaperStore
-from brontide_eod.paper_service import PaperService
+from brontide_eod.paper_service import PaperService, economic_execution
 
 
 def test_callback_transaction_failure_retains_events_for_retry(service, monkeypatch):
@@ -72,11 +74,17 @@ class FakeTransport:
         values = list(range(self.next_id, self.next_id + n)); self.next_id += n; return values
     def drain(self): events, self.events = self.events, []; return events
     def read_only_instrument_snapshot(self, symbol):
-        day = datetime.now(ZoneInfo("America/New_York")).strftime("%Y%m%d")
+        # These synthetic all-day schedules must remain valid if a test crosses
+        # midnight in New York between reading the contract and reviewing it.
+        day = datetime.now(ZoneInfo("America/New_York")).date()
+        hours = ";".join(
+            f"{(day + timedelta(days=offset)):%Y%m%d}:0000-{(day + timedelta(days=offset)):%Y%m%d}:2359"
+            for offset in (-1, 0, 1)
+        )
         return SimpleNamespace(observed_at=datetime.now(timezone.utc).isoformat(), con_id=42, symbol=symbol,
             exchange="NYSE", route="SMART", currency="USD", minimum_tick=.01, bid=self.bid, ask=self.ask,
             quote_complete=True, market_data_type=1, order_types=["LMT", "MIDPX", "STP", "STPLMT", "OCA"],
-            valid_exchanges=["SMART"], trading_hours=f"{day}:0000-{day}:2359", liquid_hours=f"{day}:0000-{day}:2359",
+            valid_exchanges=["SMART"], trading_hours=hours, liquid_hours=hours,
             time_zone_id="America/New_York", server_version=187)
     def read_only_snapshot(self):
         positions = sum(1 if f["side"] == "BOT" else -1 for f in self.fills)
@@ -115,6 +123,21 @@ class FakeTransport:
     def daily_references(self, contract): return {"SMA10": 102, "SMA20": 101, "SMA50": 100.5, "low": 101, "high": 105}
 
 
+def test_synthetic_broker_schedule_survives_midnight_rollover():
+    from brontide_eod.ibkr_readonly import IbkrReadOnlyService
+
+    instrument = IbkrReadOnlyService._instrument_view(
+        FakeTransport().read_only_instrument_snapshot("TEST")
+    )
+    local_day = datetime.now(ZoneInfo("America/New_York")).date()
+    for offset in (-1, 0, 1):
+        after_midnight = datetime.combine(
+            local_day + timedelta(days=offset), datetime.min.time(),
+            ZoneInfo("America/New_York"),
+        ) + timedelta(minutes=1)
+        assert broker_session_phase(instrument, after_midnight)["phase"] == "RTH"
+
+
 @pytest.fixture
 def service(tmp_path, monkeypatch):
     fake = FakeTransport()
@@ -125,10 +148,10 @@ def service(tmp_path, monkeypatch):
     s.shutdown()
 
 
-def approved(s):
+def approved(s, paper_ticket=None):
     import os
     from pathlib import Path
-    batch = s.prepare_batch([ticket()])
+    batch = s.prepare_batch([paper_ticket if paper_ticket is not None else ticket()])
     Path(os.environ["BRONTIDE_PAPER_APPROVAL_FILE"]).write_text(json.dumps({"batchId": batch["id"], "ticketDigest": batch["digest"],
         "sourceIdentity": "reviewed-source", "accountBinding": s.client.config.binding(), "connectionId": s.connection_id,
         "approvedAt": datetime.now(timezone.utc).isoformat()}))
@@ -229,6 +252,98 @@ def test_three_independently_protected_shares_and_no_duplicate_submission(servic
     with pytest.raises(PaperSafetyError): service.submit(b["id"], 0, "another-command")
 
 
+@pytest.mark.parametrize("filled_shares", [1, 2, 3, 4])
+def test_future_four_slot_exit_plan_retains_independent_stops(service, monkeypatch, filled_shares):
+    """Exercise a future scaling candidate without changing the real cap."""
+    from pathlib import Path
+    from brontide_eod.paper_policy import LIMITS
+
+    monkeypatch.setitem(LIMITS, "sharesPerCampaign", 4)
+    four_legs = {
+        "schemaVersion": 1,
+        "breakeven": plan()["breakeven"],
+        "legs": [
+            {"id": "T1", "role": "Target", "allocationPercent": 25,
+             "target": {"mode": "R", "multipleR": 1}},
+            {"id": "T2", "role": "Target", "allocationPercent": 25,
+             "target": {"mode": "R", "multipleR": 2}},
+            {"id": "A", "role": "Runner", "allocationPercent": 25,
+             "activationR": 1, "trailing": {"mode": "Dollar", "distance": .5}},
+            {"id": "B", "role": "Runner", "allocationPercent": 25,
+             "activationR": 2, "trailing": {"mode": "Percentage", "percent": 5}},
+        ],
+    }
+    batch = approved(service, ticket(quantity=4, exitPlan=four_legs))
+    service.submit(batch["id"], 0, "four-slot-entry")
+    assert len(service.client.writes) == 8
+    assert all(fields["totalQuantity"] == 1 for _, fields in service.client.writes)
+    service._events()
+    campaign = service.store.all("campaign")[0]
+    assert len(campaign["slots"]) == 4
+    assert len({slot["group"] for slot in campaign["slots"]}) == 4
+    for slot in campaign["slots"]:
+        assert slot["entry"]["fields"]["transmit"] is False
+        assert slot["stop"]["fields"]["transmit"] is True
+        assert slot["stop"]["fields"]["parentId"] == slot["entry"]["orderId"]
+
+    for slot in campaign["slots"][:filled_shares]:
+        service.client.fill(slot["entry"]["orderId"], 100)
+    service._events()
+    campaign = service.store.all("campaign")[0]
+    if filled_shares < 4:
+        service.action(campaign["id"], campaign["revision"],
+                       "cancel-fourth", "cancel-entry")
+        service._events()
+        campaign = service.store.all("campaign")[0]
+        assert campaign["entryFinal"] and campaign["allocationPending"]
+        assert all("leg" not in slot for slot in campaign["slots"][:filled_shares])
+        before = len(service.client.writes)
+        service._automate(campaign)
+        assert len(service.client.writes) == before
+        assert all(slot["stop"]["status"] == "Submitted"
+                   for slot in campaign["slots"][:filled_shares])
+
+        reduced = deepcopy(plan())
+        reduced["legs"] = reduced["legs"][:filled_shares]
+        for index, leg in enumerate(reduced["legs"]):
+            leg["allocationPercent"] = (
+                100 - (filled_shares - 1) * (100 // filled_shares)
+                if index == filled_shares - 1 else 100 // filled_shares
+            )
+        saved = service.action(campaign["id"], campaign["revision"],
+                               f"{filled_shares}-leg-draft", "save-amendment", reduced)
+        with pytest.raises(PaperSafetyError, match="approval"):
+            service.action(campaign["id"], saved["revision"],
+                           f"unapproved-{filled_shares}-leg", "apply-amendment")
+        approval = Path(os.environ["BRONTIDE_PAPER_APPROVAL_FILE"])
+        receipt = json.loads(approval.read_text())
+        receipt["approvedAmendmentDigests"] = [saved["draft"]["digest"]]
+        approval.write_text(json.dumps(receipt))
+        service.action(campaign["id"], saved["revision"],
+                       f"approved-{filled_shares}-leg", "apply-amendment")
+        campaign = service.store.all("campaign")[0]
+        assert not campaign["allocationPending"]
+        assert len([slot for slot in campaign["slots"] if slot.get("leg")]) == filled_shares
+    else:
+        assert campaign["entryFinal"] and not campaign["allocationPending"]
+        assert [slot["leg"]["id"] for slot in campaign["slots"]] == ["T1", "T2", "A", "B"]
+        service._automate(campaign)
+        service._events()
+        campaign = service.store.all("campaign")[0]
+        targets = [slot for slot in campaign["slots"] if slot.get("exit")]
+        assert len(targets) == 2
+        assert all(slot["exit"]["fields"]["ocaGroup"] == slot["stop"]["fields"]["ocaGroup"]
+                   for slot in targets)
+        assert len({slot["stop"]["fields"]["ocaGroup"] for slot in campaign["slots"]}) == 4
+        service.client.fill(targets[0]["exit"]["orderId"], 102)
+        service._events()
+        campaign = service.store.all("campaign")[0]
+        assert summarize(campaign)["openQuantity"] == 3
+        assert campaign["slots"][0]["stop"]["status"] == "Cancelled"
+        assert all(slot["stop"]["status"] == "Submitted"
+                   for slot in campaign["slots"][1:])
+
+
 def test_execution_and_fees_drive_journal_not_acknowledgement(service):
     c = opened(service)
     assert c["state"] == "Open"
@@ -247,6 +362,52 @@ def test_execution_and_fees_drive_journal_not_acknowledgement(service):
     assert result["openQuantity"] == 2
     assert result["grossRealized"] == 2
     assert result["netRealized"] == pytest.approx(1.6)
+
+
+def test_ambiguous_broker_cost_basis_requires_reconciliation(service):
+    c = opened(service)
+    c["executions"][1]["price"] = 110
+    ambiguous_exit = deepcopy(c["executions"][0])
+    ambiguous_exit.update(executionId="ambiguous-cost-exit", effect="exit",
+                          role="target", price=102, commission=0)
+    c["executions"].append(ambiguous_exit)
+    assert summarize(c)["grossRealized"] is None
+    service._derive(c)
+    assert c["state"] == "Needs reconciliation"
+    assert "cost basis" in c["message"]
+
+
+def test_entry_after_exit_keeps_managed_rules_paused_until_reconciliation(service):
+    c = opened(service)
+    for execution in c["executions"][:2]:
+        execution["occurredAt"] = "2026-09-24T10:01:00Z"
+    c["executions"][2].update(price=110, occurredAt="2026-09-24T10:03:00Z")
+    later_exit = deepcopy(c["executions"][0])
+    later_exit.update(executionId="earlier-target-exit", effect="exit", role="target",
+                      price=102, commission=0, occurredAt="2026-09-24T10:02:00Z")
+    c["executions"].append(later_exit)
+    assert summarize(c)["grossRealized"] == 2
+    assert summarize(c)["entryAfterExit"] is True
+    service._derive(c)
+    assert c["state"] == "Needs reconciliation"
+    assert "after an exit" in c["message"]
+
+
+def test_same_instant_exit_and_new_entry_pause_managed_rules(service):
+    c = opened(service)
+    for execution in c["executions"][:2]:
+        execution["occurredAt"] = "2026-09-24T10:01:00Z"
+    c["executions"][2]["occurredAt"] = "2026-09-24T10:02:00Z"
+    same_instant_exit = deepcopy(c["executions"][0])
+    same_instant_exit.update(executionId="same-instant-target-exit", effect="exit",
+                             role="target", price=102, commission=0,
+                             occurredAt="2026-09-24T10:02:00Z")
+    c["executions"].append(same_instant_exit)
+    assert summarize(c)["accountingComplete"] is True
+    assert summarize(c)["entryAfterExit"] is True
+    service._derive(c)
+    assert c["state"] == "Needs reconciliation"
+    assert "protection and allocations" in c["message"]
 
 
 def test_missing_execution_never_becomes_fill_and_position_mismatch_blocks(service):
@@ -282,6 +443,80 @@ def test_transport_timeout_cannot_be_retried_as_new_economic_action(service, mon
     assert service.store.all("campaign")[0]["state"] == "Needs reconciliation"
     service.submit(batch["id"], 0, "entry")
     assert len(service.client.writes) == 1
+
+
+@pytest.mark.parametrize("stop_accepted", [False, True])
+def test_entry_stop_interruption_preserves_uncertainty_without_resubmission(
+        service, monkeypatch, stop_accepted):
+    """The untransmitted parent cannot justify another entry or stop write."""
+    batch = approved(service)
+    original_write = service.client.write
+    attempted = []
+
+    def interrupted(order_id, contract, fields):
+        attempted.append(order_id)
+        if len(attempted) == 2:
+            if stop_accepted:
+                original_write(order_id, contract, fields)
+            raise TimeoutError("synthetic stop outcome unknown")
+        return original_write(order_id, contract, fields)
+
+    monkeypatch.setattr(service.client, "write", interrupted)
+    with pytest.raises(TimeoutError, match="stop outcome unknown"):
+        service.submit(batch["id"], 0, "interrupted-bracket")
+    # Treat both callbacks as lost: a later read must not manufacture an
+    # acknowledgement or transmit a second bracket from the saved command.
+    service.client.events.clear()
+    campaign = service.store.all("campaign")[0]
+    first = campaign["slots"][0]
+    assert campaign["state"] == "Needs reconciliation"
+    assert first["entry"]["fields"]["transmit"] is False
+    assert first["stop"]["fields"]["transmit"] is True
+    assert first["entry"]["pendingCommand"]
+    assert first["stop"]["pendingCommand"]
+    assert [row[0] for row in service.client.writes] == (
+        attempted if stop_accepted else attempted[:1])
+    with service.store.transaction() as db:
+        commands = db.execute("SELECT id,state FROM commands ORDER BY id").fetchall()
+    assert {row[0] for row in commands} == {
+        "interrupted-bracket", "interrupted-bracket:0:E", "interrupted-bracket:0:S"}
+    assert all(row[1] != "confirmed" for row in commands)
+
+    before = len(service.client.writes)
+    service.submit(batch["id"], 0, "interrupted-bracket")
+    with pytest.raises(PaperSafetyError, match="economic action"):
+        service.submit(batch["id"], 0, "another-entry")
+    service._automate(service.store.all("campaign")[0])
+    assert len(service.client.writes) == before
+    assert len(attempted) == 2
+
+    restarted = PaperService(PaperStore(service.store.path),
+                             factory=lambda: service.client,
+                             source=lambda: "reviewed-source")
+    restarted.client = service.client
+    try:
+        assert restarted.armed is None
+        assert not restarted.reviewed_campaigns
+        restored = restarted.store.all("campaign")[0]
+        assert restored["state"] == "Needs reconciliation"
+        assert restored["slots"][0]["entry"]["pendingCommand"]
+        assert restored["slots"][0]["stop"]["pendingCommand"]
+        restarted.reconcile()  # Complete fake snapshot; no transmission.
+        restored = restarted.store.all("campaign")[0]
+        # The remaining planned slots were never sent, so the whole campaign
+        # must still require review even if this first stop is acknowledged.
+        assert restored["state"] == "Needs reconciliation"
+        if stop_accepted:
+            assert "pendingCommand" not in restored["slots"][0]["stop"]
+        else:
+            assert restored["slots"][0]["stop"]["pendingCommand"]
+        assert restarted.armed is None
+        assert not restarted.reviewed_campaigns
+        restarted._automate(restored)
+        assert len(service.client.writes) == before
+        assert len(attempted) == 2
+    finally:
+        restarted.shutdown()
 
 
 def test_cleanup_keeps_protection_and_uses_at_most_two_attempts(service):
@@ -579,6 +814,38 @@ def test_partial_entry_defers_targets_until_cancelled_remainders(service):
     assert c["slots"][0]["stop"]["status"] == "Submitted"
 
 
+def test_delayed_entry_fill_after_cancel_confirmation_keeps_protection_and_pauses_exits(service):
+    batch = approved(service)
+    service.submit(batch["id"], 0, "entry")
+    service._events()
+    campaign = service.store.all("campaign")[0]
+    filled_slot = campaign["slots"][0]
+    service.action(campaign["id"], campaign["revision"], "cancel-all", "cancel-entry")
+    service._events()
+    # The entry parents are terminal, but the attached broker stops remain
+    # outstanding, so the campaign must not be called fully cancelled.
+    assert service.store.all("campaign")[0]["state"] == "Closing"
+
+    # The broker execution happened before cancellation, but its callback arrived
+    # after the cancellation acknowledgement. Do not infer zero exposure from it.
+    service.client.fill(filled_slot["entry"]["orderId"], 100)
+    service._events()
+    campaign = service.store.all("campaign")[0]
+    summary = summarize(campaign)
+    assert summary["entered"] == summary["openQuantity"] == 1
+    assert campaign["state"] == "Open"
+    assert campaign["entryFinal"] and campaign["allocationPending"]
+    assert campaign["slots"][0]["stop"]["status"] == "Submitted"
+    assert all("exit" not in slot for slot in campaign["slots"])
+    before = len(service.client.writes)
+    service._automate(campaign)
+    service._events()
+    assert len(service.client.writes) == before
+    service.client.events.extend(deepcopy(service.client.fills))
+    service._events()
+    assert summarize(service.store.all("campaign")[0])["entered"] == 1
+
+
 def test_stop_rejection_has_one_reconciled_replacement_only(service):
     c = opened(service)
     old = c["slots"][0]["stop"]["orderId"]
@@ -769,6 +1036,47 @@ def test_audited_recovery_rebuilds_missing_timestamp_from_preserved_fill(service
     assert recovered["executions"][0]["occurredAt"] == "2026-09-16T15:23:43+00:00"
     assert len(recovered["executions"]) == 3
     assert recovered["state"] == "Open"
+
+
+def test_audited_recovery_replays_current_versioned_economic_fill(service, monkeypatch):
+    c = opened(service)
+    original = deepcopy(service.client.fills[0])
+    original["executedAt"] = "20260916-15:23:43"
+    with service.store.transaction() as db:
+        # Keep the current versioned event only. A seven-day broker read can
+        # legitimately omit an older fill, so recovery must use saved evidence.
+        db.execute("DELETE FROM events WHERE id=?",
+                   ("exec-v1:" + original["executionId"],))
+        service.store.event(db, "exec-v1:" + original["executionId"],
+                            economic_execution(original))
+        c["executions"][0]["occurredAt"] = ""
+        c["state"] = "Needs reconciliation"
+        service.store.put(db, "campaign", c["id"], c)
+    monkeypatch.setattr(service.client, "execution_snapshot", lambda: set())
+    service.authenticated("verified-owner")
+    recovered = service.recover(c["id"], c["revision"], "audited-versioned-history")
+    assert recovered["executions"][0]["occurredAt"] == "2026-09-16T15:23:43+00:00"
+    assert len(recovered["executions"]) == 3
+    assert recovered["state"] == "Open"
+
+
+def test_audited_recovery_refuses_unknown_future_economic_version(service):
+    c = opened(service)
+    c["state"] = "Needs reconciliation"
+    c["message"] = "Future economic evidence needs review."
+    with service.store.transaction() as db:
+        service.store.put(db, "campaign", c["id"], c)
+        service.store.event(db, "exec-v2:future-fill", {
+            "schemaVersion": 2, "executionId": "future-fill"})
+    service.authenticated("verified-owner")
+    before = len(service.client.writes)
+    with pytest.raises(PaperSafetyError, match="Unsupported economic evidence"):
+        service.recover(c["id"], c["revision"], "future-recovery")
+    assert len(service.client.writes) == before
+    assert service.store.all("campaign")[0]["state"] == "Needs reconciliation"
+    with service.store.transaction() as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM events WHERE id='exec-v2:future-fill'").fetchone()[0] == 1
 
 
 def test_modern_sdk_history_requests_seven_days_and_normalizes_errors_and_fees(service, monkeypatch):

@@ -1,0 +1,108 @@
+{
+  "connectionStatus": "not-connected",
+  "currentExposure": null,
+  "environment": "paper",
+  "executionEnabled": false,
+  "historyStatus": "recorded",
+  "journalCampaigns": [
+    {
+      "accountBinding": "fixture-paper-account-A",
+      "contract": {
+        "conId": 42,
+        "currency": "USD"
+      },
+      "createdAt": "2026-09-24T10:00:00Z",
+      "direction": "Long",
+      "executions": [
+        {
+          "commission": 0.2,
+          "effect": "entry",
+          "executionId": "entry-1",
+          "occurredAt": "2026-09-24T10:01:00Z",
+          "orderId": 101,
+          "price": 100,
+          "quantity": 2,
+          "role": "entry"
+        },
+        {
+          "commission": null,
+          "effect": "exit",
+          "executionId": "exit-1",
+          "occurredAt": "2026-09-24T10:02:00Z",
+          "orderId": 102,
+          "price": 102,
+          "quantity": 1,
+          "role": "target"
+        }
+      ],
+      "id": "campaign-1",
+      "state": "Partially filled",
+      "summary": {
+        "averageEntry": 100.0,
+        "costsComplete": false,
+        "entered": 2,
+        "exited": 1,
+        "fees": null,
+        "finalNetR": null,
+        "grossRealized": 2.0,
+        "initialRisk": 4.0,
+        "netRealized": null,
+        "openQuantity": 1
+      },
+      "symbol": "TEST",
+      "syntheticOnly": true,
+      "ticket": {
+        "exitPlan": {
+          "breakeven": {
+            "activationR": 1,
+            "favorableOffset": {
+              "unit": "Dollar",
+              "value": 0
+            }
+          },
+          "legs": [
+            {
+              "allocationPercent": 100,
+              "id": "target-1",
+              "role": "Target",
+              "target": {
+                "mode": "R",
+                "multipleR": 1
+              }
+            }
+          ],
+          "schemaVersion": 1
+        },
+        "hardCap": 100,
+        "planId": "synthetic-plan-1",
+        "planningPrice": 100,
+        "quantity": 2,
+        "stopPrice": 98
+      }
+    }
+  ],
+  "lastBrokerReconciledAt": null,
+  "lastRecordedAt": "2026-09-24T10:02:00Z",
+  "ordersCleared": null,
+  "records": [
+    {
+      "campaignId": "campaign-1",
+      "costsCompleteRecorded": false,
+      "direction": "Long",
+      "entered": 2,
+      "executionCount": 2,
+      "exited": 1,
+      "fees": null,
+      "finalNetR": null,
+      "grossRealized": 2.0,
+      "id": "fixture:campaign-1",
+      "netRealized": null,
+      "recordedAt": "2026-09-24T10:02:00Z",
+      "recordedOpenQuantity": 1,
+      "state": "Partially filled",
+      "symbol": "TEST"
+    }
+  ],
+  "source": "synthetic-ledger-fixture",
+  "uncertainCommandCount": 1
+}

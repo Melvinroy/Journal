@@ -11,8 +11,9 @@ import hmac
 import secrets
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterator
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -33,6 +34,14 @@ class LocalPrincipal:
     """An authenticated local profile, with no broker account authority."""
 
     profile_id: str
+
+
+@dataclass(frozen=True)
+class LocalSessionLease:
+    """An in-memory reference to one authenticated browser session."""
+
+    profile_id: str
+    generation: int
 
 
 class LocalSessionManager:
@@ -61,6 +70,7 @@ class LocalSessionManager:
         self._session_until = 0.0
         self._csrf_digest: bytes | None = None
         self._csrf_token: str | None = None
+        self._generation = 0
 
     def issue_bootstrap(self) -> str:
         """Issue only from a trusted local launcher; never expose as an API."""
@@ -83,6 +93,7 @@ class LocalSessionManager:
             self._csrf_digest = _digest(csrf)
             self._csrf_token = csrf
             self._session_until = self._clock() + self.session_seconds
+            self._generation += 1
             return session, csrf
 
     def authenticate(self, cookie: str | None, csrf: str | None = None) -> LocalPrincipal:
@@ -101,8 +112,37 @@ class LocalSessionManager:
             assert self._csrf_token is not None
             return self._csrf_token
 
+    def lease(self, cookie: str | None, csrf: str | None) -> LocalSessionLease:
+        """Capture authority for a server-side operation that may finish later."""
+        with self._lock:
+            principal = self.authenticate(cookie, csrf)
+            if csrf is None:
+                raise HTTPException(403, "Local request verification failed.")
+            return LocalSessionLease(principal.profile_id, self._generation)
+
+    def require_lease(self, lease: LocalSessionLease, cookie: str | None,
+                      csrf: str | None) -> LocalPrincipal:
+        """Reject a result if a relaunch, lock or expiry changed its session."""
+        with self._lock:
+            if csrf is None:
+                raise HTTPException(403, "Local request verification failed.")
+            principal = self.authenticate(cookie, csrf)
+            if (not isinstance(lease, LocalSessionLease)
+                    or lease.profile_id != principal.profile_id
+                    or lease.generation != self._generation):
+                raise HTTPException(409, "Local session changed; repeat account discovery.")
+            return principal
+
+    @contextmanager
+    def hold_lease(self, lease: LocalSessionLease, cookie: str | None,
+                   csrf: str | None) -> Iterator[LocalPrincipal]:
+        """Keep a checked session stable across a short local binding write."""
+        with self._lock:
+            yield self.require_lease(lease, cookie, csrf)
+
     def lock(self) -> None:
         with self._lock:
+            self._generation += 1
             self._session_digest = None
             self._csrf_digest = None
             self._csrf_token = None
@@ -112,7 +152,8 @@ class LocalSessionManager:
 
 
 def local_session_router(manager: LocalSessionManager, *, origin: str,
-                         allow_testclient: bool = False) -> APIRouter:
+                         allow_testclient: bool = False,
+                         verification_binding: str | None = None) -> APIRouter:
     """Build the standalone router for one exact loopback origin.
 
     The caller must bind its server to that literal loopback address, serve UI
@@ -169,6 +210,8 @@ def local_session_router(manager: LocalSessionManager, *, origin: str,
     def status(request: Request, response: Response, principal: LocalPrincipal = Depends(require_session)):
         response.headers["Cache-Control"] = "no-store"
         return {"profileId": principal.profile_id, "authenticated": True,
+                **({"verificationProfile": True, "verificationBinding": verification_binding}
+                   if verification_binding is not None else {}),
                 "brokerAccount": None, "environment": None, "executionEnabled": False,
                 "csrf": manager.csrf_for_cookie(request.cookies.get(COOKIE_NAME))}
 

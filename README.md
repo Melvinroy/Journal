@@ -15,6 +15,7 @@ Brontide is an open-source, local-first trading workspace. The modular desktop d
 | You want to… | Use this path |
 | --- | --- |
 | See the current local candidate | [Candidate installation and limits](docs/trading/CANDIDATE_INSTALL.md) |
+| Recover from a locked session or failed local update | [Local recovery guide](docs/trading/LOCAL_RECOVERY.md) |
 | Understand what is built and what is still gated | [Modular product plan](docs/trading-modular-product-plan.md) |
 | Review paper-trading evidence | [Trading acceptance matrix](docs/trading/IBKR_PAPER_ACCEPTANCE_QC.md) |
 | Contribute to the existing web app | [Local verification guide](docs/testing/local-verification.md) |
@@ -47,7 +48,7 @@ The independent [feature inventory and architecture contracts](docs/trading/MODU
 
 The desktop service can keep its ledger and private state under your Windows account and connect to a TWS instance on the same machine. A static GitHub Pages site can describe or download the app, but it cannot safely act as a remote trading service when your laptop or TWS is off. No cloud subscription is required for the planned standalone session. The existing cloud-backed web workflow remains separate during migration.
 
-Brontide does **not** bundle IBKR's API SDK in its candidate package. Users must accept the vendor's terms and install a supported SDK separately when broker setup is eventually enabled. [IBKR's API license](https://interactivebrokers.github.io/) restricts redistribution; permitted public product use needs clarification before a broker-enabled release.
+Brontide does **not** bundle IBKR's API SDK in its candidate package. Users must review the vendor's terms and install a supported SDK separately when broker setup is eventually enabled. IBKR's [August 2026 changelog](https://www.interactivebrokers.com/docs/tws-api/changelog/2026/8/3) says API 10.49+ is GPL, while its [current download page](https://interactivebrokers.github.io/) still displays a non-commercial agreement that restricts redistribution. The applicable terms for a future public broker-enabled package need clarification; this candidate makes no SDK distribution claim.
 
 ## Build and review source
 

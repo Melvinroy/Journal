@@ -5,6 +5,7 @@ import ts from 'typescript';
 const encode = code => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
 const compile = file => ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const domain = encode(compile('../lib/trading-domain.ts'));
+const domainModule = await import(domain);
 const paper = await import(encode(compile('../lib/paper-execution.ts').replaceAll('"./trading-domain"', JSON.stringify(domain))));
 const exitPlan = { schemaVersion: 1, legs: [{id:'T1',role:'Target',allocationPercent:100,target:{mode:'R',multipleR:2}}], breakeven:{activationR:1,favorableOffset:{unit:'Dollar',value:0}} };
 const campaign = () => ({ id:'campaign',batchId:'batch',revision:1,symbol:'TEST',direction:'Long',state:'Open',createdAt:'2026-09-16T14:00:00Z',accountBinding:'opaque',contract:{conId:42,currency:'USD'},
@@ -25,6 +26,28 @@ test('Final net result and execution R are copied from the shared ledger only af
  const row=paper.paperJournalRow(c);assert.equal(row.pnl,3);assert.equal(row.r,1.5);assert.equal(row.costs,1);assert.equal(row.finalRAvailable,true);
 });
 
+test('automatic bounded closure retains its role in Position and Journal', () => {
+ const c=campaign();
+ c.executions.push({executionId:'cleanup-fill',orderId:2,effect:'exit',role:'cleanup',quantity:1,
+   price:102,occurredAt:'2026-09-16T15:00:00Z',commission:.1});
+ const position=paper.paperPosition(c,true), journal=paper.paperJournalRow(c);
+ assert.equal(position.campaign.executions[1].role,'cleanup');
+ assert.equal(journal.executions[1].role,'cleanup');
+ assert.equal(domainModule.executionRoleLabel('cleanup'),'bounded closure');
+ c.executions[1].role='unexpected-role';
+ assert.throws(()=>paper.paperJournalRow(c),/requires reconciliation/);
+});
+
+test('Closed Position distinguishes last recorded closure from current broker state', () => {
+ const c=campaign();c.state='Closed';Object.assign(c.summary,{openQuantity:0,exited:1,costsComplete:false});
+ const fresh=paper.paperPosition(c,true);
+ assert.match(fresh.protection.source,/Recorded closure: recorded flat · owned orders last recorded terminal · accounting incomplete · current broker exposure and orders unverified/);
+ const stale=paper.paperPosition(c,false);
+ assert.equal(stale.stale,true);
+ assert.match(stale.protection.source,/Disconnected · last known closure: recorded flat · owned orders last recorded terminal · accounting incomplete · current broker exposure and orders unverified/);
+ assert.equal(stale.protection.confirmed,false);
+});
+
 
 test('Paper Journal uses confirmed closure time and keeps missing exit timestamps unknown', () => {
  const c=campaign(); c.state='Closed';
@@ -33,6 +56,21 @@ test('Paper Journal uses confirmed closure time and keeps missing exit timestamp
  let row=paper.paperJournalRow(c);
  assert.equal(row.firstFillAt,'2026-09-14T14:00:00Z'); assert.equal(row.closedAt,'2026-09-16T15:00:00Z');
  c.executions[1].occurredAt=''; assert.equal(paper.paperJournalRow(c).closedAt,undefined);
+ c.executions[1].occurredAt='not-a-timestamp'; assert.equal(paper.paperJournalRow(c).closedAt,undefined);
+});
+
+test('Paper Journal orders sub-millisecond fills and exits by absolute instant across timezone offsets', () => {
+ const c=campaign(); c.state='Closed';
+ const entry=c.executions[0];
+ c.executions=[
+   {...entry,executionId:'entry-late',occurredAt:'2026-09-24T12:01:00.123900+02:00'},
+   {...entry,executionId:'entry-early',occurredAt:'2026-09-24T10:01:00.123100Z'},
+   {...entry,executionId:'exit-late',effect:'exit',occurredAt:'2026-09-24T12:02:00.123900+02:00'},
+   {...entry,executionId:'exit-early',effect:'exit',occurredAt:'2026-09-24T10:02:00.123100Z'},
+ ];
+ const row=paper.paperJournalRow(c);
+ assert.equal(row.firstFillAt,'2026-09-24T10:01:00.123100Z');
+ assert.equal(row.closedAt,'2026-09-24T12:02:00.123900+02:00');
 });
 
 test('Paper planner explains unsupported cases and nonzero exit allocation before review', () => {

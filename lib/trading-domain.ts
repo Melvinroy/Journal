@@ -138,7 +138,7 @@ export type Execution = {
   orderId: string;
   campaignId: string;
   effect: "entry" | "exit";
-  role: "entry" | "target" | "stop" | "runner" | "manual";
+  role: "entry" | "target" | "stop" | "runner" | "manual" | "cleanup";
   quantity: number;
   price: number;
   fee: number;
@@ -149,6 +149,11 @@ export type Execution = {
   protectionStopAtFill?: number;
   provenance: "IBKR" | "manual-import" | "legacy";
 };
+
+/** Keep broker-managed bounded closure distinct from a manual exit. */
+export function executionRoleLabel(role: Execution["role"]): string {
+  return role === "cleanup" ? "bounded closure" : role;
+}
 
 export type TradeCampaign = {
   schemaVersion: typeof TRADING_DOMAIN_VERSION;

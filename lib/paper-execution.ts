@@ -54,7 +54,7 @@ export function paperDomainCampaign(c: PaperCampaign): TradeCampaign {
     lifecycle: { status: c.state === "Closed" ? "Closed" : c.summary.entered ? "Open" : "Pending entry" },
     executions: c.executions.map(e => ({ schemaVersion: 1, accountId: c.accountBinding, sessionId: c.id,
       executionId: e.executionId, orderId: String(e.orderId), campaignId: c.id, effect: e.effect,
-      role: (e.role === "entry" ? "entry" : e.role === "stop" ? "stop" : e.role === "target" ? "target" : "manual") as Execution["role"],
+      role: paperExecutionRole(e.role),
       quantity: e.quantity, price: e.price, fee: e.commission ?? 0, feeAvailable: e.commission != null, occurredAt: e.occurredAt,
       protectionStopAtFill: c.ticket.stopPrice, provenance: "IBKR" })),
     journalSnapshot: { instrumentId: `IBKR-STK:${c.contract.conId}`, currency: c.contract.currency, provenance: "Linked plan",
@@ -66,11 +66,33 @@ export function paperDomainCampaign(c: PaperCampaign): TradeCampaign {
       capturedAt: c.createdAt } };
 }
 
+function journalTimestampOrder(a: string, b: string): number {
+  // Date.parse drops sub-millisecond precision. Preserve six ISO fractional
+  // digits while retaining timezone offsets and legacy millisecond parsing.
+  const precision = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/;
+  const instant = (value: string): [number, number] => {
+    const match = precision.exec(value);
+    if (!match) return [Date.parse(value), 0];
+    const wholeSecond = Date.parse(`${match[1]}${match[3]}`);
+    if (!Number.isFinite(wholeSecond)) return [Date.parse(value), 0];
+    const micros = Number((match[2] ?? "").padEnd(6, "0"));
+    return [wholeSecond + Math.floor(micros / 1000), micros % 1000];
+  };
+  const left = instant(a), right = instant(b);
+  return left[0] - right[0] || left[1] - right[1];
+}
+
+function paperExecutionRole(role: string): Execution["role"] {
+  if (role === "entry" || role === "stop" || role === "target"
+      || role === "cleanup" || role === "manual") return role;
+  throw new Error("Unrecognized paper execution role requires reconciliation.");
+}
+
 export function paperJournalRow(c: PaperCampaign) {
   const campaign = paperDomainCampaign(c);
-  const entryTimes = c.executions.filter(e => e.effect === "entry" && e.occurredAt && Number.isFinite(Date.parse(e.occurredAt))).map(e => e.occurredAt).sort((a,b) => Date.parse(a)-Date.parse(b));
+  const entryTimes = c.executions.filter(e => e.effect === "entry" && e.occurredAt && Number.isFinite(Date.parse(e.occurredAt))).map(e => e.occurredAt).sort(journalTimestampOrder);
   const exits = c.executions.filter(e => e.effect === "exit");
-  const exitTimes = exits.filter(e => e.occurredAt && Number.isFinite(Date.parse(e.occurredAt))).map(e => e.occurredAt).sort((a,b) => Date.parse(a)-Date.parse(b));
+  const exitTimes = exits.filter(e => e.occurredAt && Number.isFinite(Date.parse(e.occurredAt))).map(e => e.occurredAt).sort(journalTimestampOrder);
   const firstFillAt = entryTimes[0];
   const closedAt = c.state === "Closed" && exits.length > 0 && exitTimes.length === exits.length ? exitTimes.at(-1) : undefined;
   const fixedTargets = c.ticket.exitPlan.legs.filter(l => l.role === "Target" && l.target.mode === "R");
@@ -104,6 +126,10 @@ export function exitDescriptions(plan: ExitPlanDefinition, quantity: number) {
 export function paperPosition(c: PaperCampaign, connected: boolean): DemoPosition {
   const protectedSlots = c.slots.filter(s => s.open > 0 && ["Submitted", "PreSubmitted"].includes(s.stopStatus) && s.confirmedStop != null && (s.whyHeld ?? "").split(",").every(reason => !reason.trim() || reason.trim() === "trigger"));
   const protectedQuantity = protectedSlots.reduce((n, s) => n + s.open, 0);
+  const recordedClosure = c.state === "Closed" || c.state === "Cancelled";
+  // Closed is derived from recorded fills and terminal owned orders. A recent
+  // global connection does not prove this campaign is currently broker-flat.
+  const closureSource = `${connected ? "Recorded closure" : "Disconnected · last known closure"}: recorded flat · owned orders last recorded terminal · accounting ${c.summary.costsComplete ? "complete" : "incomplete"} · current broker exposure and orders unverified`;
   return { campaignId: c.id, accountId: c.accountBinding, instrumentId: `IBKR-STK:${c.contract.conId}`, positionRevision: String(c.revision),
     planId: c.ticket.planId, symbol: c.symbol, direction: c.direction,
     status: c.state === "Closed" || c.state === "Cancelled" ? "Closed" : c.state === "Pending entry" ? "Working entry" :
@@ -111,9 +137,9 @@ export function paperPosition(c: PaperCampaign, connected: boolean): DemoPositio
     plannedQuantity: c.ticket.quantity, filledQuantity: c.summary.entered, openQuantity: c.summary.openQuantity,
     averageEntry: c.summary.averageEntry ?? undefined, plannedEntry: c.ticket.planningPrice, plannedRisk: c.ticket.quantity * Math.abs(c.ticket.hardCap - c.ticket.stopPrice),
     fixedInitialStop: c.ticket.stopPrice, entryLabel: "Broker-confirmed executions", simulated: false, stale: !connected,
-    protection: { state: c.summary.openQuantity === 0 ? (c.state === "Closed" || c.state === "Cancelled" ? "Complete" : "Staged") : !connected ? "Unknown" : protectedQuantity === c.summary.openQuantity ? "Working" : c.state === "Needs reconciliation" || !connected ? "Unknown" : "Unprotected",
+    protection: { state: c.summary.openQuantity === 0 ? (recordedClosure ? "Complete" : "Staged") : !connected ? "Unknown" : protectedQuantity === c.summary.openQuantity ? "Working" : c.state === "Needs reconciliation" || !connected ? "Unknown" : "Unprotected",
       quantity: protectedQuantity, stop: protectedSlots.length ? (c.direction === "Long" ? Math.min : Math.max)(...protectedSlots.map(s => s.confirmedStop!)) : undefined,
-      confirmed: connected && protectedQuantity > 0, source: c.state === "Closed" || c.state === "Cancelled" ? `Flat · orders cleared · accounting ${c.summary.costsComplete ? "complete" : "incomplete"}` : connected ? protectedQuantity > 0 ? "TWS confirmed protection by share" : "Broker order reconciliation pending" : "Last TWS confirmation · stale" },
+      confirmed: connected && protectedQuantity > 0, source: recordedClosure ? closureSource : connected ? protectedQuantity > 0 ? "TWS confirmed protection by share" : "Broker order reconciliation pending" : "Last TWS confirmation · stale" },
     targets: c.slots.flatMap(s => s.leg?.role === "Target" && s.exitPrice != null ? [{ label: `${s.leg.id} · share ${Number(s.id)+1}`,
       quantity: 1, price: s.exitPrice, state: s.exitStatus === "Filled" ? "Filled" as const : ["Submitted", "PreSubmitted"].includes(s.exitStatus ?? "") ? "Working" as const : "Staged" as const }] : []),
     exitPlan: c.activeExitPlan, price: { source: connected ? "IBKR snapshot" : "Disconnected source", status: "Unavailable" }, campaign: paperDomainCampaign(c),

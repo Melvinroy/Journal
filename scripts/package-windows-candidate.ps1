@@ -28,6 +28,9 @@ $candidateName = "Brontide-$packageVersion-$($source.Substring(0, 12))$suffix-wi
 $stage = Join-Path $outputPath $candidateName
 $assetStage = Join-Path $outputPath "standalone-assets-$buildStamp"
 $identityExpression = "import { getPreviewIdentity } from './scripts/preview-identity.mjs'; console.log(getPreviewIdentity().identifier)"
+if ((Test-Path -LiteralPath $stage) -or (Test-Path -LiteralPath $assetStage)) {
+    throw 'A candidate or asset stage already exists for this build timestamp; preserve it for review.'
+}
 
 if (-not $IsWindows -and $env:OS -ne 'Windows_NT') { throw 'Build this candidate on Windows.' }
 if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'X64') {
@@ -64,10 +67,15 @@ try {
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'out/verification/index.html'))) {
         throw 'The read-only Trading verification route was not exported.'
     }
+    # Qualify the complete fresh export, including routes and orphan text assets
+    # that are not selected for the desktop payload.
+    & (Join-Path $PSScriptRoot 'assert-standalone-asset-boundary.ps1') -AssetRoot (Join-Path $repoRoot 'out')
     New-Item -ItemType Directory -Path $assetStage -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'out/standalone') -Destination (Join-Path $assetStage 'standalone') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'out/verification') -Destination (Join-Path $assetStage 'verification') -Recurse
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'out/_next') -Destination (Join-Path $assetStage '_next') -Recurse
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'out/standalone') -Destination (Join-Path $assetStage 'standalone') -Recurse -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'out/verification') -Destination (Join-Path $assetStage 'verification') -Recurse -Force
+    # Copy the complete export until an emitted-asset graph can be proved.
+    # The subsequent whole-stage cloud scan fails closed on any orphan chunk.
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'out/_next') -Destination (Join-Path $assetStage '_next') -Recurse -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot 'out/favicon.svg') -Destination (Join-Path $assetStage 'favicon.svg')
     $forbiddenPatterns = @(
         '[a-z0-9-]{16,}\.supabase\.co',
@@ -76,10 +84,12 @@ try {
         'paper-lifecycle\.sqlite3'
     )
     foreach ($pattern in $forbiddenPatterns) {
-        $matches = @(Get-ChildItem -LiteralPath $assetStage -File -Recurse |
+        $matches = @(Get-ChildItem -LiteralPath $assetStage -File -Recurse -Force -ErrorAction Stop |
             Select-String -Pattern $pattern -Quiet -ErrorAction Stop)
         if ($matches -contains $true) { throw 'The standalone export contains cloud configuration or a private-path marker.' }
     }
+    & (Join-Path $PSScriptRoot 'assert-standalone-asset-boundary.ps1') -AssetRoot $assetStage
+    if ($LASTEXITCODE -ne 0) { throw 'Standalone cloud-auth boundary check failed.' }
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
     $dist = Join-Path $stage 'BrontideDesktop'
     $work = Join-Path $outputPath 'pyinstaller-work'
@@ -89,15 +99,30 @@ try {
         --add-data "$assetStage;out" `
         (Join-Path $repoRoot 'scripts/standalone_entry.py')
     if ($LASTEXITCODE -ne 0) { throw 'Desktop packaging failed.' }
+    # Recheck the actual PyInstaller payload, not only its input staging tree.
+    & (Join-Path $PSScriptRoot 'assert-standalone-asset-boundary.ps1') -AssetRoot (Join-Path $dist '_internal/out')
     & (Join-Path $dist 'BrontideDesktop.exe') --check-assets
     if ($LASTEXITCODE -ne 0) { throw 'Packaged asset self-check failed.' }
+    $diagnosticsRaw = & (Join-Path $dist 'BrontideDesktop.exe') --diagnostics
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged read-only diagnostics failed.' }
+    try { $diagnostics = $diagnosticsRaw | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'Packaged diagnostics did not return valid JSON.' }
+    $diagnosticFields = @($diagnostics.PSObject.Properties.Name | Sort-Object)
+    $expectedFields = @('brokerConnection', 'candidate', 'executionEnabled', 'packagedAssets', 'profileSchema', 'schemaVersion')
+    if ((Compare-Object $diagnosticFields $expectedFields -CaseSensitive) -or
+        $diagnostics.schemaVersion -ne 1 -or $diagnostics.candidate -ne 'locked-sample' -or
+        $diagnostics.executionEnabled -ne $false -or
+        $diagnostics.brokerConnection -ne 'not-available' -or
+        $diagnostics.packagedAssets -ne 'valid') {
+        throw 'Packaged diagnostics did not confirm a valid, execution-locked candidate.'
+    }
 
     Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $stage 'LICENSE')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/trading/CANDIDATE_INSTALL.md') -Destination (Join-Path $stage 'README-CANDIDATE.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/install-windows-candidate.ps1') -Destination (Join-Path $stage 'Install-Brontide.ps1')
     # Windows PowerShell 5.1 uses .NET Framework, which has no Path.GetRelativePath.
     $stagePrefix = [System.IO.Path]::GetFullPath($stage).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
-    $files = Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName | ForEach-Object {
+    $files = Get-ChildItem -LiteralPath $stage -File -Recurse -Force -ErrorAction Stop | Sort-Object FullName | ForEach-Object {
         $fileFullPath = [System.IO.Path]::GetFullPath($_.FullName)
         if (-not $fileFullPath.StartsWith($stagePrefix, [StringComparison]::OrdinalIgnoreCase)) {
             throw 'Packaged file escaped the candidate staging directory.'
@@ -125,7 +150,7 @@ try {
     }
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $stage 'manifest.json') -Encoding utf8
     $archive = Join-Path $outputPath "$candidateName.zip"
-    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive }
+    if (Test-Path -LiteralPath $archive) { throw 'Candidate archive already exists; preserve it for review.' }
     Compress-Archive -LiteralPath $stage -DestinationPath $archive
     Write-Output "Candidate: $archive"
     Write-Output "Source: $source; dirty: $dirty; signed: false; broker execution: disabled"

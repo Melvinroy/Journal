@@ -15,6 +15,7 @@ import {
   assertAmendmentMatchesPosition,
   createExitPlanAmendment,
   createPositionAssociation,
+  executionRoleLabel,
   freezeRiskReference,
   positionRiskBreakdown,
   rollupCampaign,
@@ -23,7 +24,7 @@ import {
   type PositionAssociation,
   type TradeCampaign,
 } from "../lib/trading-domain";
-import { SAMPLE_PLANS, demoStorageKey as legacyStorageKey } from "../lib/review-demo";
+import { SAMPLE_PLANS, demoStorageKey as legacyStorageKey, isStandaloneSampleScope, standaloneSampleStorageKey } from "../lib/review-demo";
 import {
   PLANS_KEY,
   appendFill,
@@ -38,6 +39,7 @@ import type { MarketContext } from "../lib/workspace-state";
 import { PositionExitPlanControls } from "./PositionExitPlanControls";
 import type { PaperExecution } from "./usePaperExecution";
 import { paperPosition } from "../lib/paper-execution";
+import type { RecordedJournalView, SyntheticJournalView } from "../lib/local-journal";
 import { PaperCampaignActions } from "./PaperCampaignActions";
 import { TradePlanner } from "./TradePlanner";
 import { useModalAccessibility } from "./useModalAccessibility";
@@ -262,7 +264,8 @@ function positionNumbers(item: DemoPosition) {
 
 function protectionLabel(item: DemoPosition, openQuantity: number) {
   if (openQuantity === 0)
-    return item.status === "Working entry" ? item.protection.state : "Complete";
+    return item.status === "Working entry" ? item.protection.state
+      : item.paperSummary ? "Recorded flat · current exposure unverified" : "Complete";
   if (item.paperSummary && item.protection.state === "Unknown") return "Protection unconfirmed";
   const uncovered = Math.max(0, openQuantity - item.protection.quantity);
   if (uncovered)
@@ -289,6 +292,8 @@ export function TradingWorkspace({
   positionCampaigns = [],
   demo = false,
   paper,
+  localHistory,
+  privatePlan,
 }: {
   storageScope?: string;
   paper?: PaperExecution;
@@ -298,8 +303,12 @@ export function TradingWorkspace({
   onOpenJournalTrade?: (tradeId: string) => void;
   onCreateJournalTrade?: (item: UnlinkedPositionInput) => string;
   positionCampaigns?: readonly TradeCampaign[];
+  localHistory?: { kind: "checking" | "sample" | "recorded" | "unavailable";
+    view: RecordedJournalView | SyntheticJournalView | null };
+  privatePlan?: { scopeId: string; csrf: string; ready: boolean } | null;
 }) {
-  const demoStorageKey = (key: string, simulation: boolean) => simulation ? legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
+  const recordedHistoryMode = localHistory != null && localHistory.kind !== "sample";
+  const demoStorageKey = (key: string, simulation: boolean) => simulation ? isStandaloneSampleScope(storageScope) ? standaloneSampleStorageKey(key, storageScope) : legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
   const store = useBrowserStore<Plan[]>(
     demoStorageKey(PLANS_KEY, demo),
     demo ? SAMPLE_PLANS : [],
@@ -471,7 +480,7 @@ export function TradingWorkspace({
           : item;
       })];
     }, [associations.value, brokerPositions, demo, positionCampaigns, positionOverrides.value, paper?.status]);
-  const detail =
+  const detail = recordedHistoryMode ? null :
     effectivePositions.find((item) => item.campaignId === detailId) ?? null;
   const detailNumbers = detail ? positionNumbers(detail) : null;
   const savedAmendment = detail
@@ -848,7 +857,7 @@ export function TradingWorkspace({
 
   return (
     <section className="consolidated-trading">
-      <TradePlanner key={storageScope} storageScope={storageScope} demo={demo} paper={paper} context={context} onChart={onChart} positionCount={effectivePositions.filter(item => item.status !== "Closed").length} exposure={<><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
+      <TradePlanner key={recordedHistoryMode ? `private:${privatePlan?.scopeId ?? "checking"}` : storageScope} storageScope={recordedHistoryMode && privatePlan ? `local-paper:${privatePlan.scopeId}` : storageScope} demo={recordedHistoryMode ? false : demo} privatePlanRequired={recordedHistoryMode} privatePlan={recordedHistoryMode ? privatePlan ?? undefined : undefined} paper={paper} context={context} onChart={onChart} positionCount={recordedHistoryMode ? localHistory?.kind === "recorded" && localHistory.view ? localHistory.view.rows.filter(row => row.recordedOpenQuantity > 0).length : null : effectivePositions.filter(item => item.status !== "Closed").length} exposure={recordedHistoryMode ? <><strong>{localHistory?.kind === "recorded" ? `${localHistory.view?.rows.length ?? 0} saved records` : "History unavailable"}</strong><span>Current broker exposure unknown</span><span>Protection unverified</span></> : <><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
       <section
         className="position-command-center"
         aria-labelledby="position-center-title"
@@ -858,23 +867,29 @@ export function TradingWorkspace({
 
             <h2 id="position-center-title">Positions</h2>
             <p>
-              Execution, protection and remaining exposure.
+              {recordedHistoryMode
+                ? "Saved paper executions. Current broker exposure and protection are unverified."
+                : "Execution, protection and remaining exposure."}
             </p>
           </div>
           <div className="position-center-actions">
-            <button onClick={() => open(fresh(context))}>
+            {!recordedHistoryMode && <button onClick={() => open(fresh(context))}>
               New advanced plan
-            </button>
-            <button onClick={() => setShowSaved((value) => !value)}>
-              {showSaved ? "Hide" : "Show"} saved plans
-            </button>
-            <button disabled={!store.ready} onClick={exportPlans}>
-              Export records
-            </button>
+            </button>}
+            {!recordedHistoryMode && <>
+              <button onClick={() => setShowSaved((value) => !value)}>
+                {showSaved ? "Hide" : "Show"} saved plans
+              </button>
+              <button disabled={!store.ready} onClick={exportPlans}>
+                Export records
+              </button>
+            </>}
           </div>
         </header>
         <label className="position-search">Find symbol<input type="search" aria-label="Find position symbol" placeholder="Symbol" value={positionSearch} onChange={e => setPositionSearch(e.target.value)} /></label>
-        {paper ? null : demo ? (
+        {recordedHistoryMode ? (
+          <p className="simulation-action-note">Read-only saved paper history · no current TWS reconciliation or order submission.</p>
+        ) : paper ? null : demo ? (
           <p className="simulation-action-note">
             No broker connection · broker submission disabled.
           </p>
@@ -887,7 +902,40 @@ export function TradingWorkspace({
             were not overwritten.
           </p>
         )}
-        {demo || paper ? (
+        {recordedHistoryMode ? (
+          <section aria-labelledby="recorded-paper-positions-title">
+            <div className="section-kicker">
+              <h3 id="recorded-paper-positions-title">{localHistory?.view?.source === "synthetic-ledger-fixture" ? "Artificial verification positions" : "Recorded paper positions"}</h3>
+              <span>One private ledger · last known</span>
+            </div>
+            {localHistory?.kind === "checking" && <p className="workspace-notice" role="status">Checking the saved account and paper history…</p>}
+            {(localHistory?.kind === "unavailable" || (localHistory?.kind === "recorded" && !localHistory.view)) && <p className="persistence-alert" role="alert">Recorded position history is unavailable. No sample positions or zero broker exposure are substituted.</p>}
+            {localHistory?.kind === "recorded" && localHistory.view && <>
+              <p className="workspace-notice" role="status">{localHistory.view.lastRecordedAt
+                ? `Last recorded ${new Date(localHistory.view.lastRecordedAt).toLocaleString()}.`
+                : "No execution has been recorded yet."} Current TWS positions, protection and orders have not been reconciled.</p>
+              {localHistory.view.uncertainCommandCount > 0 && <p className="persistence-alert" role="alert">{localHistory.view.uncertainCommandCount} command outcomes still need reconciliation. Do not retry them automatically.</p>}
+              {localHistory.view.rows.length === 0 && <p className="workspace-notice">No saved trades in this verified local history. Current broker exposure remains unknown.</p>}
+              {localHistory.view.rows.length > 0 && localHistory.view.rows.every(row => !matchesSymbol(row.symbol)) && <p className="workspace-notice">No saved positions match this symbol.</p>}
+              <div className="position-list">
+                {localHistory.view.rows.filter(row => matchesSymbol(row.symbol)).map(row => (
+                  <article className="position-card" key={row.id} data-recorded-position-id={row.id}>
+                    <header><div><b>{row.symbol}</b><span className={`side-pill ${row.side.toLowerCase()}`}>{row.side}</span></div><i>{row.status}</i></header>
+                    <div className="position-metrics">
+                      <span><small>Recorded entered</small><strong>{row.enteredQuantity}</strong></span>
+                      <span><small>Recorded exited</small><strong>{row.exitedQuantity}</strong></span>
+                      <span><small>Recorded remaining</small><strong>{row.recordedOpenQuantity}</strong></span>
+                      <span><small>Recorded net</small><strong>{row.realizedAvailable ? money(row.pnl, 2) : "Unknown"}</strong></span>
+                      <span><small>Recorded fees</small><strong>{row.costsComplete && typeof row.costs === "number" ? money(row.costs, 2) : "Unknown"}</strong></span>
+                    </div>
+                    <p>Last saved execution quantities only. Current broker position, orders and stop protection are unverified.</p>
+                    {onOpenJournalTrade && <button onClick={() => onOpenJournalTrade(row.id)}>Open in Journal</button>}
+                  </article>
+                ))}
+              </div>
+            </>}
+          </section>
+        ) : demo || paper ? (
           <>
             <PositionRows
               title="Working entries"
@@ -901,9 +949,9 @@ export function TradingWorkspace({
               items={openPositions}
               onOpen={openPositionDetail}
             />
-            <Disclosure title={`Recently closed (${closed.length})`} name="closed-positions" scope={demo ? "demo" : paper?.identity?.userId ?? "account"}><PositionRows
+            <Disclosure title={`Recently closed (${closed.length})`} name="closed-positions" scope={demo ? storageScope : paper?.identity?.userId ?? "account"}><PositionRows
               title="Recently closed"
-              meta="Zero confirmed open shares"
+              meta="Zero recorded open shares"
               items={closed}
               onOpen={openPositionDetail}
             /></Disclosure>
@@ -963,7 +1011,7 @@ export function TradingWorkspace({
           </>
         )}
 
-        {showSaved && (
+        {!recordedHistoryMode && showSaved && (
           <section
             className="saved-plan-rail"
             aria-labelledby="saved-plans-title"
@@ -1014,7 +1062,7 @@ export function TradingWorkspace({
           </section>
         )}
 
-        {(demo || brokerState.lastSuccessfulUpdate || brokerState.positions.length > 0) && (
+        {!recordedHistoryMode && (demo || brokerState.lastSuccessfulUpdate || brokerState.positions.length > 0) && (
           <section
             className="unlinked-positions"
             aria-labelledby="unlinked-title"
@@ -1589,7 +1637,7 @@ function PositionRows({
                   {item.changedInIbkr && <em>Changed in IBKR</em>}
                 </span>
                 <span>
-                  <small>Remaining</small>
+                  <small>{item.paperSummary ? "Recorded remaining" : "Remaining"}</small>
                   <strong>{numbers.openQuantity} sh</strong>
                 </span>
                 <span>
@@ -1818,7 +1866,8 @@ const PositionDetail = ({
         <div className="section-kicker">
           <h3>Protection, targets and runners</h3>
           <span>
-            {item.protection.state === "Complete" ? "No remaining exposure" : item.protection.confirmed
+            {item.protection.state === "Complete" ? item.paperSummary
+              ? "Recorded flat · current exposure unverified" : "No remaining exposure" : item.protection.confirmed
               ? "Recorded source confirmation"
               : "Not confirmed"}
           </span>
@@ -1857,7 +1906,7 @@ const PositionDetail = ({
                 <b>
                   {execution.effect === "entry"
                     ? "Entry"
-                    : `Exit · ${execution.role}`}
+                    : `Exit · ${executionRoleLabel(execution.role)}`}
                 </b>
                 <span>
                   {execution.quantity} @ {money(execution.price, 2)}

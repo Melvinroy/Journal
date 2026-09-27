@@ -1,42 +1,46 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
-import { supabase, supabaseConfig } from "../lib/supabase";
+import type { ComponentProps, ComponentType } from "react";
+import { Icon } from "./WorkspaceIcon";
+import type { Session } from "@supabase/supabase-js";
+import type { AuthMode, CloudTradeGateway, CloudTradeRow as TradeRow } from "../lib/cloud-trade-contract";
+import { cloudWritesAcknowledged, createCloudRequestScope } from "../lib/cloud-write-acknowledgment";
+import { readCloudDraft, saveCloudDraft, clearCloudDraft, type CloudDraft } from "../lib/cloud-trade-draft";
 import {
   isLegacyDemoDataset,
   LOCAL_TRADE_STORAGE_KEY,
 } from "../lib/local-trade-migration";
-// The desktop candidate exports only the standalone module. Keep unrelated
-// cloud workspace chunks out of that build entirely, not merely unmounted.
-const CatalystDashboard = process.env.NEXT_PUBLIC_BRONTIDE_STANDALONE_BUILD === "1"
-  ? (() => null)
-  : dynamic(() => import("./CatalystDashboard").then(module => module.CatalystDashboard));
-const ScannerDashboard = process.env.NEXT_PUBLIC_BRONTIDE_STANDALONE_BUILD === "1"
-  ? (() => null)
-  : dynamic(() => import("./ScannerDashboard").then(module => module.ScannerDashboard));
 import { usePaperExecution } from "./usePaperExecution";
 import "./trading-refinement.css";
 import "./standalone-connect.css";
 import { paperJournalRow } from "../lib/paper-execution";
-const ResearchWorkspace = process.env.NEXT_PUBLIC_BRONTIDE_STANDALONE_BUILD === "1"
-  ? (() => null)
-  : dynamic(() => import("./ResearchWorkspace").then(module => module.ResearchWorkspace));
+import { adaptRecordedJournal, adaptSyntheticJournal, type RecordedJournalView, type SyntheticJournalView, type SyntheticJournalRow } from "../lib/local-journal";
+import { rememberedChoiceFromResponse } from "../lib/local-account-status";
+import { readLocalPlanScope } from "../lib/local-private-plan";
 import {
   TradingWorkspace,
   type UnlinkedPositionInput,
 } from "./TradingWorkspace";
 import { useBrowserStore } from "../lib/use-browser-store";
-const ChartDashboard = process.env.NEXT_PUBLIC_BRONTIDE_STANDALONE_BUILD === "1"
-  ? (() => null)
-  : dynamic(() => import("./ChartDashboard").then(module => module.ChartDashboard));
-import { withAuthTimeout, readWithClockRetry } from "../lib/auth-ready";
+// The standalone entry imports this workspace too. Cloud-only views are
+// supplied by CloudHome, so this module has no runtime import path to them.
+export type CloudComponents = {
+  AuthScreen: ComponentType<{ mode: AuthMode; setMode: (mode: AuthMode) => void; onRecovered: () => void }>;
+  SetupScreen: ComponentType<{ onClose?: () => void; forceUnconfigured?: boolean }>;
+  CatalystDashboard: ComponentType<ComponentProps<typeof import("./CatalystDashboard").CatalystDashboard>>;
+  ScannerDashboard: ComponentType<ComponentProps<typeof import("./ScannerDashboard").ScannerDashboard>>;
+  ResearchWorkspace: ComponentType<ComponentProps<typeof import("./ResearchWorkspace").ResearchWorkspace>>;
+  ChartDashboard: ComponentType<ComponentProps<typeof import("./ChartDashboard").ChartDashboard>>;
+};
+const CloudScreenUnavailable = () => <main className="loading-shell">Cloud workspace is unavailable.</main>;
+const CloudViewUnavailable = () => null;
 import type { MarketContext } from "../lib/workspace-state";
-import { demoStorageKey } from "../lib/review-demo";
+import { demoStorageKey, standaloneSampleScope, standaloneSampleStorageKey } from "../lib/review-demo";
 import { demoJournalRows, journalRowFromCampaign } from "../lib/trading-demo";
 import {
   createSnapshotCampaign,
+  executionRoleLabel,
   rollupCampaign,
   type Execution,
   type FeeAdjustment,
@@ -54,7 +58,8 @@ import { Disclosure, MissingValue } from "./WorkspacePresentation";
 import { MetricCard } from "./MetricCard";
 import { StandaloneConnect, connectionFixtureFromStatus } from "./StandaloneConnect";
 import type { ConnectionFixture } from "./StandaloneConnect";
-import { profileViewFromStandalone, standaloneModules, standaloneViewFromProfile } from "./standalone-module";
+import { localModuleStatusFromResponse, profileViewFromStandalone, standaloneModules, standaloneViewEnabled, standaloneViewFromProfile } from "./standalone-module";
+import type { OptionalStandaloneView } from "./standalone-module";
 
 type Grade = "A" | "B" | "C";
 type RangeKey = "30" | "90" | "ytd" | "all";
@@ -74,7 +79,7 @@ type Trade = {
   plannedR: number;
   grade: Grade;
   status?: string;
-  executions?: Execution[];
+  executions?: (Execution | SyntheticJournalRow["executions"][number])[];
   openQuantity?: number;
   simulated?: true;
   initialRiskAvailable?: boolean;
@@ -95,7 +100,7 @@ type Trade = {
   weightedExit?: number;
   firstFillAt?: string;
   closedAt?: string;
-  journalSnapshot?: JournalCampaignSnapshot;
+  journalSnapshot?: JournalCampaignSnapshot | SyntheticJournalRow["journalSnapshot"];
   feeAdjustments?: FeeAdjustment[];
   confirmedAmendments?: TradeCampaign["confirmedAmendments"];
 };
@@ -221,123 +226,17 @@ const nav = [
   ["Trading", "target"],
 ] as const;
 
-function Icon({ name, size = 18 }: { name: string; size?: number }) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.8,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-  const paths: Record<string, React.ReactNode> = {
-    grid: (
-      <>
-        <rect x="3" y="3" width="7" height="7" rx="2" />
-        <rect x="14" y="3" width="7" height="7" rx="2" />
-        <rect x="3" y="14" width="7" height="7" rx="2" />
-        <rect x="14" y="14" width="7" height="7" rx="2" />
-      </>
-    ),
-    candles: <path d="M7 3v3m0 8v7M4 6h6v8H4zM17 3v7m0 8v3m-3-11h6v8h-6z" />,
-    note: (
-      <>
-        <path d="M5 3h11l3 3v15H5z" />
-        <path d="M15 3v4h4M8 11h8M8 15h6" />
-      </>
-    ),
-    book: (
-      <>
-        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v17H6.5A2.5 2.5 0 0 0 4 22zM20 5.5A2.5 2.5 0 0 0 17.5 3H13v17h4.5A2.5 2.5 0 0 1 20 22z" />
-      </>
-    ),
-    spark: (
-      <>
-        <path d="M4 18l5-6 4 3 7-9" />
-        <path d="M15 6h5v5" />
-      </>
-    ),
-    plus: <path d="M12 5v14M5 12h14" />,
-    arrow: <path d="M5 12h14m-5-5 5 5-5 5" />,
-    calendar: (
-      <>
-        <rect x="3" y="5" width="18" height="16" rx="3" />
-        <path d="M8 3v4m8-4v4M3 10h18" />
-      </>
-    ),
-    more: (
-      <>
-        <circle cx="5" cy="12" r="1" fill="currentColor" />
-        <circle cx="12" cy="12" r="1" fill="currentColor" />
-        <circle cx="19" cy="12" r="1" fill="currentColor" />
-      </>
-    ),
-    close: <path d="M6 6l12 12M18 6 6 18" />,
-    check: <path d="m5 12 4 4L19 6" />,
-    target: (
-      <>
-        <circle cx="12" cy="12" r="8" />
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 2v3m0 14v3M2 12h3m14 0h3" />
-      </>
-    ),
-    export: (
-      <>
-        <path d="M12 3v12m-4-4 4 4 4-4" />
-        <path d="M5 19h14" />
-      </>
-    ),
-    settings: (
-      <>
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
-      </>
-    ),
-    database: (
-      <>
-        <ellipse cx="12" cy="5" rx="8" ry="3" />
-        <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
-      </>
-    ),
-    shield: <path d="M12 3 20 6v5c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z" />,
-    copy: (
-      <>
-        <rect x="8" y="8" width="11" height="11" rx="2" />
-        <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
-      </>
-    ),
-    external: (
-      <>
-        <path d="M14 4h6v6M20 4l-9 9" />
-        <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
-      </>
-    ),
-    scan: (
-      <>
-        <path d="M4 19V9m5 10V5m5 14v-7m5 7V3" />
-        <path d="M3 19h18" />
-      </>
-    ),
-    flask: (
-      <>
-        <path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3" />
-        <path d="M7.5 16h9" />
-      </>
-    ),
-  };
-  return <svg {...common}>{paths[name]}</svg>;
-}
-
 function formatMoney(value: number, showPlus = true) {
   const sign = value < 0 ? "−" : showPlus ? "+" : "";
   return `${sign}$${Math.abs(Math.round(value)).toLocaleString()}`;
 }
 
+function isLedgerRecord(id: string) {
+  return /^(paper|recorded|fixture):/.test(id);
+}
+
 function recordMoney(id: string, value: number, showPlus = true, maximumFractionDigits = 2) {
-  if (!id.startsWith("paper:")) return formatMoney(value, showPlus);
+  if (!isLedgerRecord(id)) return formatMoney(value, showPlus);
   const sign = value < 0 ? "−" : showPlus ? "+" : "";
   return `${sign}$${Math.abs(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits})}`;
 }
@@ -378,19 +277,6 @@ function getCutoff(range: RangeKey) {
   return now;
 }
 
-type TradeRow = {
-  id: string;
-  symbol: string;
-  side: "Long" | "Short";
-  setup: string;
-  trade_date: string;
-  pnl: number | string;
-  realized_r: number | string;
-  dollar_risk: number | string;
-  planned_r: number | string;
-  grade: Grade;
-};
-
 function fromRow(row: TradeRow): Trade {
   return {
     id: row.id,
@@ -418,443 +304,6 @@ function toRow(trade: Omit<Trade, "id">) {
     planned_r: trade.plannedR,
     grade: trade.grade,
   };
-}
-
-type AuthMode = "signin" | "signup" | "forgot" | "recovery";
-
-function AuthScreen({
-  mode,
-  setMode,
-  onRecovered,
-}: {
-  mode: AuthMode;
-  setMode: (mode: AuthMode) => void;
-  onRecovered: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!supabase) {
-      setError("This journal has not been connected to Supabase yet.");
-      return;
-    }
-    setBusy(true);
-    setMessage("");
-    setError("");
-    const data = new FormData(event.currentTarget);
-    const email = String(data.get("email") || "").trim();
-    const password = String(data.get("password") || "");
-    const redirectTo = `${window.location.origin}${window.location.pathname}`;
-    try {
-      let result: { error: { message: string } | null };
-
-      if (mode === "signup") {
-        result = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: redirectTo },
-        });
-        if (!result.error)
-          setMessage(
-            "If this email is eligible, we’ll send a confirmation link. Please check your inbox and spam folder.",
-          );
-      } else if (mode === "forgot") {
-        result = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
-        if (!result.error)
-          setMessage("Password-reset link sent. Please check your email.");
-      } else if (mode === "recovery") {
-        result = await supabase.auth.updateUser({ password });
-        if (!result.error) {
-          setMessage("Password updated securely.");
-          onRecovered();
-        }
-      } else {
-        result = await supabase.auth.signInWithPassword({ email, password });
-      }
-
-      if (result.error)
-        setError(
-          /failed to fetch|network request failed/i.test(result.error.message)
-            ? "Unable to reach the authentication service. Check your connection and try again."
-            : result.error.message,
-        );
-    } catch {
-      setError("Unable to reach the authentication service. Check your connection and try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const title =
-    mode === "signup"
-      ? "Create your journal"
-      : mode === "forgot"
-        ? "Reset your password"
-        : mode === "recovery"
-          ? "Choose a new password"
-          : "Welcome back";
-  const subtitle =
-    mode === "signup"
-      ? "Your trades stay private and synchronized across devices."
-      : mode === "forgot"
-        ? "We’ll send a secure recovery link to your email."
-        : mode === "recovery"
-          ? "Use at least eight characters for your new password."
-          : "Sign in to open your private trading workspace.";
-
-  return (
-    <main className="auth-shell">
-      <section className="auth-brand-panel">
-        <div className="auth-brand">
-          <span className="brand-mark">
-            <Icon name="spark" size={19} />
-          </span>
-          <span>Brontide</span>
-        </div>
-        <div className="auth-brand-copy">
-          <p className="eyebrow">Asymmetric Edge Labs</p>
-          <h1>
-            Review clearly.
-            <br />
-            Trade deliberately.
-          </h1>
-          <p>
-            A private decision cockpit for measuring risk, execution and the
-            outcomes that build your edge.
-          </p>
-        </div>
-        <div className="auth-proof">
-          <span>Secure cloud journal</span>
-          <span>Multi-device sync</span>
-          <span>Private by design</span>
-        </div>
-      </section>
-      <section className="auth-form-panel">
-        <div className="auth-card">
-          <p className="eyebrow">Brontide</p>
-          <h2>{title}</h2>
-          <p className="auth-subtitle">{subtitle}</p>
-          {process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID && <p className="preview-identity" data-preview-identifier={process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID} aria-label={`Preview revision ${process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID}`}>Preview {process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID}</p>}
-          <form onSubmit={submit}>
-            {mode !== "recovery" && (
-              <label>
-                Email address
-                <input
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  required
-                  autoFocus
-                />
-              </label>
-            )}
-            {mode !== "forgot" && (
-              <label>
-                {mode === "recovery" ? "New password" : "Password"}
-                <input
-                  name="password"
-                  type="password"
-                  minLength={8}
-                  autoComplete={
-                    mode === "signin" ? "current-password" : "new-password"
-                  }
-                  placeholder="At least 8 characters"
-                  required
-                  autoFocus={mode === "recovery"}
-                />
-              </label>
-            )}
-            {error && (
-              <p className="auth-message error" role="alert">
-                {error}
-              </p>
-            )}
-            {message && (
-              <p className="auth-message success" role="status">
-                {message}
-              </p>
-            )}
-            <button
-              type="submit"
-              className="primary-button auth-submit"
-              disabled={busy}
-            >
-              {busy
-                ? "Please wait…"
-                : mode === "signup"
-                  ? "Create account"
-                  : mode === "forgot"
-                    ? "Send reset link"
-                    : mode === "recovery"
-                      ? "Update password"
-                      : "Sign in"}
-            </button>
-          </form>
-          {mode === "signin" && (
-            <div className="auth-links">
-              <button onClick={() => setMode("forgot")}>
-                Forgot password?
-              </button>
-              <button onClick={() => setMode("signup")}>Create account</button>
-            </div>
-          )}
-          {mode !== "signin" && mode !== "recovery" && (
-            <button className="auth-back" onClick={() => setMode("signin")}>
-              ← Back to sign in
-            </button>
-          )}
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function SetupScreen({
-  onClose,
-  forceUnconfigured = false,
-}: {
-  onClose?: () => void;
-  forceUnconfigured?: boolean;
-}) {
-  const [copied, setCopied] = useState("");
-  const [siteUrl, setSiteUrl] = useState(
-    "https://your-name.github.io/your-repository/",
-  );
-  const [variablesUrl, setVariablesUrl] = useState(
-    "https://github.com/settings",
-  );
-  const configured = supabaseConfig.isConfigured && !forceUnconfigured;
-
-  useEffect(() => {
-    if (forceUnconfigured) {
-      setSiteUrl("https://your-name.github.io/Journal/");
-      return;
-    }
-    const url = `${window.location.origin}${window.location.pathname}`;
-    setSiteUrl(url.endsWith("/") ? url : `${url}/`);
-    if (window.location.hostname.endsWith("github.io")) {
-      const owner = window.location.hostname.split(".")[0];
-      const repository = window.location.pathname.split("/").filter(Boolean)[0];
-      if (owner && repository)
-        setVariablesUrl(
-          `https://github.com/${owner}/${repository}/settings/variables/actions`,
-        );
-    }
-  }, [forceUnconfigured]);
-
-  async function copy(value: string, label: string) {
-    await navigator.clipboard.writeText(value);
-    setCopied(label);
-    window.setTimeout(() => setCopied(""), 1800);
-  }
-
-  async function copyInstaller() {
-    const response = await fetch("supabase-setup.sql");
-    await copy(await response.text(), "installer");
-  }
-
-  return (
-    <main className={onClose ? "setup-overlay" : "setup-shell"}>
-      <section className="setup-rail">
-        <div className="auth-brand">
-          <span className="brand-mark">
-            <Icon name="spark" size={19} />
-          </span>
-          <span>Brontide</span>
-        </div>
-        <div className="setup-rail-copy">
-          <p className="eyebrow">Self-hosted by design</p>
-          <h1>
-            Your journal.
-            <br />
-            Your database.
-          </h1>
-          <p>
-            A guided, private installation that keeps every trade under your
-            control.
-          </p>
-        </div>
-        <div className="setup-trust">
-          <Icon name="shield" size={17} />
-          <span>
-            No database passwords or privileged keys are ever stored in the
-            journal.
-          </span>
-        </div>
-      </section>
-
-      <section className="setup-workspace">
-        <header className="setup-header">
-          <div>
-            <p className="eyebrow">Owner setup</p>
-            <h2>
-              {configured ? "Cloud connection" : "Let’s connect your journal"}
-            </h2>
-            <p>
-              {configured
-                ? "This installation has a valid Supabase configuration."
-                : "Four short steps. Most people finish in about five minutes."}
-            </p>
-          </div>
-          {onClose && (
-            <button
-              className="icon-button"
-              aria-label="Close settings"
-              onClick={onClose}
-            >
-              <Icon name="close" />
-            </button>
-          )}
-          {!onClose && (
-            <a className="demo-link" href="?demo=1">
-              Preview dashboard <Icon name="arrow" size={15} />
-            </a>
-          )}
-        </header>
-
-        <div className="setup-progress" aria-label="Setup progress">
-          <span className={configured ? "done" : "active"} />
-          <span className={configured ? "done" : ""} />
-          <span className={configured ? "done" : ""} />
-          <span className={configured ? "done" : ""} />
-        </div>
-
-        <div className="setup-steps">
-          <article className="setup-step">
-            <span className="step-number">01</span>
-            <div>
-              <h3>Create your cloud</h3>
-              <p>
-                Create a free Supabase project in the region closest to you.
-                Keep the database password private.
-              </p>
-            </div>
-            <a
-              className="step-action"
-              href="https://supabase.com/dashboard/new"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Open Supabase <Icon name="external" size={14} />
-            </a>
-          </article>
-
-          <article className="setup-step">
-            <span className="step-number">02</span>
-            <div>
-              <h3>Install the secure database</h3>
-              <p>
-                Copy the prepared installer, paste it into Supabase SQL Editor
-                and select Run once.
-              </p>
-              <small>
-                Creates the trades table, index and user-isolation policies.
-              </small>
-            </div>
-            <div className="step-actions">
-              <button className="step-action" onClick={copyInstaller}>
-                <Icon
-                  name={copied === "installer" ? "check" : "copy"}
-                  size={14}
-                />
-                {copied === "installer" ? "Copied" : "Copy installer"}
-              </button>
-              <a
-                className="step-action quiet"
-                href="https://supabase.com/dashboard/project/_/sql/new"
-                target="_blank"
-                rel="noreferrer"
-              >
-                SQL Editor <Icon name="external" size={14} />
-              </a>
-            </div>
-          </article>
-
-          <article className="setup-step">
-            <span className="step-number">03</span>
-            <div>
-              <h3>Connect the deployment</h3>
-              <p>
-                Add these repository variables, then run the GitHub Pages
-                workflow again.
-              </p>
-              <div className="variable-list">
-                <code>NEXT_PUBLIC_SUPABASE_URL</code>
-                <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>
-              </div>
-            </div>
-            <a
-              className="step-action"
-              href={variablesUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHub variables <Icon name="external" size={14} />
-            </a>
-          </article>
-
-          <article className="setup-step">
-            <span className="step-number">04</span>
-            <div>
-              <h3>Allow secure sign-in</h3>
-              <p>
-                Use this address as the Supabase Site URL and add the same
-                address followed by <code>**</code> as a Redirect URL.
-              </p>
-              <button
-                className="copy-value"
-                onClick={() => copy(siteUrl, "url")}
-              >
-                <span>{siteUrl}</span>
-                <Icon name={copied === "url" ? "check" : "copy"} size={14} />
-              </button>
-            </div>
-            <a
-              className="step-action"
-              href="https://supabase.com/dashboard/project/_/auth/url-configuration"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Auth settings <Icon name="external" size={14} />
-            </a>
-          </article>
-        </div>
-
-        <footer className="setup-footer">
-          <div
-            className={`connection-state ${configured ? "ready" : "waiting"}`}
-          >
-            <span>
-              <Icon name={configured ? "check" : "database"} size={16} />
-            </span>
-            <div>
-              <strong>
-                {configured
-                  ? "Configuration detected"
-                  : "Waiting for deployment configuration"}
-              </strong>
-              <small>
-                {configured
-                  ? new URL(supabaseConfig.url).hostname
-                  : "The journal will unlock automatically after GitHub Pages redeploys."}
-              </small>
-            </div>
-          </div>
-          <a
-            href="https://github.com/Melvinroy/Journal/blob/main/docs/SELF_HOSTING.md"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Read the full guide <Icon name="arrow" size={14} />
-          </a>
-        </footer>
-      </section>
-    </main>
-  );
 }
 
 function useJournalChartSize() {
@@ -1188,15 +637,40 @@ function DistributionChart({ trades }: { trades: Trade[] }) {
   );
 }
 
-export default function WorkspaceApp({ standalone = false }: { standalone?: boolean }) {
+export default function WorkspaceApp({ standalone = false, cloud = null, cloudComponents = null }: {
+  standalone?: boolean; cloud?: CloudTradeGateway | null; cloudComponents?: CloudComponents | null;
+}) {
+  const AuthScreen: CloudComponents["AuthScreen"] = cloudComponents?.AuthScreen ?? CloudScreenUnavailable;
+  const SetupScreen: CloudComponents["SetupScreen"] = cloudComponents?.SetupScreen ?? CloudScreenUnavailable;
+  const CatalystDashboard: CloudComponents["CatalystDashboard"] = cloudComponents?.CatalystDashboard ?? CloudViewUnavailable;
+  const ScannerDashboard: CloudComponents["ScannerDashboard"] = cloudComponents?.ScannerDashboard ?? CloudViewUnavailable;
+  const ResearchWorkspace: CloudComponents["ResearchWorkspace"] = cloudComponents?.ResearchWorkspace ?? CloudViewUnavailable;
+  const ChartDashboard: CloudComponents["ChartDashboard"] = cloudComponents?.ChartDashboard ?? CloudViewUnavailable;
   const previewIdentity = process.env.NEXT_PUBLIC_BRONTIDE_PREVIEW_ID;
   type View =
     "Connect" | "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Scanner" | "Backtest";
   const [active, setActive] = useState<View>(standalone ? "Connect" : "Charts");
-  const [localProfile, setLocalProfile] = useState<{ profileId: string; csrf: string } | null>(null);
+  const [localProfile, setLocalProfile] = useState<{ profileId: string; csrf: string; verificationBinding?: string } | null>(null);
+  // Keep the warning after a session expires; expiration must never look like normal mode.
+  const [verificationMode, setVerificationMode] = useState(false);
+  const [localModules, setLocalModules] = useState<
+    { kind: "checking" | "sample" | "unavailable" } |
+    { kind: "ready"; profileId: string; enabledViews: OptionalStandaloneView[]; canHideTrading: boolean }
+  >({ kind: "checking" });
+  const [localJournal, setLocalJournal] = useState<{
+    profileId: string | null;
+    kind: "checking" | "sample" | "recorded" | "unavailable";
+    view: RecordedJournalView | SyntheticJournalView | null;
+  }>({ profileId: null, kind: "checking", view: null });
+  const [localJournalReload, setLocalJournalReload] = useState(0);
+  const [localPlanScope, setLocalPlanScope] = useState<{
+    profileId: string | null; kind: "checking" | "sample" | "ready" | "unavailable";
+    scopeId: string | null;
+  }>({ profileId: null, kind: "checking", scopeId: null });
   const [connectionFixture, setConnectionFixture] = useState<ConnectionFixture | null>(null);
-  const localProfileRef = useRef<{ profileId: string; csrf: string } | null>(null);
+  const localProfileRef = useRef<{ profileId: string; csrf: string; verificationBinding?: string } | null>(null);
   const navigationEpoch = useRef(0);
+  const initialStandaloneViewRef = useRef<View | null>(null);
   const profileWriteQueue = useRef<Promise<void>>(Promise.resolve());
   const navigation = useBrowserStore<{ active: View }>(
     standalone ? "brontide-standalone-navigation-v2" : "brontide-navigation-v2",
@@ -1221,6 +695,8 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
   useEffect(() => {
     if (navigation.ready) {
       const query = new URLSearchParams(window.location.search);
+      if (standalone) initialStandaloneViewRef.current =
+        ["Connect", "Journal", "Trade"].includes(navigation.value.active) ? navigation.value.active : "Connect";
       setActive(standalone
         ? ["Connect", "Journal", "Trade"].includes(navigation.value.active) ? navigation.value.active : "Connect"
         : query.get("paper") === "1" && query.get("demo") !== "1" ? "Trade" : navigation.value.active);
@@ -1235,41 +711,201 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       const statusResponse = await fetch("/v1/local/session/status", {
         credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
       });
-      if (!statusResponse.ok) return;
+      if (!statusResponse.ok) {
+        setLocalModules({ kind: statusResponse.status === 401 ? "sample" : "unavailable" });
+        setLocalJournal({ profileId: null, kind: statusResponse.status === 401 ? "sample" : "unavailable", view: null });
+        if (statusResponse.status === 401 && navigationEpoch.current === startingEpoch &&
+            initialStandaloneViewRef.current) setActive(initialStandaloneViewRef.current);
+        return;
+      }
       const status = await statusResponse.json();
       if (status?.authenticated !== true || status?.executionEnabled !== false ||
           typeof status.profileId !== "string" || typeof status.csrf !== "string" ||
-          status.brokerAccount !== null || status.environment !== null) return;
+          status.brokerAccount !== null || status.environment !== null ||
+          (status.verificationProfile === true &&
+            (typeof status.verificationBinding !== "string" || !/^fixture-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(status.verificationBinding)))) {
+        setLocalModules({ kind: "unavailable" });
+        setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+        return;
+      }
       const profileResponse = await fetch("/v1/local/profile", {
         credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
       });
-      if (!profileResponse.ok) return;
+      if (!profileResponse.ok) {
+        setLocalModules({ kind: "unavailable" });
+        setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+        return;
+      }
       const profile = await profileResponse.json();
       const savedView = standaloneViewFromProfile(profile?.selectedView);
       if (profile?.profileId !== status.profileId || profile?.executionEnabled !== false ||
-          profile?.brokerAccount !== null || !savedView || controller.signal.aborted) return;
-      const principal = { profileId: status.profileId, csrf: status.csrf };
+          profile?.brokerAccount !== null || !savedView) {
+        setLocalModules({ kind: "unavailable" });
+        setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+        return;
+      }
+      if (controller.signal.aborted) return;
+      const modulesResponse = await fetch("/v1/local/modules", {
+        credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
+      });
+      const moduleStatus = modulesResponse.ok
+        ? localModuleStatusFromResponse(await modulesResponse.json()) : null;
+      if (controller.signal.aborted) return;
+      if (!modulesResponse.ok && [401, 403, 409].includes(modulesResponse.status)) {
+        setLocalModules({ kind: "unavailable" });
+        setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+        return;
+      }
+      const principal = { profileId: status.profileId, csrf: status.csrf,
+        ...(status.verificationProfile === true ? { verificationBinding: status.verificationBinding as string } : {}) };
+      setVerificationMode(status.verificationProfile === true);
       localProfileRef.current = principal;
       setLocalProfile(principal);
+      setLocalModules(moduleStatus
+        ? { kind: "ready", profileId: principal.profileId, ...moduleStatus }
+        : { kind: "unavailable" });
+      setLocalJournal({ profileId: principal.profileId, kind: "checking", view: null });
       // Synthetic browser fixtures are excluded from the packaged standalone build.
       if (process.env.NEXT_PUBLIC_BRONTIDE_UI_TEST_LOCAL === "1" &&
           process.env.NEXT_PUBLIC_BRONTIDE_STANDALONE_BUILD !== "1") {
         setConnectionFixture(connectionFixtureFromStatus(status.connectionFixture));
       }
       if (navigationEpoch.current === startingEpoch) {
-        setActive(savedView);
-        navigation.save({ active: savedView });
+        const restoredView = moduleStatus && standaloneViewEnabled(savedView, moduleStatus.enabledViews)
+          ? savedView : "Connect";
+        setActive(restoredView);
+        navigation.save({ active: restoredView });
       }
-    })().catch(() => { /* A missing local service leaves the preview in locked sample mode. */ });
+    })().catch(() => { if (!controller.signal.aborted) {
+      setLocalModules({ kind: "unavailable" });
+      setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+    } });
     return () => { controller.abort(); localProfileRef.current = null; setConnectionFixture(null); };
   }, [standalone]);
+  const enabledStandaloneViews: OptionalStandaloneView[] = localModules.kind === "sample"
+    ? ["trading", "journal"] : localModules.kind === "ready" && localModules.profileId === localProfile?.profileId
+      ? localModules.enabledViews : [];
+  const visibleStandaloneViews = standaloneModules[0].views.filter(view =>
+    standaloneViewEnabled(view.id, enabledStandaloneViews));
+  useEffect(() => {
+    if (!standalone || active === "Connect" ||
+        visibleStandaloneViews.some(view => view.id === active)) return;
+    // A stored view may have been hidden on a previous launch. Its content
+    // must not remain visible while local preferences are checked.
+    setActive("Connect");
+    if (localModules.kind !== "checking") navigation.save({ active: "Connect" });
+  }, [standalone, active, localModules, localProfile]);
+  useEffect(() => {
+    if (!standalone || !localProfile ||
+        (active !== "Journal" && active !== "Trade") ||
+        !enabledStandaloneViews.includes(active === "Journal" ? "journal" : "trading")) return;
+    const controller = new AbortController();
+    const current = () => !controller.signal.aborted && localProfileRef.current === localProfile;
+    const sessionLost = () => {
+      if (!current()) return;
+      localProfileRef.current = null;
+      setLocalProfile(null);
+      setLocalModules({ kind: "unavailable" });
+      setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+      setLocalPlanScope({ profileId: null, kind: "unavailable", scopeId: null });
+    };
+    const headers = { "X-Brontide-Local": "1" };
+    setLocalJournal({ profileId: localProfile.profileId, kind: "checking", view: null });
+    setLocalPlanScope(previous => ({
+      profileId: localProfile.profileId, kind: "checking",
+      scopeId: previous.profileId === localProfile.profileId ? previous.scopeId : null,
+    }));
+    let scopeMismatch = false;
+    (async () => {
+      if (localProfile.verificationBinding) {
+        const response = await fetch("/v1/local/journal/verification", {
+          credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
+        });
+        if (!current()) return;
+        if (!response.ok) {
+          if (response.status === 401) sessionLost();
+          throw new Error("Artificial history is unavailable.");
+        }
+        const view = adaptSyntheticJournal(await response.json(), localProfile.verificationBinding);
+        if (!current()) return;
+        setLocalJournal({ profileId: localProfile.profileId, kind: "recorded", view });
+        setLocalPlanScope({ profileId: localProfile.profileId, kind: "unavailable", scopeId: null });
+        return;
+      }
+      const binding = await fetch("/v1/local/binding", {
+        credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
+      });
+      if (!current()) return;
+      if (!binding.ok) {
+        if (binding.status === 401) sessionLost();
+        throw new Error("Local account choice is unavailable.");
+      }
+      const choice = rememberedChoiceFromResponse(await binding.json());
+      if (!current()) return;
+      if (!choice) throw new Error("Local account choice is inconsistent.");
+      if (choice.kind === "unbound") {
+        setLocalJournal({ profileId: localProfile.profileId, kind: "sample", view: null });
+        setLocalPlanScope({ profileId: localProfile.profileId, kind: "sample", scopeId: null });
+        return;
+      }
+      const response = await fetch("/v1/local/journal/recorded", {
+        credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
+      });
+      if (!current()) return;
+      if (!response.ok) {
+        if (response.status === 401) sessionLost();
+        throw new Error("Recorded history is unavailable.");
+      }
+      const view = adaptRecordedJournal(await response.json());
+      if (!current()) return;
+      const scope = await readLocalPlanScope(localProfile.csrf, controller.signal);
+      if (!current()) return;
+      if (scope.scopeId !== view.scopeId) {
+        scopeMismatch = true;
+        throw new Error("Recorded history and private plan refer to different paper scopes.");
+      }
+      setLocalJournal({ profileId: localProfile.profileId, kind: "recorded", view });
+      setLocalPlanScope({ profileId: localProfile.profileId,
+        kind: "ready", scopeId: scope.scopeId });
+    })().catch(() => {
+      if (current()) {
+        setLocalJournal({ profileId: localProfile.profileId, kind: "unavailable", view: null });
+        setLocalPlanScope(previous => ({
+          profileId: localProfile.profileId, kind: "unavailable",
+          scopeId: !scopeMismatch && previous.profileId === localProfile.profileId
+            ? previous.scopeId : null,
+        }));
+      }
+    });
+    return () => controller.abort();
+  }, [standalone, localProfile, localJournalReload, active, localModules]);
+  useEffect(() => {
+    if (!standalone || (active !== "Journal" && active !== "Trade") ||
+        !enabledStandaloneViews.includes(active === "Journal" ? "journal" : "trading")) return;
+    const refreshOnReturn = () => {
+      if (!localProfileRef.current) return;
+      setLocalJournal({ profileId: localProfileRef.current.profileId, kind: "checking", view: null });
+      setLocalJournalReload(value => value + 1);
+    };
+    window.addEventListener("focus", refreshOnReturn);
+    return () => window.removeEventListener("focus", refreshOnReturn);
+  }, [standalone, active, localModules]);
   useEffect(() => {
     if (!standalone || !localProfile || !navigation.ready) return;
     const view = profileViewFromStandalone(active);
     if (!view) return;
+    const invalidateLocalProfile = () => {
+      if (localProfileRef.current !== localProfile) return;
+      localProfileRef.current = null;
+      setLocalProfile(null);
+      setConnectionFixture(null);
+      setLocalModules({ kind: "unavailable" });
+      setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+      setLocalPlanScope({ profileId: null, kind: "unavailable", scopeId: null });
+    };
     // Serialize writes so rapid navigation cannot persist an older view last.
     profileWriteQueue.current = profileWriteQueue.current.catch(() => {}).then(async () => {
-      if (localProfileRef.current?.profileId !== localProfile.profileId) return;
+      if (localProfileRef.current !== localProfile) return;
       const response = await fetch("/v1/local/profile/view", {
         method: "PUT", credentials: "same-origin", cache: "no-store",
         headers: { "Content-Type": "application/json", "X-Brontide-Local": "1", "X-Brontide-CSRF": localProfile.csrf },
@@ -1277,22 +913,52 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       });
       if (!response.ok) {
         if (response.status === 401 || response.status === 403 || response.status === 409) {
-          localProfileRef.current = null;
-          setLocalProfile(null);
+          invalidateLocalProfile();
         }
         return;
       }
       const saved = await response.json();
       if (saved?.selectedView !== view || saved?.executionEnabled !== false) {
-        localProfileRef.current = null;
-        setLocalProfile(null);
+        invalidateLocalProfile();
       }
     }).catch(() => { /* The view stays usable with sample data if the local service disappears. */ });
   }, [active, localProfile, navigation.ready, standalone]);
   const selectView = (next: View) => {
+    if (standalone && (next !== "Connect" &&
+        !visibleStandaloneViews.some(view => view.id === next))) return;
     navigationEpoch.current += 1;
+    if (standalone && (next === "Journal" || next === "Trade") && localProfileRef.current) {
+      setLocalJournal({ profileId: localProfileRef.current.profileId, kind: "checking", view: null });
+      // Re-selecting the active tab also refreshes its saved history. Without
+      // this, the tab can remain on "Checking" because active did not change.
+      if (active === next) setLocalJournalReload(value => value + 1);
+    }
     setActive(next);
     navigation.save({ active: next });
+  };
+  const saveLocalModules = async (enabledViews: OptionalStandaloneView[]): Promise<boolean> => {
+    const principal = localProfileRef.current;
+    if (!principal || localModules.kind !== "ready" ||
+        localModules.profileId !== principal.profileId) return false;
+    try {
+      const response = await fetch("/v1/local/modules", {
+        method: "PUT", credentials: "same-origin", cache: "no-store",
+        headers: { "Content-Type": "application/json", "X-Brontide-Local": "1",
+                   "X-Brontide-CSRF": principal.csrf },
+        body: JSON.stringify({ enabledViews }),
+      });
+      if (localProfileRef.current !== principal) return false;
+      const saved = response.ok ? localModuleStatusFromResponse(await response.json()) : null;
+      if (!saved) {
+        setLocalModules({ kind: "unavailable" });
+        return false;
+      }
+      setLocalModules({ kind: "ready", profileId: principal.profileId, ...saved });
+      return true;
+    } catch {
+      if (localProfileRef.current === principal) setLocalModules({ kind: "unavailable" });
+      return false;
+    }
   };
   const [chartContext, setChartContext] = useState<MarketContext>();
   const [chartReturnView, setChartReturnView] = useState<View>("Scans");
@@ -1332,7 +998,6 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
   const [modal, setModal] = useState(false);
   const journalModalRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
-  useModalAccessibility(modal, journalModalRef, () => setModal(false));
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
@@ -1340,7 +1005,13 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
   const [cloudBusy, setCloudBusy] = useState(false);
   const [cloudError, setCloudError] = useState("");
   const [cloudReload, setCloudReload] = useState(0);
+  const [cloudSessionRevision, setCloudSessionRevision] = useState(0);
+  const cloudSessionKey = useRef<string | null>(null);
+  const [cloudDraft, setCloudDraft] = useState<CloudDraft | null>(null);
+  const cloudDraftReceipt = useRef<string | null | undefined>(undefined);
   const [importTrades, setImportTrades] = useState<Trade[]>([]);
+  const importBackup = useRef<string | null>(null);
+  const [importUncertain, setImportUncertain] = useState(false);
   const [importDismissed, setImportDismissed] = useState(false);
   const [range, setRange] = useState<RangeKey>("30");
   const [equityMode, setEquityMode] = useState<EquityMode>("dollar");
@@ -1354,9 +1025,25 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
   const [reportingTimezone, setReportingTimezone] = useState("Local timezone");
   const [greeting, setGreeting] = useState("Welcome back, Melvin");
   const [demoMode, setDemoMode] = useState(standalone);
-  const tradeOwner = demoMode ? "demo" : session?.user.id ?? "signed-out";
+  const sampleScope = standaloneSampleScope(localProfile?.profileId ?? null);
+  const journalState = standalone && localJournal.profileId !== (localProfile?.profileId ?? null)
+    ? { profileId: localProfile?.profileId ?? null, kind: "checking" as const, view: null }
+    : localJournal;
+  const tradeOwner = standalone ? sampleScope : demoMode ? "demo" : session?.user.id ?? "signed-out";
+  const importRecoveryKey = `brontide-cloud-import-pending-v1:${encodeURIComponent(tradeOwner)}`;
   const currentTradeOwner = useRef(tradeOwner);
+  const cloudRequests = useRef(createCloudRequestScope());
+  if (currentTradeOwner.current !== tradeOwner) cloudRequests.current.advance();
   currentTradeOwner.current = tradeOwner;
+  useEffect(() => {
+    // A response from the previous account must not leave the new account's
+    // cloud controls stuck in a busy or error state.
+    setCloudBusy(false);
+    setCloudError("");
+    setModal(false);
+    try { setImportUncertain(window.localStorage.getItem(importRecoveryKey) !== null); }
+    catch { setImportUncertain(true); }
+  }, [tradeOwner]);
   const trades = tradeBucket.owner === tradeOwner ? tradeBucket.rows : [];
   function setTrades(update: Trade[] | ((previous: Trade[]) => Trade[])) {
     if (currentTradeOwner.current !== tradeOwner) return;
@@ -1364,8 +1051,8 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       ? update(previous.owner === tradeOwner ? previous.rows : []) : update }));
   }
   const paper = usePaperExecution(session?.access_token, !standalone && localWorkspace && !demoMode);
-  const tradingScope = demoMode ? "demo" : paper.enabled ? `paper:${paper.identity?.userId ?? `pending-${session?.user.id ?? "signed-out"}`}:${paper.identity?.accountBinding ?? "unlinked"}` : `planning:${session?.user.id ?? "signed-out"}`;
-  const tradingStorageKey = (key: string) => demoMode ? demoStorageKey(key, true) : `${key}:scope:${tradingScope}`;
+  const tradingScope = standalone ? sampleScope : demoMode ? "demo" : paper.enabled ? `paper:${paper.identity?.userId ?? `pending-${session?.user.id ?? "signed-out"}`}:${paper.identity?.accountBinding ?? "unlinked"}` : `planning:${session?.user.id ?? "signed-out"}`;
+  const tradingStorageKey = (key: string) => standalone ? standaloneSampleStorageKey(key, sampleScope) : demoMode ? demoStorageKey(key, true) : `${key}:scope:${tradingScope}`;
   const positionCampaignStore = useBrowserStore<TradeCampaign[]>(
     tradingStorageKey("brontide-position-campaigns-v1"),
     EMPTY_POSITION_CAMPAIGNS,
@@ -1383,10 +1070,19 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
   );
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, JournalReview>>({});
   const [reviewMessage, setReviewMessage] = useState<Record<string, string>>({});
-  useEffect(() => { setReviewDrafts({}); setReviewMessage({}); }, [tradingScope]);
+  const [reviewScope, setReviewScope] = useState(tradingScope);
+  const scopedReviewDrafts = reviewScope === tradingScope ? reviewDrafts : {};
+  const scopedReviewMessage = reviewScope === tradingScope ? reviewMessage : {};
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [setupPreview, setSetupPreview] = useState(false);
   const [expandedTrade, setExpandedTrade] = useState<string | null>(null);
+  const scopedExpandedTrade = reviewScope === tradingScope ? expandedTrade : null;
+  const scopedModal = modal && reviewScope === tradingScope;
+  useModalAccessibility(scopedModal, journalModalRef, () => setModal(false));
+  useEffect(() => {
+    setReviewDrafts({}); setReviewMessage({}); setExpandedTrade(null); setReviewScope(tradingScope);
+    setModal(false); setSettingsOpen(false); setJournalSearch("");
+  }, [tradingScope]);
   const tradeTableRef = useRef<HTMLDivElement>(null);
   const tradeHeaderRef = useRef<HTMLDivElement>(null);
   const tradeRowMeasureRef = useRef<HTMLDivElement>(null);
@@ -1442,16 +1138,16 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
   }, [demoMode, journalCampaignStore.ready, journalCampaignStore.value, positionCampaignStore.ready, positionCampaignStore.value]);
 
   useEffect(() => {
-    if (active !== "Journal" || !expandedTrade) return;
+    if (active !== "Journal" || !scopedExpandedTrade) return;
     const frame = requestAnimationFrame(() => {
       const row = document.querySelector<HTMLElement>(
-        `[data-journal-trade-id="${CSS.escape(expandedTrade)}"]`,
+        `[data-journal-trade-id="${CSS.escape(scopedExpandedTrade)}"]`,
       );
       row?.scrollIntoView({ block: "nearest" });
       row?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
-  }, [active, expandedTrade, trades]);
+  }, [active, scopedExpandedTrade, trades]);
 
   useEffect(() => {
     const workspace = workspaceRef.current;
@@ -1495,20 +1191,25 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
     );
     if (isDemo) {
       setDemoMode(true);
-      setTradeBucket({ owner: "demo", rows: [...demoJournalRows(), ...demoTrades] });
+      if (!standalone) setTradeBucket({ owner: "demo", rows: [...demoJournalRows(), ...demoTrades] });
     }
-    const saved = window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY);
-    if (saved && !isDemo) {
-      try {
-        const parsed = JSON.parse(saved) as Trade[];
-        if (isLegacyDemoDataset(parsed))
-          window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
-        else if (Array.isArray(parsed) && parsed.length)
-          setImportTrades(
-            parsed.map((trade) => ({ ...trade, id: String(trade.id) })),
-          );
-      } catch {
-        /* ignore unreadable local backup */
+    if (!isDemo) {
+      const saved = window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as Trade[];
+          if (isLegacyDemoDataset(parsed))
+            window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
+          else if (Array.isArray(parsed) && parsed.length)
+          {
+            importBackup.current = saved;
+            setImportTrades(
+              parsed.map((trade) => ({ ...trade, id: String(trade.id) })),
+            );
+          }
+        } catch {
+          /* ignore unreadable local backup */
+        }
       }
     }
     const now = new Date();
@@ -1523,32 +1224,34 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       `${now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening"}, Trader`,
     );
     setReportingTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || "Local timezone");
-    if (isDemo || !supabase) {
+    if (isDemo || !cloud?.configured) {
       setAuthReady(true);
       return;
     }
-    let authActive = true, authEventSeen = false;
-    withAuthTimeout(supabase.auth.getSession(), 5000, {
-      data: { session: null },
-      error: null,
-    }).then(({ data }) => {
-      if (!authActive || authEventSeen) return;
-      setSession(data.session);
+    return cloud.subscribeSession((nextSession, recovery) => {
+      const nextKey = nextSession ? `${nextSession.user.id}:${nextSession.access_token}` : null;
+      // Supabase repeats SIGNED_IN on focus. Only an actual session transition
+      // invalidates work; the revision also catches A -> B -> A in one render.
+      if (cloudSessionKey.current !== nextKey) {
+        cloudSessionKey.current = nextKey;
+        cloudRequests.current.advance();
+        setCloudSessionRevision(value => value + 1);
+        setCloudBusy(false);
+        setCloudError("");
+        setModal(false);
+      }
+      if (recovery) {
+        setRecovering(true);
+        setAuthMode("recovery");
+      }
+      setSession(nextSession);
       setAuthReady(true);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (event: AuthChangeEvent, nextSession: Session | null) => {
-        authEventSeen = true;
-        if (event === "PASSWORD_RECOVERY") {
-          setRecovering(true);
-          setAuthMode("recovery");
-        }
-        setSession(nextSession);
-        setAuthReady(true);
-      },
-    );
-    return () => { authActive = false; listener.subscription.unsubscribe(); };
-  }, []);
+  }, [cloud, standalone]);
+
+  useEffect(() => {
+    if (standalone) setTradeBucket({ owner: sampleScope, rows: [...demoJournalRows(), ...demoTrades] });
+  }, [standalone, sampleScope]);
 
   useEffect(() => {
     if (
@@ -1556,40 +1259,42 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       new URLSearchParams(window.location.search).get("demo") === "1"
     )
       return;
-    const client = supabase;
-    if (!session || !client) {
+    if (!session || !cloud) {
       setTrades([]);
       return;
     }
+    const gateway = cloud;
     let current = true;
+    const sameSession = cloudRequests.current.capture();
+    const isCurrent = () => current && sameSession();
     async function loadTrades() {
       setCloudBusy(true);
       setCloudError("");
       try {
-      const { data, error } = await readWithClockRetry(() => client!
-        .from("trades")
-        .select("*")
-        .order("trade_date", { ascending: false })
-        .order("created_at", { ascending: false }), () => current);
-      if (!current) return;
+      const { data, error } = await gateway.loadTrades(isCurrent);
+      if (!isCurrent()) return;
       if (error)
         setCloudError(
           error.message.includes("schema cache")
             ? "The secure trade table still needs to be activated in Supabase."
             : error.message,
         );
-      else setTrades((data as TradeRow[]).map(fromRow));
+      else setTrades((data ?? []).map(fromRow));
       } catch {
-        if (current) setCloudError("Cloud history is unavailable. Your recorded paper trades remain separate; try again when connected.");
-      } finally { if (current) setCloudBusy(false); }
+        if (isCurrent()) setCloudError("Cloud history is unavailable. Your recorded paper trades remain separate; try again when connected.");
+      } finally { if (isCurrent()) setCloudBusy(false); }
     }
     loadTrades();
     return () => {
       current = false;
     };
-  }, [session?.user.id, session?.access_token, cloudReload]);
+  }, [session?.user.id, session?.access_token, cloudSessionRevision, cloudReload, cloud]);
 
-  const journalTrades = useMemo(() => {
+  const journalTrades = useMemo<Trade[]>(() => {
+    if (standalone) {
+      if (journalState.kind === "recorded") return journalState.view?.rows ?? [];
+      return journalState.kind === "sample" ? trades : [];
+    }
     const campaignRows = [
       ...journalCampaignStore.value.map(journalRowFromCampaign),
       ...positionCampaignStore.value.map(journalRowFromCampaign),
@@ -1599,7 +1304,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       keyed.set(trade.campaignId ?? trade.id, trade),
     );
     return [...keyed.values()];
-  }, [journalCampaignStore.value, positionCampaignStore.value, trades, paper.status]);
+  }, [journalCampaignStore.value, positionCampaignStore.value, trades, paper.status, standalone, journalState]);
 
   const filteredTrades = useMemo(() => {
     const cutoff = getCutoff(range);
@@ -1609,12 +1314,14 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
         (!cutoff || !trade.date || new Date(reportingDate) >= cutoff) &&
         (setupFilter === "all" || trade.setup === setupFilter) &&
         (directionFilter === "all" || trade.side === directionFilter) &&
-        (journalSource === "all" || (journalSource === "paper" ? trade.id.startsWith("paper:") : !trade.id.startsWith("paper:"))) &&
+        (journalSource === "all" || (journalSource === "paper" ? trade.id.startsWith("paper:") || trade.id.startsWith("recorded:") : !trade.id.startsWith("paper:") && !trade.id.startsWith("recorded:"))) &&
         trade.symbol.toUpperCase().includes(journalSearch.trim().toUpperCase())
       );
     });
   }, [journalTrades, range, setupFilter, directionFilter, journalSource, journalSearch]);
 
+  const journalMoney = (value: number) => standalone && journalState.kind === "recorded"
+    ? recordMoney("recorded:summary", value) : formatMoney(value);
   const measuredTrades = useMemo(
     () => filteredTrades.filter(
       (trade) =>
@@ -1694,6 +1401,22 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       .sort((a, b) => b.avgR - a.avgR);
   }, [measuredTrades]);
 
+  function openTradeModal() {
+    setCloudDraft(null);
+    cloudDraftReceipt.current = undefined;
+    setCloudError("");
+    if (!demoMode && session) {
+      try {
+        const saved = readCloudDraft(window.localStorage, session.user.id);
+        setCloudDraft(saved.draft);
+        cloudDraftReceipt.current = saved.raw;
+      } catch {
+        setCloudError("Your saved draft could not be read. Cloud saving is unavailable until browser storage is accessible; existing data has been preserved.");
+      }
+    }
+    setModal(true);
+  }
+
   async function addTrade(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -1718,48 +1441,101 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       setModal(false);
       return;
     }
-    if (!supabase) return;
+    if (!cloud || !session || cloudBusy) return;
+    let receipt: string;
+    try {
+      receipt = saveCloudDraft(window.localStorage, session.user.id, toRow(trade), cloudDraftReceipt.current);
+      cloudDraftReceipt.current = receipt;
+      setCloudDraft(toRow(trade));
+    } catch {
+      setCloudError("A recovery copy could not be saved, or the saved draft changed in another window. Nothing was submitted. Close and reopen this form to review the saved draft.");
+      return;
+    }
+    const sameSession = cloudRequests.current.capture();
     setCloudBusy(true);
     setCloudError("");
-    const { data: saved, error } = await supabase
-      .from("trades")
-      .insert(toRow(trade))
-      .select()
-      .single();
-    if (currentTradeOwner.current !== tradeOwner) return;
-    if (error) setCloudError(error.message);
-    else {
-      setTrades((current) => [fromRow(saved as TradeRow), ...current]);
-      setModal(false);
+    try {
+      const { data: saved, error } = await cloud.addTrade(toRow(trade));
+      if (!sameSession()) return;
+      if (error) setCloudError(`Cloud save was not confirmed: ${error.message}. Your draft is preserved; check cloud history before trying again.`);
+      else if (!saved || !cloudWritesAcknowledged([toRow(trade)], [saved])) {
+        setCloudError("Cloud save was not fully acknowledged. Your draft is preserved; check cloud history before trying again.");
+      } else {
+        setTrades((current) => [fromRow(saved), ...current]);
+        if (!clearCloudDraft(window.localStorage, session.user.id, receipt)) {
+          setCloudError("Trade saved. A local recovery draft remains; check cloud history before submitting it again.");
+        }
+        setModal(false);
+      }
+    } catch {
+      if (sameSession()) {
+        setCloudError("Cloud save outcome is unknown. Check cloud history before trying again.");
+      }
+    } finally {
+      if (sameSession()) setCloudBusy(false);
     }
-    setCloudBusy(false);
   }
 
   async function importLocalTrades() {
-    if (!importTrades.length || !supabase) return;
+    if (!importTrades.length || !cloud || !session || cloudBusy) return;
+    const sameSession = cloudRequests.current.capture();
+    const backupBefore = importBackup.current;
+    try {
+      if (!backupBefore || window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY) !== backupBefore) throw new Error("Backup changed.");
+      window.localStorage.setItem(importRecoveryKey, backupBefore);
+    } catch {
+      setCloudError("The local backup changed or browser storage is unavailable. Nothing was imported. Reload to review your saved records.");
+      return;
+    }
+    setImportUncertain(true);
     setCloudBusy(true);
     setCloudError("");
     const rows = importTrades.map(({ id: _id, ...trade }) => toRow(trade));
-    const { data, error } = await supabase.from("trades").insert(rows).select();
-    if (currentTradeOwner.current !== tradeOwner) return;
-    if (error) setCloudError(error.message);
-    else {
-      setTrades((current) => [
-        ...(data as TradeRow[]).map(fromRow),
-        ...current,
-      ]);
-      window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
-      setImportTrades([]);
-      setImportDismissed(true);
+    let acknowledged = false;
+    try {
+      const { data, error } = await cloud.importTrades(rows);
+      if (!sameSession()) return;
+      if (error) setCloudError(`Cloud import was not confirmed: ${error.message}. Your local backup is preserved; check cloud history before trying again.`);
+      else if (!data || !cloudWritesAcknowledged(rows, data)) {
+        setCloudError("Cloud import was not fully acknowledged. Your local backup is preserved; check your records before trying again.");
+      } else {
+        acknowledged = true;
+        setTrades((current) => [
+          ...data.map(fromRow),
+          ...current,
+        ]);
+        if (window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY) === backupBefore) {
+          window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
+        } else {
+          setCloudError("Import acknowledged. A newer local backup was preserved; reload to review it.");
+        }
+        if (window.localStorage.getItem(importRecoveryKey) === backupBefore) {
+          window.localStorage.removeItem(importRecoveryKey);
+          setImportUncertain(false);
+        }
+      }
+    } catch {
+      if (sameSession()) {
+        setCloudError(acknowledged
+          ? "Import confirmed. Local backup cleanup could not be completed. Check cloud history before importing anything again."
+          : "Cloud import outcome is unknown. Your local backup is preserved; check cloud history before trying again.");
+      }
+    } finally {
+      if (sameSession()) {
+        setCloudBusy(false);
+        if (acknowledged) {
+          setImportTrades([]);
+          setImportDismissed(true);
+        }
+      }
     }
-    setCloudBusy(false);
   }
 
   function updateReview(
     tradeId: string,
     update: (review: JournalReview) => JournalReview,
   ) {
-    const current = reviewDrafts[tradeId] ?? reviewStore.value[tradeId] ?? {
+    const current = scopedReviewDrafts[tradeId] ?? reviewStore.value[tradeId] ?? {
       schemaVersion: 1,
       campaignId: tradeId,
       tags: [],
@@ -1771,7 +1547,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
   }
 
   function saveReview(tradeId: string) {
-    const draft = reviewDrafts[tradeId];
+    const draft = scopedReviewDrafts[tradeId];
     if (!draft) return;
     const saved = { ...draft, updatedAt: new Date().toISOString() };
     if (!reviewStore.save({ ...reviewStore.value, [tradeId]: saved })) {
@@ -1791,11 +1567,11 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       window.location.assign(window.location.pathname);
       return;
     }
-    if (!supabase) return;
+    if (!cloud) return;
     if (paper.enabled && session) {
       try { await paper.request("signout", {}); } catch { /* Server lease expires within 60 seconds when unreachable. */ }
     }
-    await supabase.auth.signOut();
+    await cloud.signOut();
     setSession(null);
     setAuthMode("signin");
   }
@@ -1841,7 +1617,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
         if (headerHeight <= 0 || rowsHeight <= 0) return;
         table.style.setProperty(
           "--journal-table-viewport-height",
-          expandedTrade ? `${Math.max(headerHeight + rowsHeight, viewportHeight * .7)}px` : `${headerHeight + rowsHeight}px`,
+          scopedExpandedTrade ? `${Math.max(headerHeight + rowsHeight, viewportHeight * .7)}px` : `${headerHeight + rowsHeight}px`,
         );
         table.dataset.visibleRows = String(rows.length);
       });
@@ -1861,7 +1637,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       window.removeEventListener("resize", sizeTableViewport);
       window.visualViewport?.removeEventListener("resize", sizeTableViewport);
     };
-  }, [latestTrades.length, expandedTrade]);
+  }, [latestTrades.length, scopedExpandedTrade]);
 
   const accountLabel = demoMode
     ? "Demo Trader"
@@ -1883,7 +1659,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
       </main>
     );
   if (setupPreview) return <SetupScreen forceUnconfigured />;
-  if ((!localWorkspace || active === "Trade" || active === "Journal") && !demoMode && !supabaseConfig.isConfigured)
+  if ((!localWorkspace || active === "Trade" || active === "Journal") && !demoMode && !cloud?.configured)
     return <SetupScreen />;
   if ((!localWorkspace || active === "Trade" || active === "Journal") && !demoMode && (!session || recovering))
     return (
@@ -1918,7 +1694,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
         <nav aria-label="Main navigation">
           <p className="nav-label">Workspace</p>
           {standalone ? (
-            standaloneModules[0].views.map(view => <button key={view.id} className={`nav-item ${active === view.id ? "active" : ""}`} aria-current={active === view.id ? "page" : undefined} onClick={() => selectView(view.id)}><Icon name={view.icon} /><span>{view.label}</span></button>)
+            visibleStandaloneViews.map(view => <button key={view.id} className={`nav-item ${active === view.id ? "active" : ""}`} aria-current={active === view.id ? "page" : undefined} onClick={() => selectView(view.id)}><Icon name={view.icon} /><span>{view.label}</span></button>)
           ) : nav.map(([label, icon]) => (
             <button
               key={label}
@@ -1968,7 +1744,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
         )}
         <nav className="mobile-workspace-tabs" aria-label="Workspace tabs">
           {standalone ? (
-            standaloneModules[0].views.map(view => <button key={view.id} className={active === view.id ? "active" : ""} onClick={() => selectView(view.id)}>{view.label}</button>)
+            visibleStandaloneViews.map(view => <button key={view.id} className={active === view.id ? "active" : ""} onClick={() => selectView(view.id)}>{view.label}</button>)
           ) : nav.map(([label]) => (
             <button
               key={label}
@@ -1981,7 +1757,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
         </nav>
         {standalone && (
           <aside className="demo-access-banner" aria-label="Standalone preview status">
-            <div><strong>Trading module preview</strong><span>Sample data only. Broker connection and order submission are locked until local setup is verified.</span></div>
+            <div><strong>{verificationMode ? "Verification profile — artificial records — execution locked" : "Trading module preview"}</strong><span>{verificationMode ? "Isolated local records for application checks. No broker identity or trading authority." : "Sample data only. Broker connection and order submission are locked until local setup is verified."}</span></div>
           </aside>
         )}
         {standaloneMessage && <p className="workspace-notice" role="status">{standaloneMessage}</p>}
@@ -2012,35 +1788,57 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
             className="workspace-subtabs trading-tabs"
             aria-label="Trading views"
           >
-            <button
+            {(!standalone || enabledStandaloneViews.includes("trading")) && <button
               className={active === "Trade" ? "active" : ""}
               onClick={() => selectView("Trade")}
             >
               Plan &amp; Position
-            </button>
-            <button
+            </button>}
+            {(!standalone || enabledStandaloneViews.includes("journal")) && <button
               className={active === "Journal" ? "active" : ""}
               onClick={() => selectView("Journal")}
             >
               Journal
-            </button>
+            </button>}
           </nav>
         )}
         {!standalone && <div hidden={active !== "Catalyst"}>
           <CatalystDashboard demo={demoMode} onChart={openChart} />
         </div>}
-        {standalone && active === "Connect" && <StandaloneConnect localSessionActive={!!localProfile} localProfileId={localProfile?.profileId} fixtureReadiness={connectionFixture} onOpenTrading={() => selectView("Trade")} onOpenJournal={() => selectView("Journal")} />}
-        <div hidden={active !== "Trade"}>
+        {standalone && active === "Connect" && <StandaloneConnect localSessionActive={!!localProfile} localProfileId={localProfile?.profileId} localCsrf={localProfile?.csrf} fixtureReadiness={connectionFixture} moduleSelection={localModules} onSaveModules={saveLocalModules} canOpenTrading={enabledStandaloneViews.includes("trading")} canOpenJournal={enabledStandaloneViews.includes("journal")} onAccountConfirmed={profileId => {
+          if (!localProfile || localProfile.profileId !== profileId || localProfileRef.current !== localProfile) return;
+          setLocalModules(previous => previous.kind === "ready" && previous.profileId === profileId
+            ? { ...previous, canHideTrading: false } : previous);
+          setLocalJournal({ profileId, kind: "unavailable", view: null });
+          setLocalPlanScope({ profileId, kind: "unavailable", scopeId: null });
+        }} onLocalSessionInvalid={() => {
+          if (!localProfile || localProfileRef.current !== localProfile) return;
+          localProfileRef.current = null;
+          setLocalProfile(null);
+          setLocalModules({ kind: "unavailable" });
+          setConnectionFixture(null);
+          setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+          setLocalPlanScope({ profileId: null, kind: "unavailable", scopeId: null });
+        }} onOpenTrading={() => selectView("Trade")} onOpenJournal={() => selectView("Journal")} />}
+        {(!standalone || enabledStandaloneViews.includes("trading")) && <div hidden={active !== "Trade"}>
           <TradingWorkspace key={tradingScope} storageScope={tradingScope}
             demo={demoMode}
             paper={localWorkspace && !demoMode ? paper : undefined}
+            privatePlan={standalone && localProfile &&
+              localPlanScope.profileId === localProfile.profileId && localPlanScope.scopeId
+              ? { scopeId: localPlanScope.scopeId, csrf: localProfile.csrf,
+                  ready: localPlanScope.kind === "ready" && journalState.kind === "recorded" }
+              : null}
+            localHistory={standalone && localModules.kind !== "sample"
+              ? localProfile ? journalState : { kind: "unavailable", view: null }
+              : undefined}
             context={planContext}
             onChart={openChart}
-            onOpenJournalTrade={openJournalTrade}
+            onOpenJournalTrade={!standalone || enabledStandaloneViews.includes("journal") ? openJournalTrade : undefined}
             onCreateJournalTrade={createJournalTrade}
             positionCampaigns={positionCampaignStore.value}
           />
-        </div>
+        </div>}
         {!standalone && active === "Charts" && (
           <ChartDashboard
             navigation={[
@@ -2087,7 +1885,8 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
             onChart={openChart}
           />
         </div>}
-        <div className="journal-content" hidden={active !== "Journal"}>
+        <div className="journal-content" hidden={active !== "Journal" ||
+          (standalone && !enabledStandaloneViews.includes("journal"))}>
           {localWorkspace && !session && !demoMode && (
             <p className="workspace-notice">
               Cloud Journal is not connected in local mode. Local plans and
@@ -2103,8 +1902,10 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
             <div className="header-actions">
               <span className={`sync-state ${cloudError ? "has-error" : ""}`}>
                 <i />
-                {demoMode
-                  ? "Sample trades"
+                {standalone
+                  ? journalState.kind === "recorded" ? verificationMode ? "Artificial verification history" : "Recorded paper history · disconnected" : journalState.kind === "sample" ? "Sample trades" : journalState.kind === "checking" ? "Checking local history…" : "History unavailable"
+                  : demoMode
+                    ? "Sample trades"
                   : cloudBusy
                     ? "Syncing…"
                     : cloudError
@@ -2119,25 +1920,39 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
               </button>}
               <button
                 className="primary-button"
-                disabled={localWorkspace && !session && !demoMode}
-                onClick={() => setModal(true)}
+                disabled={(standalone && journalState.kind !== "sample") || (localWorkspace && !session && !demoMode) || (!demoMode && cloudBusy)}
+                title={standalone && journalState.kind !== "sample" ? "Recorded paper history is read-only; manual logging is not available." : undefined}
+                onClick={openTradeModal}
               >
                 <Icon name="plus" size={17} /> Log trade
               </button>
             </div>
           </header>
 
+          {standalone && journalState.kind === "recorded" && <p className="workspace-notice" role="status">
+            {journalState.view?.lastRecordedAt
+              ? `Latest recorded campaign or fill: ${new Date(journalState.view.lastRecordedAt).toLocaleString()}. Later fee updates may change these saved results.`
+              : "No recorded campaign yet."}
+            TWS is disconnected here; current positions, stop protection and open orders are unverified.
+            {(journalState.view?.uncertainCommandCount ?? 0) > 0 && ` ${journalState.view?.uncertainCommandCount} command outcomes need reconciliation.`}
+          </p>}
+          {standalone && journalState.kind === "unavailable" && <div className="cloud-notice error" role="alert">
+            <div><strong>Recorded history unavailable</strong><span>The local app could not verify this account’s saved history. No sample records or zero exposure are substituted.</span></div>
+            <div className="cloud-notice-actions"><button type="button" onClick={() => setLocalJournalReload(value => value + 1)}>Retry local history</button></div>
+          </div>}
+          {standalone && journalState.kind === "checking" && <p className="workspace-notice" role="status">Checking the local account and saved history…</p>}
+
           {(cloudError || (importTrades.length > 0 && !importDismissed)) && (
             <section className={`cloud-notice ${cloudError ? "error" : ""}`}>
               <div>
                 <strong>
                   {cloudError
-                    ? "Cloud history unavailable"
+                    ? "Cloud journal needs attention"
                     : `${importTrades.length} browser trades found`}
                 </strong>
                 <span>
                   {cloudError ||
-                    "Import them once into your private cloud journal. Review first if these are demonstration trades."}
+                    (importUncertain ? "A previous import has no confirmed result on this device. Your backup is preserved. Check cloud history for all records before importing again." : "Import them once into your private cloud journal. Review first if these are demonstration trades.")}
                 </span>
               </div>
               {cloudError ? (
@@ -2163,6 +1978,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
             </section>
           )}
 
+          {(!standalone || journalState.kind === "sample" || journalState.kind === "recorded") && <>
           <div className="journal-record-controls" aria-label="Journal filters">              <label className="range-control">
                 <Icon name="calendar" size={16} />
                 <span>Date range</span>
@@ -2197,19 +2013,19 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
             <button type="button" className="secondary-button" onClick={() => { setRange("30"); setSetupFilter("all"); setDirectionFilter("all"); setJournalSearch(""); setJournalSource("all"); setStatusFilter("all"); }}>Clear filters</button><span>{filteredTrades.length} records{paper.enabled ? " · Paper executions stay on this computer" : ""}</span>
           </div>
           {paper.enabled && !paper.status && <p className="workspace-notice" role="status">Local paper records are unavailable. Totals include loaded records only.</p>}
-          {measuredTrades.length === 0 && !(paper.enabled && !paper.status && journalTrades.length === 0) && <div className="journal-empty-state" role="status"><strong>{journalTrades.length === 0 ? "No records yet" : filteredTrades.length === 0 ? "No records match these filters" : "No eligible closed trades"}</strong><p>{journalTrades.length === 0 ? "Log a trade or review a confirmed paper execution to begin." : filteredTrades.length === 0 ? "Clear or adjust filters to see your records." : "Your records are below. Performance requires completed trades with execution history and known costs; R metrics also require initial risk."}</p></div>}
+          {measuredTrades.length === 0 && (!standalone || journalState.kind === "sample" || journalState.kind === "recorded") && !(paper.enabled && !paper.status && journalTrades.length === 0) && <div className="journal-empty-state" role="status"><strong>{journalTrades.length === 0 ? standalone && journalState.kind === "recorded" ? "No saved records" : "No records yet" : filteredTrades.length === 0 ? "No records match these filters" : "No eligible closed trades"}</strong><p>{journalTrades.length === 0 ? standalone && journalState.kind === "recorded" ? "No trade was found in this account’s verified local history. Current broker exposure is still unknown." : "Log a trade or review a confirmed paper execution to begin." : filteredTrades.length === 0 ? "Clear or adjust filters to see your records." : "Your records are below. Performance requires completed trades with execution history and known costs; R metrics also require initial risk."}</p></div>}
           <section className="journal-metric-grid" aria-label="Trading statistics">
-            <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? formatMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
+            <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? journalMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
             <MetricCard label="Win rate" value={measuredTrades.length ? `${stats.winRate.toFixed(2)}%` : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail={`${stats.wins} wins · ${stats.losses} losses · ${stats.breakevens} flat`} />
             <MetricCard label="Expectancy in R" title="Mean final net result divided by frozen initial dollar risk." value={stats.rEligible.length ? formatR(stats.avgR) : "Unavailable"} tone={journalSemanticTone(stats.avgR, stats.rEligible.length > 0)} detail={`${stats.rEligible.length} closed trades with valid risk`} />
             <MetricCard label="Profit factor" value={stats.profitFactor == null ? "Unavailable" : stats.profitFactor === "No losses" ? stats.profitFactor : stats.profitFactor.toFixed(2)} tone={stats.profitFactor == null ? "unavailable" : "neutral"} detail={`${measuredTrades.length} eligible closed trades`} />
-            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? formatMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
+            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? journalMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
             <MetricCard label="Closed trades" title="Closed campaigns with complete execution history and known costs." value={measuredTrades.length} detail={`${stats.wins}W / ${stats.losses}L / ${stats.breakevens}BE`} />
           </section>
-<Disclosure title="More statistics" name="journal-statistics" scope={demoMode ? "demo" : session?.user.id ?? "account"}><section className="journal-metric-grid" aria-label="Additional statistics">            <MetricCard label="Avg planned R:R" value={stats.plannedEligible.length ? `1:${stats.avgPlanned.toFixed(1)}` : "Unavailable"} tone={stats.plannedEligible.length ? "neutral" : "unavailable"} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
-            <MetricCard label="Avg result" title="Net result divided by eligible closed trade count." value={measuredTrades.length ? formatMoney(stats.averageResult) : "Unavailable"} tone={journalSemanticTone(stats.averageResult, measuredTrades.length > 0)} detail="Per eligible closed trade" />
-            <MetricCard label="Avg win" value={stats.averageWin == null ? "Unavailable" : formatMoney(stats.averageWin)} tone={journalSemanticTone(stats.averageWin)} detail={`${stats.wins} winning trades`} />
-            <MetricCard label="Avg loss" value={stats.averageLoss == null ? "Unavailable" : formatMoney(stats.averageLoss)} tone={journalSemanticTone(stats.averageLoss)} detail={`${stats.losses} losing trades`} />
+<Disclosure title="More statistics" name="journal-statistics" scope={standalone ? sampleScope : demoMode ? "demo" : session?.user.id ?? "account"}><section className="journal-metric-grid" aria-label="Additional statistics">            <MetricCard label="Avg planned R:R" value={stats.plannedEligible.length ? `1:${stats.avgPlanned.toFixed(1)}` : "Unavailable"} tone={stats.plannedEligible.length ? "neutral" : "unavailable"} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
+            <MetricCard label="Avg result" title="Net result divided by eligible closed trade count." value={measuredTrades.length ? journalMoney(stats.averageResult) : "Unavailable"} tone={journalSemanticTone(stats.averageResult, measuredTrades.length > 0)} detail="Per eligible closed trade" />
+            <MetricCard label="Avg win" value={stats.averageWin == null ? "Unavailable" : journalMoney(stats.averageWin)} tone={journalSemanticTone(stats.averageWin)} detail={`${stats.wins} winning trades`} />
+            <MetricCard label="Avg loss" value={stats.averageLoss == null ? "Unavailable" : journalMoney(stats.averageLoss)} tone={journalSemanticTone(stats.averageLoss)} detail={`${stats.losses} losing trades`} />
             <MetricCard label="Payoff" value={secondaryStats.payoff == null ? "Unavailable" : secondaryStats.payoff.toFixed(2)} tone={secondaryStats.payoff == null ? "unavailable" : "neutral"} detail="Average win ÷ average loss" />
             <MetricCard label="Longest loss streak" value={measuredTrades.length ? secondaryStats.longestLosingStreak : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail="Consecutive losing trades" /></section></Disclosure>
           <p className="journal-eligibility-summary" aria-label="Journal eligibility summary">
@@ -2232,9 +2048,9 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
               <div className="chart-summary">
                 <strong>
                   {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length === 0 ? "Unavailable" : equityView === "drawdown"
-                    ? formatMoney(-secondaryStats.maxDrawdown)
+                    ? journalMoney(-secondaryStats.maxDrawdown)
                     : equityMode === "dollar"
-                      ? formatMoney(stats.pnl)
+                      ? journalMoney(stats.pnl)
                     : formatR(
                         rMeasuredTrades.reduce((sum, trade) => sum + trade.r, 0),
                       )}
@@ -2295,7 +2111,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                   <div className="setup-row" key={item.setup}>
                     <span>{item.setup}</span>
                     <span>{item.count}</span>
-                    <span className={item.netPnl >= 0 ? "positive" : "negative"}>{formatMoney(item.netPnl)}</span>
+                    <span className={item.netPnl >= 0 ? "positive" : "negative"}>{journalMoney(item.netPnl)}</span>
                     <span>{item.winRate.toFixed(1)}%</span>
                     <b className={item.avgR >= 0 ? "positive" : "negative"}>
                       {formatR(item.avgR)} <small>({item.rCount})</small>
@@ -2356,12 +2172,8 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                       <span className="symbol-cell">
                         <button
                           className="journal-expand"
-                          aria-expanded={expandedTrade === trade.id}
-                          onClick={() =>
-                            setExpandedTrade((current) =>
-                              current === trade.id ? null : trade.id,
-                            )
-                          }
+                          aria-expanded={scopedExpandedTrade === trade.id}
+                          onClick={() => setExpandedTrade(scopedExpandedTrade === trade.id ? null : trade.id)}
                         >
                           {trade.symbol}
                         </button>
@@ -2384,10 +2196,10 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                         {trade.finalRAvailable === false || trade.status !== "Closed" ? <MissingValue reason="Final Net R unavailable until eligible closure" /> : formatR(trade.r)}
                       </span>
                       <span>
-                        {reviewStore.value[trade.id] ? "Reviewed" : trade.id.startsWith("paper:") ? "Not reviewed" : `Grade ${trade.grade}`}
+                        {reviewStore.value[trade.id] ? "Reviewed" : isLedgerRecord(trade.id) ? "Not reviewed" : `Grade ${trade.grade}`}
                       </span>
                     </div>
-                    {expandedTrade === trade.id && (
+                    {scopedExpandedTrade === trade.id && (
                       <section
                         className="journal-execution-details"
                         aria-label={`${trade.symbol} entry and exit details`}
@@ -2400,7 +2212,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                               {trade.status ?? "Closed"} · {trade.openQuantity ?? 0} shares open
                             </span>
                           </div>
-                          <i>{trade.id.startsWith("paper:") ? "BROKER-CONFIRMED PAPER EXECUTIONS" : trade.simulated ? "SIMULATED · NOT BROKER CONFIRMED" : "HISTORICAL / MANUAL RECORD"}</i>
+                          <i>{trade.id.startsWith("fixture:") ? "ARTIFICIAL VERIFICATION RECORD · NOT BROKER CONFIRMED" : trade.id.startsWith("recorded:") ? "RECORDED IBKR PAPER HISTORY · LAST KNOWN" : trade.id.startsWith("paper:") ? "BROKER-CONFIRMED PAPER EXECUTIONS" : trade.simulated ? "SIMULATED · NOT BROKER CONFIRMED" : "HISTORICAL / MANUAL RECORD"}</i>
                         </header>
                         {trade.historyStatus && (
                           <p className="workspace-notice">{trade.historyStatus}</p>
@@ -2412,7 +2224,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                           <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : recordMoney(trade.id, trade.risk, false)}</b></span>
                           <span><small>Entered / exited / remaining</small><b>{trade.enteredQuantity ?? "—"} / {trade.exitedQuantity ?? "—"} / {trade.openQuantity ?? "—"}</b></span>
                           <span><small>Weighted exit</small><b>{trade.weightedExit ? recordMoney(trade.id, trade.weightedExit, false, 6) : <MissingValue reason="Exit execution history unavailable" />}</b></span>
-                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && (trade.status === "Closed" || (trade.id.startsWith("paper:") && trade.realizedAvailable !== false)) && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${recordMoney(trade.id, trade.grossRealized)} / ${trade.costs == null ? "provisional" : recordMoney(trade.id, trade.costs)} / ${(trade.status === "Closed" || (trade.id.startsWith("paper:") && trade.realizedAvailable !== false)) && trade.costs != null ? recordMoney(trade.id, trade.pnl) : "Unavailable"}`}</b></span>
+                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && (trade.status === "Closed" || (isLedgerRecord(trade.id) && trade.realizedAvailable !== false)) && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${recordMoney(trade.id, trade.grossRealized)} / ${trade.costs == null ? "provisional" : recordMoney(trade.id, trade.costs)} / ${(trade.status === "Closed" || (isLedgerRecord(trade.id) && trade.realizedAvailable !== false)) && trade.costs != null ? recordMoney(trade.id, trade.pnl) : "Unavailable"}`}</b></span>
                           <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : trade.status === "Closed" ? "Closure time unavailable" : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
                         </div>
                         <div className="journal-plan-detail">
@@ -2436,7 +2248,7 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                               <b className={execution.effect}>
                                 {execution.effect}
                               </b>{" "}
-                              · {execution.role}
+                              · {executionRoleLabel(execution.role)}
                             </span>
                             <span data-label="Shares">
                               {execution.quantity}
@@ -2457,6 +2269,8 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                             </span>
                           </div>
                         ))}
+                        {standalone && (trade.id.startsWith("recorded:") || trade.id.startsWith("fixture:")) ?
+                          <p className="workspace-notice">Personal review editing for saved paper trades is not available yet.</p> :
                         <div className="journal-review-form" aria-label={`${trade.symbol} personal review`}>
                           <strong>Personal review <i>{trade.id.startsWith("paper:") ? "optional" : `optional · Grade ${trade.grade}`}</i></strong>
                           {([
@@ -2465,13 +2279,13 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                             ["risk", "Risk respected?"],
                             ["exits", "Exit rules followed?"],
                           ] as const).map(([key, label]) => (
-                            <label key={key}>{label}<select aria-label={`${trade.symbol} ${label}`} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.answers[key] ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, answers: { ...review.answers, [key]: event.target.value as "Yes" | "Partly" | "No" } }))}><option value="">Unanswered</option><option>Yes</option><option>Partly</option><option>No</option></select></label>
+                            <label key={key}>{label}<select aria-label={`${trade.symbol} ${label}`} value={(scopedReviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.answers[key] ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, answers: { ...review.answers, [key]: event.target.value as "Yes" | "Partly" | "No" } }))}><option value="">Unanswered</option><option>Yes</option><option>Partly</option><option>No</option></select></label>
                           ))}
-                          <label>Emotional state<select aria-label={`${trade.symbol} Emotional state`} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.emotionalState ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, emotionalState: (event.target.value || undefined) as JournalReview["emotionalState"] }))}><option value="">Unanswered</option><option>Calm</option><option>Hesitant</option><option>FOMO</option><option>Frustrated</option><option>Other</option></select></label>
-                          <label className="review-lesson">One lesson<input aria-label={`${trade.symbol} One lesson`} maxLength={180} value={(reviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.lesson ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, lesson: event.target.value }))} /></label>
-                          <button className="secondary-button" onClick={() => saveReview(trade.id)} disabled={!reviewDrafts[trade.id]}>Save review</button>
-                          <span role="status">{reviewMessage[trade.id]}</span>
-                        </div>
+                          <label>Emotional state<select aria-label={`${trade.symbol} Emotional state`} value={(scopedReviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.emotionalState ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, emotionalState: (event.target.value || undefined) as JournalReview["emotionalState"] }))}><option value="">Unanswered</option><option>Calm</option><option>Hesitant</option><option>FOMO</option><option>Frustrated</option><option>Other</option></select></label>
+                          <label className="review-lesson">One lesson<input aria-label={`${trade.symbol} One lesson`} maxLength={180} value={(scopedReviewDrafts[trade.id] ?? reviewStore.value[trade.id])?.lesson ?? ""} onChange={(event) => updateReview(trade.id, review => ({ ...review, lesson: event.target.value }))} /></label>
+                          <button className="secondary-button" onClick={() => saveReview(trade.id)} disabled={!scopedReviewDrafts[trade.id]}>Save review</button>
+                          <span role="status">{scopedReviewMessage[trade.id]}</span>
+                        </div>}
                       </section>
                     )}
                   </div>
@@ -2481,11 +2295,11 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
 
 
           </section>
-
+          </>}
         </div>
       </section>
 
-      {modal && (
+      {scopedModal && (
         <div
           className="modal-backdrop"
           role="presentation"
@@ -2514,11 +2328,15 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
               </button>
             </div>
             <form onSubmit={addTrade}>
+              {cloudError && <p role="alert" className="modal-validation">{cloudError}</p>}
+              {cloudDraft && <p className="form-help">A recovery draft is saved on this device for this account. Check cloud history before submitting it again; an earlier attempt may already have succeeded.</p>}
               <div className="form-row">
                 <label>
                   Symbol
                   <input
                     name="symbol"
+                    disabled={!demoMode && cloudBusy}
+                    defaultValue={cloudDraft?.symbol}
                     placeholder="NVDA"
                     required
                     autoFocus
@@ -2529,8 +2347,9 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                   Trade date
                   <input
                     name="date"
+                    disabled={!demoMode && cloudBusy}
                     type="date"
-                    defaultValue={isoDate()}
+                    defaultValue={cloudDraft?.trade_date ?? isoDate()}
                     required
                   />
                 </label>
@@ -2538,14 +2357,14 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
               <div className="form-row">
                 <label>
                   Side
-                  <select name="side">
+                  <select name="side" defaultValue={cloudDraft?.side} disabled={!demoMode && cloudBusy}>
                     <option>Long</option>
                     <option>Short</option>
                   </select>
                 </label>
                 <label>
                   Setup
-                  <select name="setup">
+                  <select name="setup" defaultValue={cloudDraft?.setup} disabled={!demoMode && cloudBusy}>
                     {setups.map((setup) => (
                       <option key={setup}>{setup}</option>
                     ))}
@@ -2557,6 +2376,8 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                   Dollar risk
                   <input
                     name="risk"
+                    disabled={!demoMode && cloudBusy}
+                    defaultValue={cloudDraft?.dollar_risk}
                     type="number"
                     min="1"
                     placeholder="150"
@@ -2567,6 +2388,8 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                   Planned reward
                   <input
                     name="plannedR"
+                    disabled={!demoMode && cloudBusy}
+                    defaultValue={cloudDraft?.planned_r}
                     type="number"
                     min=".1"
                     step=".1"
@@ -2578,11 +2401,11 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
               <div className="form-row">
                 <label>
                   Final P&amp;L
-                  <input name="pnl" type="number" placeholder="750" required />
+                  <input name="pnl" type="number" placeholder="750" required defaultValue={cloudDraft?.pnl} disabled={!demoMode && cloudBusy} />
                 </label>
                 <label>
                   Execution grade
-                  <select name="grade">
+                  <select name="grade" defaultValue={cloudDraft?.grade} disabled={!demoMode && cloudBusy}>
                     <option value="A">A · Followed every rule</option>
                     <option value="B">B · Minor deviation</option>
                     <option value="C">C · Broke the plan</option>
@@ -2601,15 +2424,15 @@ export default function WorkspaceApp({ standalone = false }: { standalone?: bool
                 >
                   Cancel
                 </button>
-                <button type="submit" className="primary-button">
-                  <Icon name="check" size={16} /> Save trade
+                <button type="submit" className="primary-button" disabled={!demoMode && (cloudBusy || cloudDraftReceipt.current === undefined)}>
+                  <Icon name="check" size={16} /> {cloudBusy ? "Saving…" : "Save trade"}
                 </button>
               </div>
             </form>
           </section>
         </div>
       )}
-      {settingsOpen && <SetupScreen onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && reviewScope === tradingScope && <SetupScreen onClose={() => setSettingsOpen(false)} />}
     </main>
   );
 }

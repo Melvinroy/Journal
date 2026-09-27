@@ -111,7 +111,10 @@ def assess_legacy_paper_store(*, source_db: Path, owner_file: Path,
         raise MigrationAssessmentError("An exact expected paper account binding digest is required.")
     if expected_environment != "paper":
         raise MigrationAssessmentError("Only the paper environment can be assessed by this tool.")
-    raw_owner = owner.read_bytes()
+    if owner.stat().st_size > MAX_OWNER_BYTES:
+        raise MigrationAssessmentError("Owner binding file is too large.")
+    with owner.open("rb") as owner_source:
+        raw_owner = owner_source.read(MAX_OWNER_BYTES + 1)
     if len(raw_owner) > MAX_OWNER_BYTES:
         raise MigrationAssessmentError("Owner binding file is too large.")
     try:

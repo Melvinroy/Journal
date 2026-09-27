@@ -341,7 +341,13 @@ class PaperService:
         # Rebuild missing projection fields from the preserved economic evidence.
         # This is explicitly a ledger replay, never a new broker confirmation.
         with self.store.transaction() as db:
-            historical = [(row[0], json.loads(row[1])) for row in db.execute("SELECT id,body FROM events WHERE id LIKE 'exec:%'")]
+            historical = []
+            for identity, body in db.execute(
+                    "SELECT id,body FROM events WHERE id GLOB 'exec*'"):
+                if not identity.startswith(("exec:", "exec-v1:")):
+                    raise PaperSafetyError(
+                        "Unsupported economic evidence requires reconciliation before recovery.")
+                historical.append((identity, json.loads(body)))
         for identity, event in historical:
             if event.get("orderId") in {order["orderId"] for slot in c["slots"] for role in ("entry", "stop", "exit") if (order := slot.get(role))}:
                 self.pending_events.append({**event, "kind": "execution", "eventId": str(uuid.uuid4()), "replayOf": identity})
@@ -810,6 +816,14 @@ class PaperService:
     def _derive(self, c):
         if c["state"] == "Needs reconciliation": return
         total = summarize(c)
+        if not total["accountingComplete"]:
+            c["state"] = "Needs reconciliation"
+            c["message"] = "Broker fill order or cost basis is ambiguous; accounting requires reconciliation."
+            return
+        if total["entryAfterExit"]:
+            c["state"] = "Needs reconciliation"
+            c["message"] = "An entry filled after an exit; reconcile protection and allocations before management."
+            return
         if total["openQuantity"] < 0 or total["entered"] > c["ticket"]["quantity"]:
             c["state"] = "Needs reconciliation"; c["message"] = "Broker execution quantity conflict."; return
         for slot in c["slots"]:

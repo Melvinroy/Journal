@@ -99,6 +99,18 @@ def test_duplicate_owner_key_and_wrong_environment_fail_closed(tmp_path):
         assess(source, owner, scratch)
 
 
+def test_oversized_owner_file_is_rejected_before_a_snapshot(tmp_path, monkeypatch):
+    source, owner, scratch = fixture_paths(tmp_path)
+    owner.write_bytes(b" " * 4097)
+    original_source = source.read_bytes()
+    monkeypatch.setattr(PaperStore, "backup", lambda self, destination: pytest.fail(
+        "An oversized owner binding must be rejected before reading the ledger."))
+    with pytest.raises(MigrationAssessmentError, match="too large"):
+        assess(source, owner, scratch)
+    assert source.read_bytes() == original_source
+    assert list(scratch.iterdir()) == []
+
+
 def test_unscoped_and_duplicate_keys_in_ledger_are_blockers(tmp_path):
     source, owner, scratch = fixture_paths(tmp_path)
     with sqlite3.connect(source) as db:

@@ -25,16 +25,22 @@ class PaperStore:
         db = sqlite3.connect(self.path, timeout=5)
         db.row_factory = sqlite3.Row
         try:
+            if db.execute("PRAGMA user_version").fetchone()[0] > 1:
+                raise PaperSafetyError("Paper database version is newer than this application.")
             db.execute("PRAGMA synchronous=FULL")
+            db.execute("BEGIN IMMEDIATE")
+            # Recheck under the write lock in case another process upgraded it.
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version > 1:
+                raise PaperSafetyError("Paper database version is newer than this application.")
+            if version == 0 and existed:
+                # Capture the original schema and data before any upgrade DDL.
+                self.backup(self.path.with_name(self.path.name + ".pre-v1." + uuid.uuid4().hex + ".bak"))
             db.execute("CREATE TABLE IF NOT EXISTS objects (kind TEXT, id TEXT, body TEXT NOT NULL, PRIMARY KEY(kind,id))")
             db.execute("CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, campaign TEXT, request TEXT NOT NULL, state TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, body TEXT NOT NULL)")
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1: raise PaperSafetyError("Paper database version is newer than this application.")
             if version == 0:
-                if existed: self.backup(self.path.with_name(self.path.name + ".pre-v1." + uuid.uuid4().hex + ".bak"))
                 db.execute("PRAGMA user_version=1")
-            db.execute("BEGIN IMMEDIATE")
             yield db
             db.commit()
         except Exception:

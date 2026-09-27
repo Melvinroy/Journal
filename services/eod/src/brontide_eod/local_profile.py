@@ -129,15 +129,17 @@ class LocalProfileStore:
         _reject_reparse(self.lock_path)
         with self.lock_path.open("a+b") as lock:
             _reject_reparse(self.lock_path)
-            if lock.tell() == 0:
-                lock.write(b"\0")
-                lock.flush()
             lock.seek(0)
             if os.name == "nt":
                 import msvcrt
 
                 msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
                 try:
+                    # Two first launches may open the new file together. Do
+                    # not write its sentinel until this process owns byte 0.
+                    if lock.seek(0, os.SEEK_END) == 0:
+                        lock.write(b"\0")
+                        lock.flush()
                     yield
                 finally:
                     lock.seek(0)
@@ -147,6 +149,9 @@ class LocalProfileStore:
 
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
                 try:
+                    if lock.seek(0, os.SEEK_END) == 0:
+                        lock.write(b"\0")
+                        lock.flush()
                     yield
                 finally:
                     fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
@@ -176,6 +181,56 @@ class LocalProfileStore:
             raise OSError("Standalone profile directory is invalid.")
         self._read()
 
+    def check_locked_sample_update(self) -> None:
+        """Refuse a locked sample update over incompatible private state.
+
+        The current installer calls its executable's read-only profile probe
+        before changing the active version. It does not support migrating the
+        separately prepared schema-1 paper ledger. Known setup sidecars must
+        also be readable and refer to the same profile and paper reference.
+        """
+        self.check_existing_schema()
+        profile = self._read() if self.root.exists() else None
+        if self.root.exists() and profile is None and self._orphaned_entries():
+            raise ValueError("Standalone profile is missing beside private data.")
+        from .local_binding import BINDING_FILE
+        from .local_journal import RECORDED_DIRECTORY
+        from .local_modules import MODULES_FILE
+        from .local_paper_reference import REFERENCE_FILE
+
+        if self.root.exists():
+            known = {PROFILE_FILE, self.lock_path.name, MODULES_FILE,
+                     REFERENCE_FILE, BINDING_FILE, RECORDED_DIRECTORY}
+            for entry in self.root.iterdir():
+                _reject_reparse(entry)
+                if entry.name not in known:
+                    raise ValueError("Unknown private profile data requires review before update.")
+
+        recorded = self.root / RECORDED_DIRECTORY
+        _reject_reparse(recorded)
+        if recorded.exists():
+            raise ValueError("Locked candidate cannot update recorded trade data.")
+
+        if profile is not None:
+            from .local_binding import LocalBindingStore
+            from .local_modules import LocalModulePreferencesStore
+            from .local_paper_reference import LocalPaperReferenceStore
+
+            LocalModulePreferencesStore(self)._read(profile.profile_id)
+            reference = LocalPaperReferenceStore(self)._read(profile.profile_id)
+            binding = LocalBindingStore(self)._read(profile.profile_id)
+            if binding is not None and not binding.matches_reference(reference):
+                raise ValueError("Paper binding does not match the owner reference.")
+
+    def _orphaned_entries(self) -> bool:
+        """A lock alone is harmless; any other file needs owner review."""
+        return any(entry.name != self.lock_path.name for entry in self.root.iterdir())
+
+    def read_existing(self) -> LocalProfile | None:
+        """Read a profile without creating one; use for a second launch."""
+        self.check_existing_schema()
+        return self._read()
+
     def _write(self, profile: LocalProfile) -> None:
         document = {"schemaVersion": PROFILE_VERSION, "profileId": profile.profile_id,
                     "selectedView": profile.selected_view}
@@ -199,6 +254,8 @@ class LocalProfileStore:
             existing = self._read()
             if existing is not None:
                 return existing
+            if self._orphaned_entries():
+                raise ValueError("Standalone profile is missing beside private data.")
             profile = LocalProfile("local-" + str(uuid.uuid4()), "connect")
             self._write(profile)
             return profile

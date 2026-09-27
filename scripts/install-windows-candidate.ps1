@@ -87,6 +87,14 @@ function CandidateNames {
     @(Get-ChildItem -LiteralPath $root -Force | Where-Object { $_.Name -like 'candidate-*' } |
         ForEach-Object { $_.Name })
 }
+function Assert-NoPendingCopy {
+    if (-not (Test-Path -LiteralPath $root)) { return }
+    $pending = @(Get-ChildItem -LiteralPath $root -Force |
+        Where-Object { $_.Name -like '.candidate-pending-*' })
+    if ($pending.Count -gt 0) {
+        throw 'An interrupted candidate copy remains. Preserve and review it before changing installed versions.'
+    }
+}
 function Read-Manifest([string]$folder) {
     Assert-Directory $folder
     $path = Join-Path $folder 'manifest.json'
@@ -137,7 +145,10 @@ function Assert-Package([string]$folder, $m) {
         $rel = [string]$entry.path
         if (-not $rel -or $rel.StartsWith('/') -or $rel.Contains('..') -or
             $rel.Contains(':') -or $rel.Contains('\') -or
-            $rel -notmatch '^[A-Za-z0-9._/-]+$' -or
+            # Dependencies may contain internal spaces (for example Lorem ipsum.txt).
+            # Reject empty segments and Windows-normalized trailing spaces/dots.
+            $rel -notmatch '^[A-Za-z0-9._ /+-]+$' -or
+            @($rel.Split('/') | Where-Object { -not $_ -or $_ -match '^[ ]|[ .]$' }).Count -gt 0 -or
             [string]$entry.sha256 -notmatch '^[0-9a-f]{64}$' -or
             $entry.bytes -isnot [long] -and $entry.bytes -isnot [int]) {
             throw "Unsafe inventory entry: $rel"
@@ -259,6 +270,26 @@ function Assert-NoLegacy($state) {
     }
 }
 
+# A share-exclusive file under the owning user's Programs directory serializes
+# lifecycle changes across processes and Windows logon sessions for this root.
+# The file is intentionally retained; OS handle closure releases the lock after
+# a crash, while the pending-copy and state checks still inspect its aftermath.
+$lifecycleLock = $null
+if ($Action -ne 'List') {
+    if (-not (Test-Path -LiteralPath $programs)) {
+        New-Item -ItemType Directory -Path $programs -Force | Out-Null
+    }
+    Assert-Directory $programs
+    $lockPath = Join-Path $programs ('.brontide-lifecycle-' + [IO.Path]::GetFileName($root) + '.lock')
+    if (Test-Path -LiteralPath $lockPath) { Assert-File $lockPath }
+    try {
+        $lifecycleLock = [IO.FileStream]::new($lockPath,
+            [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    } catch [IO.IOException] {
+        throw 'Lifecycle lock unavailable: another operation or a storage error. No installation change was made.'
+    }
+}
+try {
 switch ($Action) {
     'List' {
         $state = Read-State
@@ -272,6 +303,7 @@ switch ($Action) {
     'Install' {
         Assert-Stopped
         $state = Read-State
+        Assert-NoPendingCopy
         Assert-NoLegacy $state
         if ($null -ne $state) { throw 'Already installed. Use -Action Update.' }
         $source = FullPath $PackageRoot
@@ -308,6 +340,7 @@ switch ($Action) {
     'Update' {
         Assert-Stopped
         $state = Read-State
+        Assert-NoPendingCopy
         if ($null -eq $state) { throw 'No managed installation. Use -Action Install.' }
         $source = FullPath $PackageRoot
         Assert-SourceOutsideRoot $source
@@ -352,6 +385,7 @@ switch ($Action) {
     'Rollback' {
         Assert-Stopped
         $state = Read-State
+        Assert-NoPendingCopy
         if ($null -eq $state) { throw 'No managed installation.' }
         if (-not $TargetFolder) { throw 'Specify -TargetFolder from -Action List.' }
         if ($TargetFolder -eq $state.active) { throw 'That version is active.' }
@@ -368,6 +402,7 @@ switch ($Action) {
     'Uninstall' {
         Assert-Stopped
         $state = Read-State
+        Assert-NoPendingCopy
         Assert-NoLegacy $state
         if ($null -eq $state) { Write-Output 'No managed candidate installed.'; break }
         Assert-OwnedShortcut $state
@@ -384,4 +419,7 @@ switch ($Action) {
         Write-Output 'Removed managed binaries and shortcut. Private profile and trading data were preserved.'
         break
     }
+}
+} finally {
+    if ($null -ne $lifecycleLock) { $lifecycleLock.Dispose() }
 }

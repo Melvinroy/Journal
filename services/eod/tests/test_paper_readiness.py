@@ -213,6 +213,47 @@ def test_backup_restores_all_evidence_without_mutating_original(tmp_path):
     with pytest.raises(PaperSafetyError): store.backup(restored)
 
 
+def test_future_paper_store_schema_is_rejected_without_creating_tables(tmp_path):
+    path = tmp_path / "future-ledger.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE future_only (note TEXT NOT NULL)")
+        db.execute("INSERT INTO future_only VALUES ('preserve-me')")
+        db.execute("PRAGMA user_version=2")
+    original = path.read_bytes()
+
+    with pytest.raises(PaperSafetyError, match="newer than this application"):
+        with PaperStore(path).transaction():
+            pass
+
+    with sqlite3.connect(path) as db:
+        tables = {row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        assert tables == {"future_only"}
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("SELECT note FROM future_only").fetchone()[0] == "preserve-me"
+    assert path.read_bytes() == original
+
+
+def test_paper_store_upgrade_backup_precedes_schema_changes(tmp_path):
+    path = tmp_path / "old-ledger.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE legacy_only (note TEXT NOT NULL)")
+        db.execute("INSERT INTO legacy_only VALUES ('preserve-me')")
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 0
+
+    with PaperStore(path).transaction() as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("SELECT note FROM legacy_only").fetchone()[0] == "preserve-me"
+    backups = list(tmp_path.glob("old-ledger.sqlite3.pre-v1.*.bak"))
+    assert len(backups) == 1
+    with sqlite3.connect(backups[0]) as db:
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 0
+        assert {row[0] for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")} == {"legacy_only"}
+        assert db.execute("SELECT note FROM legacy_only").fetchone()[0] == "preserve-me"
+
+
 def test_target_amendment_retains_approval_and_never_runs(service):
     service.authenticated("owner")
     prior = {"id": "historical", "userId": "owner", "accountBinding": service.client.config.binding(), "target": 200, "completed": 1, "state": "Halted"}
