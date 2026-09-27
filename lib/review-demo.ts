@@ -4,6 +4,23 @@ export function demoStorageKey(key: string, demo: boolean) {
   return demo ? `brontide-demo-review:${key}` : key;
 }
 
+export const STANDALONE_SAMPLE_SCOPE = "standalone-sample-v1";
+
+export function standaloneSampleScope(profileId: string | null) {
+  return profileId === null
+    ? `${STANDALONE_SAMPLE_SCOPE}:anonymous-preview`
+    : `${STANDALONE_SAMPLE_SCOPE}:profile:${encodeURIComponent(profileId)}`;
+}
+
+export function isStandaloneSampleScope(scope: string) {
+  return scope.startsWith(`${STANDALONE_SAMPLE_SCOPE}:`);
+}
+
+export function standaloneSampleStorageKey(key: string, scope: string) {
+  if (!isStandaloneSampleScope(scope)) throw new Error("Invalid standalone sample scope");
+  return `brontide-${scope}:${key}`;
+}
+
 export const SAMPLE_PLANS: Plan[] = [
   {
     id: "sample-nvda", name: "Sample breakout", symbol: "NVDA", side: "Long",

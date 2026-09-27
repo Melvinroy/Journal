@@ -113,7 +113,7 @@ class PaperTestSessions:
                 return {"id": session_id, "target": session["target"], "state": session["state"]}
             owned = {a["campaignId"] for a in session.get("attempts", [])}
             historical = [json.loads(row[0]) for row in db.execute("SELECT body FROM objects WHERE kind='campaign'")]
-            baseline = sum(c["id"] not in owned and c["accountBinding"] == session["accountBinding"] and c["state"] == "Closed" and summarize(c)["entered"] > 0 and summarize(c)["costsComplete"] for c in historical)
+            baseline = sum(c["id"] not in owned and c["accountBinding"] == session["accountBinding"] and c["state"] == "Closed" and summarize(c)["entered"] > 0 and summarize(c)["costsComplete"] and summarize(c)["accountingComplete"] for c in historical)
             total = session["completed"] - session.get("baselineCompleted", 0) + baseline
             if session["state"] not in {"Halted", "Paused"} or isinstance(target, bool) or not isinstance(target, int) or not max(1, total) <= target <= min(30, session["target"]):
                 raise PaperSafetyError("Only a halted or paused session may reduce its target, to at most 30 and no less than completed trades.")
@@ -184,7 +184,7 @@ class PaperTestSessions:
             # after every old campaign is economically complete and cleared.
             campaigns = {c["id"]: c for c in s.store.all("campaign")}
             if any(c["state"] not in {"Closed", "Cancelled"} or
-                   (c["state"] == "Closed" and not summarize(c)["costsComplete"]) for c in campaigns.values()):
+                   (c["state"] == "Closed" and (not summarize(c)["costsComplete"] or not summarize(c)["accountingComplete"])) for c in campaigns.values()):
                 raise PaperSafetyError("Close and reconcile every campaign before approving the repaired source.")
             if any((a["campaignId"] not in campaigns and not self.rejected(a)) or any(v["state"] == "pending" for v in a.get("actions", {}).values()) for a in session["attempts"]):
                 raise PaperSafetyError("Uncertain session operations block source approval.")
@@ -246,7 +246,7 @@ class PaperTestSessions:
                 if c["state"] in {"Needs reconciliation", "Unprotected"}: raise PaperSafetyError(c.get("message") or "Campaign protection failed.")
                 if any(a["state"] == "pending" for a in attempt.get("actions", {}).values()): raise PaperSafetyError("Session action outcome requires reconciliation.")
                 if c["state"] == "Closed":
-                    if not result["costsComplete"]:
+                    if not result["costsComplete"] or not result["accountingComplete"]:
                         raise PaperSafetyError("Closed campaign is missing accounting evidence; await fees before continuing.")
                     if result["entered"] > 0 and result["entered"] == result["exited"] and result["openQuantity"] == 0:
                         completed += 1

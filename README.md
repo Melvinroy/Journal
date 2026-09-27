@@ -1,134 +1,61 @@
 # Brontide
 
-UI review: [recovered views, validation evidence and limitations](docs/UI_RECOVERY_REVIEW.md).
-
-Development: [six-phase execution plan](docs/EXECUTION_PLAN.md) · [Windows Codex handoff](docs/WINDOWS_CODEX_HANDOFF.md) · [E1 validation](docs/EXECUTION_E1_VALIDATION.md) · [E2–E5 implementation and remaining validation](docs/RESEARCH_AND_TRADING.md).
-
 <p align="center">
   <img src="public/og.png" alt="Brontide — Review clearly. Trade deliberately." width="100%" />
 </p>
 
-<p align="center">
-  An open-source trading system for catalyst discovery, charting, risk-aware execution and post-trade learning.
-</p>
+<p align="center"><strong>Plan deliberately. Track every position. Learn from every trade.</strong></p>
 
-<p align="center">
-  <a href="https://melvinroy.github.io/Journal/?demo=1"><strong>Explore the live demo</strong></a>
-  ·
-  <a href="docs/SELF_HOSTING.md">Self-host in five minutes</a>
-  ·
-  <a href="SECURITY.md">Security model</a>
-</p>
+Brontide is an open-source, local-first trading workspace. The modular desktop direction starts with **Trading** and **Journal** over one execution record. It reuses the existing planner, position management and Journal interface rather than rebuilding them as separate apps.
 
-<p align="center">
-  <img alt="GitHub Pages" src="https://img.shields.io/github/actions/workflow/status/Melvinroy/Journal/deploy.yml?branch=main&label=GitHub%20Pages&style=flat-square" />
-  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-16794d?style=flat-square" />
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-111b17?style=flat-square" />
-  <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Auth%20%2B%20Postgres-3FCF8E?style=flat-square" />
-</p>
+> **Release status:** the modular Windows build is an **unsigned, execution-locked engineering candidate**. There is no public broker-enabled installer or one-command download yet. The historical paper acceptance count is **2/30**; the repaired protection path still needs broker verification. Do not use this candidate for live orders.
 
-## See your edge, not just your P&L
+## Start here
 
-<p align="center">
-  <img src="docs/images/dashboard.jpg" alt="Brontide dashboard showing an equity curve, R-multiple distribution and recent trades" width="100%" />
-</p>
-
-- **Cumulative equity curve** in dollars or R
-- **Continuous realized-R histogram** with exact individual-trade markers
-- **Risk-aware journaling** with planned R:R, dollar risk and automatic realized R
-- **Date-range analytics** for 30 days, 90 days, year-to-date and all time
-- **Private cloud synchronization** across devices
-- **Secure email authentication** and password recovery
-- **Responsive one-screen workstation** for desktop, tablet and mobile
-- **Built-in demo mode** with realistic sample trades
-- **Dual-cap position sizing** using account risk and maximum symbol allocation
-
-## Trade, Catalyst, Scans, Backtest and Journal workspace
-
-The signed-in application has five primary tabs:
-
-- **Journal** — private trades, equity curve, realized-R distribution and setup performance
-- **Catalyst** — Today / 3-day / 5-day signal windows, bullish and bearish leadership, theme concentration, searchable canonical inventory and ticker drill-down
-- **Scans** — date-filtered EP contraction candidates from the current 2× volume-expansion research rule
-- **Backtest** — strategy registry, comparison metrics, rule definitions and plain-language interpretation
-- **Trade** — compact long/short position sizing, Low-of-Day or manual stops, persistent risk defaults and a staged post-fill exit plan
-
-The Catalyst dashboard reads the de-duplicated Table 3 feed from the read-only `catalyst_dashboard_rows` view. If that optional feed has not been installed or populated in a self-hosted Supabase project, the Journal remains fully operational and the Catalyst tab shows a clear unavailable state.
-
-## Trade execution roadmap
-
-- **Phase 1 — Planner:** calculate integer shares from the smaller of the risk-based and allocation-based limits; save preferences and trade plans locally. No broker order is sent.
-- **Phase 2 — IBKR entry:** connect through the TWS API, load account and market data, preview orders and submit an entry with one full-position protective stop.
-- **Phase 3 — Post-fill management:** respond to confirmed executions, create profit-taking and runner orders, resize remaining protection after fills and reconcile broker state after reconnects.
-
-The multi-exit plan is deliberately not attached to the entry in Phase 1. It is staged for deployment only after a confirmed fill.
-
-## Local end-of-day market data
-
-The Phase 2 data service lives in [`services/eod`](services/eod). It keeps Alpaca credentials off the public site, discovers the active U.S. equity universe, retrieves completed daily consolidated SIP bars, validates OHLCV and stores the canonical result in a local DuckDB database. The public demo continues to use sample bars when no local service is configured.
-
-[Open the EOD service setup guide →](services/eod/README.md)
-
-## Your deployment. Your data.
-
-Every self-hosted installation uses its own GitHub Pages website and its own Supabase project. No trades pass through a shared application server.
-
-| Layer | Purpose |
+| You want to… | Use this path |
 | --- | --- |
-| Next.js static frontend | Dashboard, charts and trade logging |
-| GitHub Pages | Free public hosting for the application |
-| Supabase Auth | Account creation, sessions and recovery |
-| Supabase Postgres | Private trade storage |
-| Row-Level Security | Ensures each account can access only its own trades |
+| See the current local candidate | [Candidate installation and limits](docs/trading/CANDIDATE_INSTALL.md) |
+| Recover from a locked session or failed local update | [Local recovery guide](docs/trading/LOCAL_RECOVERY.md) |
+| Understand what is built and what is still gated | [Modular product plan](docs/trading-modular-product-plan.md) |
+| Review paper-trading evidence | [Trading acceptance matrix](docs/trading/IBKR_PAPER_ACCEPTANCE_QC.md) |
+| Contribute to the existing web app | [Local verification guide](docs/testing/local-verification.md) |
 
-The browser receives only a Supabase **publishable key**. Database passwords, secret keys and service-role credentials are never placed in the application.
+Once a signed, qualified release exists, this section will have **one primary Windows download** and a copyable install command for the same versioned artifact. We will not point an install command at an unsigned development build or an automatically changing branch.
 
-## Self-host your journal
+## The intended experience
 
-1. Select **Fork** at the top of this repository.
-2. Create a free [Supabase project](https://supabase.com/dashboard/new).
-3. Run the included database installer once.
-4. Add your Supabase URL and publishable key as GitHub repository variables.
-5. Configure the GitHub Pages address in Supabase Auth.
-6. Enable GitHub Pages using **GitHub Actions**.
+1. Install Brontide for Windows and open it from your own desktop. The interface runs in your local browser; your private service binds only to `127.0.0.1`.
+2. Choose **Trading** or **Journal**. Journal recording continues even when you are looking at Trading.
+3. Use **Connect** to confirm the local TWS API prerequisites and the exact account and paper/live environment. Sign in to IBKR through TWS; Brontide never asks for your IBKR password.
+4. Save a plan, review its exact terms and explicitly confirm an entry. Confirmed executions, exits and fees update Positions and Journal from the same ledger.
 
-A new fork without configuration opens the visual **Owner Setup** assistant instead of showing a broken login page.
+Steps 3–4 describe the **target product**, not a claim that this candidate can submit orders. The current candidate offers the reused views in a locked sample mode. Connection qualification, operational security proof and broker acceptance remain open.
 
-[Open the complete self-hosting guide →](docs/SELF_HOSTING.md)
+## What is available now
 
-<p align="center">
-  <img src="docs/images/setup.jpg" alt="Guided owner setup assistant" width="100%" />
-</p>
+| Area | Current state |
+| --- | --- |
+| Existing Plan, Positions and Journal UI | Reused in the modular standalone route. |
+| Local browser session | One-use launcher authorization, exact loopback Host/Origin checks and HttpOnly session cookie; no broker authority. |
+| Local view preference | Stored separately under the Windows user's local profile; no legacy records are silently imported. |
+| Paper execution service | Existing safeguarded implementation, still subject to its submission lock and feature limits. |
+| Broker setup and public installer | In progress; no public trading release. |
+| Shorts, GTC, overnight and four populated exit legs | Full-planner targets. Execution remains blocked pending implementation and qualification. |
 
-## Database upgrades
+The independent [feature inventory and architecture contracts](docs/trading/MODULAR_CONTRACTS.md) separate visible planning controls from executable broker support. Automated fixtures and a sample screen cannot substitute for a paper-broker acknowledgement.
 
-The schema is versioned under `supabase/migrations/`. The initial migration creates the trade table, index, trigger and ownership policies. Future versions add new timestamped migrations without deleting existing data.
+## Why local first?
 
-For automated upgrades, connect the fork through the Supabase GitHub integration. For local deployment:
+The desktop service can keep its ledger and private state under your Windows account and connect to a TWS instance on the same machine. A static GitHub Pages site can describe or download the app, but it cannot safely act as a remote trading service when your laptop or TWS is off. No cloud subscription is required for the planned standalone session. The existing cloud-backed web workflow remains separate during migration.
 
-```bash
-supabase login
-supabase link --project-ref YOUR_PROJECT_ID
-supabase db push --dry-run
-supabase db push
-```
+Brontide does **not** bundle IBKR's API SDK in its candidate package. Users must review the vendor's terms and install a supported SDK separately when broker setup is eventually enabled. IBKR's [August 2026 changelog](https://www.interactivebrokers.com/docs/tws-api/changelog/2026/8/3) says API 10.49+ is GPL, while its [current download page](https://interactivebrokers.github.io/) still displays a non-commercial agreement that restricts redistribution. The applicable terms for a future public broker-enabled package need clarification; this candidate makes no SDK distribution claim.
 
-## Local development
+## Build and review source
 
-```bash
-git clone https://github.com/YOUR_USERNAME/Journal.git
-cd Journal
-cp .env.example .env.local
-npm ci
-npm run dev
-```
+This repository also contains the earlier multi-workspace web app. See [the execution plan](docs/EXECUTION_PLAN.md), [Windows handoff](docs/WINDOWS_CODEX_HANDOFF.md), [service setup](services/eod/README.md), [legacy self-hosting guide](docs/SELF_HOSTING.md) and [security policy](SECURITY.md). Follow [local verification](docs/testing/local-verification.md) before treating a build as reviewed. `npm run verify` is the full repository check; it does not place broker orders.
 
-Then add your own public Supabase URL and publishable key to `.env.local`.
+The new candidate is built from a Windows x64 checkout with `scripts/package-windows-candidate.ps1` after the repository's Node and private Python build environments are installed. This source-build path is for contributors and is distinct from the eventual one-command end-user installer.
 
-## Contributing
+## Contributing and license
 
-Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before proposing schema or authentication changes.
-
-## License
-
-Released under the [MIT License](LICENSE).
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md). Brontide source is [MIT licensed](LICENSE); the IBKR SDK and bundled third-party dependencies retain their own licenses. Never include credentials, private databases or raw broker callbacks in an issue or pull request.

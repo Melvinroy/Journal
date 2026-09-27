@@ -116,7 +116,9 @@
 .journal-content {font-size:14px;grid-template-columns:minmax(0,1fr);}
 .journal-content :is(button,input,select) {font-size:13px;}
 .journal-content :is(.eyebrow,.sync-state,.chart-summary span,.axis-label) {font-size:12px;}
-.journal-content .topbar {min-width:0;flex-wrap:wrap;gap:12px;}
+.journal-content .topbar {height:auto;min-width:0;flex-wrap:wrap;gap:12px;}
+.journal-content .topbar>div:first-child {min-width:0;}
+.journal-content .topbar h1 {white-space:normal;overflow-wrap:anywhere;}
 .journal-content .header-actions {flex-wrap:wrap;gap:8px;}
 .journal-record-controls {display:flex;flex-wrap:wrap;align-items:end;gap:8px 12px;margin:0 0 12px;min-width:0;}
 .journal-record-controls label {flex:0 1 160px;height:auto;padding:0;border:0;background:none;}

@@ -1,5 +1,5 @@
 """Private SQLite command/event ledger. Durable intent precedes every broker write."""
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import json
 import os
 from pathlib import Path
@@ -25,16 +25,22 @@ class PaperStore:
         db = sqlite3.connect(self.path, timeout=5)
         db.row_factory = sqlite3.Row
         try:
+            if db.execute("PRAGMA user_version").fetchone()[0] > 1:
+                raise PaperSafetyError("Paper database version is newer than this application.")
             db.execute("PRAGMA synchronous=FULL")
+            db.execute("BEGIN IMMEDIATE")
+            # Recheck under the write lock in case another process upgraded it.
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version > 1:
+                raise PaperSafetyError("Paper database version is newer than this application.")
+            if version == 0 and existed:
+                # Capture the original schema and data before any upgrade DDL.
+                self.backup(self.path.with_name(self.path.name + ".pre-v1." + uuid.uuid4().hex + ".bak"))
             db.execute("CREATE TABLE IF NOT EXISTS objects (kind TEXT, id TEXT, body TEXT NOT NULL, PRIMARY KEY(kind,id))")
             db.execute("CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, campaign TEXT, request TEXT NOT NULL, state TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, body TEXT NOT NULL)")
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1: raise PaperSafetyError("Paper database version is newer than this application.")
             if version == 0:
-                if existed: self.backup(self.path.with_name(self.path.name + ".pre-v1." + uuid.uuid4().hex + ".bak"))
                 db.execute("PRAGMA user_version=1")
-            db.execute("BEGIN IMMEDIATE")
             yield db
             db.commit()
         except Exception:
@@ -48,8 +54,8 @@ class PaperStore:
         destination = Path(destination)
         if destination.exists(): raise PaperSafetyError("Backup destination already exists.")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True) as source:
-            with sqlite3.connect(destination) as target:
+        with closing(sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)) as source:
+            with closing(sqlite3.connect(destination)) as target:
                 source.backup(target)
                 if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                     raise PaperSafetyError("Backup integrity verification failed.")

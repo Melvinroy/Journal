@@ -1,0 +1,454 @@
+{
+  "tasks": {
+    "1.1": {
+      "title": "Windows 11 first"
+    },
+    "1.2": {
+      "title": "Trading and Journal views"
+    },
+    "1.3": {
+      "title": "Reuse existing trading logic"
+    },
+    "1.4": {
+      "title": "Local browser and launcher"
+    },
+    "1.5": {
+      "title": "Keep sign-in and records local"
+    },
+    "1.6": {
+      "title": "Confirm paper account before trading"
+    },
+    "1.7": {
+      "title": "One-command installation goal"
+    },
+    "1.8": {
+      "title": "Lock unsupported choices"
+    },
+    "2.1": {
+      "title": "Installed navigation sample",
+      "assessment": "Installed navigation and locks checked",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.2": {
+      "title": "Save visible modules",
+      "assessment": "Preferences persisted through restart",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.3": {
+      "title": "Apply saved view choices",
+      "assessment": "Desktop/mobile view choices checked",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.4": {
+      "title": "Keep recording with Journal hidden",
+      "assessment": "Hidden artificial recording preserved",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.5": {
+      "title": "Verify views after restart",
+      "assessment": "Saved choices and hidden recording verified",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.6": {
+      "title": "Separate samples from account data",
+      "assessment": "Samples and isolated history stay separate",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.7": {
+      "title": "Check standalone isolation",
+      "assessment": "Installed requests stayed local",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.8": {
+      "title": "Remove cloud code from export",
+      "assessment": "Export and installed payload scans passed",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.9": {
+      "title": "Read local history in Journal",
+      "assessment": "Local Journal reads verified",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.10": {
+      "title": "Verify installed Journal",
+      "assessment": "Installed artificial ledger cases passed",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.11": {
+      "title": "Review latest screens",
+      "assessment": "Desktop, mobile and enlarged text checked",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.12": {
+      "title": "Verify uncertain cloud-save states",
+      "assessment": "Uncertain cloud writes preserve recovery",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.13": {
+      "title": "Scan all packaged text assets",
+      "assessment": "Complete packaged text scan passed",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "2.14": {
+      "title": "Save module choice under session lock",
+      "assessment": "Local-session ordering tests passed",
+      "blocker": "None for Phase 2",
+      "next_action": "Keep later broker gates open"
+    },
+    "3.1": {
+      "title": "Install, update and rollback"
+    },
+    "3.2": {
+      "title": "Support spaces and Unicode paths"
+    },
+    "3.3": {
+      "title": "Prevent duplicate engines"
+    },
+    "3.4": {
+      "title": "Reopen browser from console"
+    },
+    "3.5": {
+      "title": "Reopen via second launch"
+    },
+    "3.6": {
+      "title": "Plain-English recovery guide"
+    },
+    "3.7": {
+      "title": "Private support diagnostics"
+    },
+    "3.8": {
+      "title": "Check packaged diagnostics",
+      "assessment": "Source checks; executable untested",
+      "blocker": "Qualified package",
+      "next_action": "Run packaged diagnostics"
+    },
+    "3.9": {
+      "title": "Verify installed second launch",
+      "assessment": "Isolated fixtures passed",
+      "blocker": "Rebuilt installer",
+      "next_action": "Test launch and session cases"
+    },
+    "3.10": {
+      "title": "Test a clean Windows install",
+      "assessment": "Clean install not demonstrated",
+      "blocker": "Candidate and clean Windows user",
+      "next_action": "Install and check private access"
+    },
+    "3.11": {
+      "title": "Verify linked-asset rejection",
+      "assessment": "Focused tests passed",
+      "blocker": "Full checks and new installer",
+      "next_action": "Qualify rebuilt asset boundary"
+    },
+    "3.12": {
+      "title": "Reject unsafe asset references"
+    },
+    "3.13": {
+      "title": "Trusted versioned download",
+      "assessment": "Unsigned local ZIP only",
+      "blocker": "Signing and release approval",
+      "next_action": "Validate approved download"
+    },
+    "3.14": {
+      "title": "Verify record-format migration",
+      "assessment": "Store versions differ",
+      "blocker": "Migration and backup proof",
+      "next_action": "Test transition and rollback"
+    },
+    "3.15": {
+      "title": "Refuse updates over trade data"
+    },
+    "3.16": {
+      "title": "Reject unfamiliar profile contents"
+    },
+    "3.17": {
+      "title": "Validate saved profile files"
+    },
+    "3.18": {
+      "title": "Reopen a consistent backup copy"
+    },
+    "3.19": {
+      "title": "Lock before initializing profile data"
+    },
+    "3.20": {
+      "title": "Create a consistent offline backup"
+    },
+    "4.1": {
+      "title": "Rehearse Connect failure states"
+    },
+    "4.2": {
+      "title": "Read sanitized SDK metadata"
+    },
+    "4.3": {
+      "title": "Detect vulnerable dependency pins"
+    },
+    "4.4": {
+      "title": "Save an exact paper account"
+    },
+    "4.5": {
+      "title": "Report remembered account safely"
+    },
+    "4.6": {
+      "title": "Show remembered choice in Connect"
+    },
+    "4.7": {
+      "title": "Match account on reconnect"
+    },
+    "4.8": {
+      "title": "Bind review to fresh evidence"
+    },
+    "4.9": {
+      "title": "Guard account-review routes"
+    },
+    "4.10": {
+      "title": "Record owner paper reference"
+    },
+    "4.11": {
+      "title": "Bridge exact account identifiers"
+    },
+    "4.12": {
+      "title": "Read-only account discovery"
+    },
+    "4.13": {
+      "title": "Test Journal calculations"
+    },
+    "4.14": {
+      "title": "Keep campaigns and fees separate"
+    },
+    "4.15": {
+      "title": "Protect recorded-history access"
+    },
+    "4.16": {
+      "title": "Share a record across runtimes"
+    },
+    "4.17": {
+      "title": "Read a scoped paper ledger"
+    },
+    "4.18": {
+      "title": "Serve scoped local history"
+    },
+    "4.19": {
+      "title": "Discard stale history reads"
+    },
+    "4.20": {
+      "title": "Prepare a locked private ledger"
+    },
+    "4.21": {
+      "title": "Restrict ledger preparation"
+    },
+    "4.22": {
+      "title": "Read a prepared ledger"
+    },
+    "4.23": {
+      "title": "Retain history across restart"
+    },
+    "4.24": {
+      "title": "Share Position and Journal totals"
+    },
+    "4.25": {
+      "title": "Save account-scoped plans"
+    },
+    "4.26": {
+      "title": "Restore only matching ledger copies"
+    },
+    "4.27": {
+      "title": "Confirm the real paper account",
+      "assessment": "No real account connected",
+      "blocker": "SDK and paper identity proof",
+      "next_action": "Confirm account through Connect"
+    },
+    "4.28": {
+      "title": "Join Trading and Journal records",
+      "assessment": "Fixtures pass; screens unjoined",
+      "blocker": "Ledger and launcher integration",
+      "next_action": "Verify shared installed records"
+    },
+    "4.29": {
+      "title": "Qualify Save plan and Save exits",
+      "assessment": "Source and focused tests ready",
+      "blocker": "Build, browser and ledger gates",
+      "next_action": "Test normal save controls"
+    },
+    "4.30": {
+      "title": "Provision an owner-scoped ledger",
+      "assessment": "Fixture-only ledger preparation",
+      "blocker": "Owner authority and integration",
+      "next_action": "Qualify scoped provisioning"
+    },
+    "4.31": {
+      "title": "Distinguish bounded closures"
+    },
+    "4.32": {
+      "title": "Verify bounded-closure labels",
+      "assessment": "Logic tested; label unobserved",
+      "blocker": "Current browser build",
+      "next_action": "Inspect Position and Journal"
+    },
+    "4.33": {
+      "title": "Keep unsupported orders locked",
+      "assessment": "Locks retained; planner incomplete",
+      "blocker": "Implementation and qualification",
+      "next_action": "Inventory unsupported families"
+    },
+    "4.34": {
+      "title": "Verify owner-reference form",
+      "assessment": "Source ready; UI unverified",
+      "blocker": "Browser, package and owner proof",
+      "next_action": "Verify ordinary Connect form"
+    },
+    "4.35": {
+      "title": "Label history as last known"
+    },
+    "4.36": {
+      "title": "Reject stale plan revisions"
+    },
+    "4.37": {
+      "title": "Reject stale browser writes"
+    },
+    "4.38": {
+      "title": "Reject inconsistent fee and profit data"
+    },
+    "4.39": {
+      "title": "Preserve earlier sale results"
+    },
+    "4.40": {
+      "title": "Recheck discovery eligibility"
+    },
+    "4.41": {
+      "title": "Verify Connect account review",
+      "assessment": "Fixture defects fixed; broker integration pending",
+      "blocker": "Normal launcher evidence provider",
+      "next_action": "Qualify real account-review integration"
+    },
+    "4.42": {
+      "title": "Reject changed owner references"
+    },
+    "4.43": {
+      "title": "Reject matching-mask collisions"
+    },
+    "4.44": {
+      "title": "Enforce plan-store reference checks"
+    },
+    "4.45": {
+      "title": "Invalidate failed account refreshes"
+    },
+    "4.46": {
+      "title": "Reject damaged saved commands"
+    },
+    "4.47": {
+      "title": "Verify Journal timestamp wording",
+      "assessment": "Wording changed in source",
+      "blocker": "Current browser build",
+      "next_action": "Review notice and late-fee warning"
+    },
+    "4.48": {
+      "title": "Reject newer ledger schemas"
+    },
+    "4.49": {
+      "title": "Reject orphan execution events"
+    },
+    "4.50": {
+      "title": "Compare events with cached fills"
+    },
+    "4.51": {
+      "title": "Validate saved fee reports"
+    },
+    "4.52": {
+      "title": "Compare independent account lists"
+    },
+    "4.53": {
+      "title": "Test the evidence-review bridge"
+    },
+    "4.54": {
+      "title": "Review four-share scaling design"
+    },
+    "4.55": {
+      "title": "Reject unknown execution versions"
+    },
+    "4.56": {
+      "title": "Rehearse four-share protection"
+    },
+    "4.57": {
+      "title": "Test uncertain protective-stop writes"
+    },
+    "4.58": {
+      "title": "Require durable execution evidence"
+    },
+    "4.59": {
+      "title": "Read fake-service trades in Journal"
+    },
+    "4.60": {
+      "title": "Wait for protective-stop cancellation"
+    },
+    "4.61": {
+      "title": "Reject unknown saved actions"
+    },
+    "4.62": {
+      "title": "Recheck Journal owner reference"
+    },
+    "4.63": {
+      "title": "Validate saved command structure"
+    },
+    "5.1": {
+      "title": "Draft download instructions"
+    },
+    "5.2": {
+      "title": "Resolve SDK distribution terms",
+      "assessment": "Terms and dependency unresolved",
+      "blocker": "Vendor and dependency resolution",
+      "next_action": "Review exact SDK rights"
+    },
+    "5.3": {
+      "title": "Qualify a signed download",
+      "assessment": "No qualified signed download",
+      "blocker": "Signing and release approval",
+      "next_action": "Test final download and install"
+    },
+    "5.4": {
+      "title": "Approve exact release actions",
+      "assessment": "New release actions unapproved",
+      "blocker": "Exact-version approvals",
+      "next_action": "Review qualified commit"
+    },
+    "6.1": {
+      "title": "Two historical paper round trips"
+    },
+    "6.2": {
+      "title": "Resolve submission policy block",
+      "assessment": "Submission rejected by policy",
+      "blocker": "Independent policy resolution",
+      "next_action": "Obtain legitimate policy decision"
+    },
+    "6.3": {
+      "title": "Qualify paper trading controls",
+      "assessment": "F protection remains failed",
+      "blocker": "Policy and broker acceptance",
+      "next_action": "Run permitted supervised checks"
+    },
+    "6.4": {
+      "title": "Prove final flat and locked state",
+      "assessment": "Final state not proven",
+      "blocker": "Acceptance and reconciliation",
+      "next_action": "Verify flat, cleared and locked"
+    },
+    "6.5": {
+      "title": "Security checks and live decision",
+      "assessment": "Security and live gates open",
+      "blocker": "Desktop and paper qualification",
+      "next_action": "Complete gates; decide live later"
+    }
+  }
+}

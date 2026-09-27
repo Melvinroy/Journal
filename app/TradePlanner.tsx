@@ -27,7 +27,7 @@ import {
   type TrailingRule,
 } from "../lib/trading-domain";
 import { demoPlanningMarketSnapshot, loadPlanningMarketSnapshot, type PlanningMarketSnapshot } from "../lib/planner-market-data";
-import { demoStorageKey as legacyStorageKey } from "../lib/review-demo";
+import { demoStorageKey as legacyStorageKey, isStandaloneSampleScope, standaloneSampleStorageKey } from "../lib/review-demo";
 import {
   resolveExecutionSession,
   sessionDurationOptions,
@@ -44,6 +44,7 @@ import { PaperQuote } from "./PaperQuote";
 import { PaperOrderReview } from "./PaperOrderReview";
 import type { PaperExecution } from "./usePaperExecution";
 import type { PaperTicket } from "../lib/paper-execution";
+import { readLatestLocalPlan, saveLocalPlan } from "../lib/local-private-plan";
 
 import { Disclosure, PlannerWorkspace } from "./WorkspacePresentation";
 
@@ -163,8 +164,8 @@ function trailingFromMode(mode: string): TrailingRule {
   return { mode: "Manual", stopPrice: 1 };
 }
 
-export function TradePlanner({ storageScope = "unlinked", context, onChart, demo=false, paper, positions, positionCount, exposure }: {storageScope?:string;demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;positions?:ReactNode;positionCount?:number;exposure?:ReactNode}) {
-  const demoStorageKey = (key: string, simulation: boolean) => simulation ? legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
+export function TradePlanner({ storageScope = "unlinked", context, onChart, demo=false, paper, privatePlanRequired=false, privatePlan, positions, positionCount, exposure }: {storageScope?:string;demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;privatePlanRequired?:boolean;privatePlan?:{scopeId:string;csrf:string;ready:boolean};positions?:ReactNode;positionCount?:number | null;exposure?:ReactNode}) {
+  const demoStorageKey = (key: string, simulation: boolean) => simulation ? isStandaloneSampleScope(storageScope) ? standaloneSampleStorageKey(key, storageScope) : legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
   const [importEpoch, setImportEpoch] = useState(0);
   const initialSnapshot = demo ? demoPlanningMarketSnapshot("NVDA") : null;
   const [symbol, setSymbol] = useState("NVDA");
@@ -212,11 +213,53 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
   const [triggerPrice, setTriggerPrice] = useState(0);
   const [planRevision, setPlanRevision] = useState("");
   const [savedPlan, setSavedPlan] = useState<PlannerDraft | null>(null);
+  const [privateLoad, setPrivateLoad] = useState<"checking" | "ready" | "unavailable">("checking");
+  const [privateMessage, setPrivateMessage] = useState("");
+  const [privateSaving, setPrivateSaving] = useState(false);
+  const restoredPrivateScope = useRef<string | null>(null);
+  const privateWrite = useRef<AbortController | null>(null);
+  const privateSaveUncertain = useRef(false);
+  const privateEditGeneration = useRef(0);
+  const [privateRefreshEpoch, setPrivateRefreshEpoch] = useState(0);
+
+  function restoreSnapshot(draft: PlannerDraft) {
+    setSavedPlan(draft.schemaVersion === 2 ? structuredClone(draft) : null);
+    if (draft.planId) planIdentity.current = draft.planId;
+    if (["Regular", "RegularExtended", "Overnight", "OvernightDay"].includes(String(draft.sessionMode))) setSessionMode(draft.sessionMode!);
+    if (["DAY", "GTC"].includes(String(draft.duration))) setDuration(draft.duration!);
+    if (["STP", "STP LMT"].includes(String(draft.protectionOrderType))) setProtectionOrderType(draft.protectionOrderType!);
+    if (Number(draft.protectionLimitPrice) > 0) setProtectionLimitPrice(Number(draft.protectionLimitPrice));
+    if (draft.symbol) setSymbol(draft.symbol);
+    if (["Limit", "Normal", "Breakout"].includes(draft.executionMethod ?? "")) setExecutionMethod(draft.executionMethod!);
+    setExecutionQuantity(draft.executionQuantity ?? 0); setHardCap(draft.hardCap ?? 0); setTriggerPrice(draft.triggerPrice ?? 0);
+    setPlanRevision(draft.planRevision ?? "legacy");
+    if (draft.side === "Long" || draft.side === "Short") setSide(draft.side);
+    if (Number(draft.entryPrice) > 0) setEntryPrice(Number(draft.entryPrice));
+    if (Number(draft.stopPrice) > 0) setStopPrice(Number(draft.stopPrice));
+    if (["ATR", "LoD", "HoD", "Manual"].includes(String(draft.stopSource))) setStopSource(draft.stopSource!);
+    if (Number(draft.atrMultiplier) > 0) setAtrMultiplier(Number(draft.atrMultiplier));
+    if (draft.capturedEntrySource) setCapturedEntrySource(draft.capturedEntrySource);
+    else setCapturedEntrySource({ source: "Legacy", observedAt: String(draft.savedAt ?? new Date(0).toISOString()) });
+    if (draft.marketSnapshot) setMarketLoad({ state: "ready", snapshot: draft.marketSnapshot });
+    else setMarketLoad({ state: "legacy", error: "This saved draft has no recorded market-data source." });
+    if (Number(draft.accountEquity) > 0) setAccountEquity(Number(draft.accountEquity));
+    if (RISK_OPTIONS.includes(Number(draft.riskPercent) as (typeof RISK_OPTIONS)[number])) setRiskPercent(Number(draft.riskPercent));
+    if (ALLOCATION_OPTIONS.includes(Number(draft.maxAllocationPercent) as (typeof ALLOCATION_OPTIONS)[number])) setMaxAllocationPercent(Number(draft.maxAllocationPercent));
+    const restoredExits = draft.exitPlan && "schemaVersion" in draft.exitPlan
+      ? validateExitPlan(draft.exitPlan) : legacyExitPlan(draft.exitPlan);
+    if (restoredExits) {
+      setExitPlan(restoredExits);
+      if (privatePlanRequired) { setAfterFillStaged(true); setExitPlanDirty(false); }
+    }
+    setStageState("staged");
+    restoredDraft.current = true;
+  }
 
   useEffect(() => setContextImportPending(false), [context]);
   useModalAccessibility(settingsOpen, settingsRef, () => setSettingsOpen(false));
 
   useEffect(() => {
+    if (privatePlanRequired) return;
     try {
       const savedSettings = window.localStorage.getItem(demoStorageKey(SETTINGS_KEY,demo));
       if (savedSettings) {
@@ -246,32 +289,8 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
       const savedDraft = window.localStorage.getItem(demoStorageKey(DRAFT_KEY,demo));
       if (savedDraft) {
         const draft = JSON.parse(savedDraft) as PlannerDraft;
-        setSavedPlan(draft.schemaVersion === 2 ? structuredClone(draft) : null);
-        if (draft.planId) planIdentity.current = draft.planId;
-        if (["Regular", "RegularExtended", "Overnight", "OvernightDay"].includes(String(draft.sessionMode))) setSessionMode(draft.sessionMode!);
-        if (["DAY", "GTC"].includes(String(draft.duration))) setDuration(draft.duration!);
-        if (["STP", "STP LMT"].includes(String(draft.protectionOrderType))) setProtectionOrderType(draft.protectionOrderType!);
-        if (Number(draft.protectionLimitPrice) > 0) setProtectionLimitPrice(Number(draft.protectionLimitPrice));
-        if (draft.symbol) setSymbol(draft.symbol);
-        if (["Limit", "Normal", "Breakout"].includes(draft.executionMethod ?? "")) setExecutionMethod(draft.executionMethod!);
-        setExecutionQuantity(draft.executionQuantity ?? 0); setHardCap(draft.hardCap ?? 0); setTriggerPrice(draft.triggerPrice ?? 0);
-        setPlanRevision(draft.planRevision ?? "legacy");
-        if (draft.side === "Long" || draft.side === "Short") setSide(draft.side);
-        if (Number(draft.entryPrice) > 0) setEntryPrice(Number(draft.entryPrice));
-        if (Number(draft.stopPrice) > 0) setStopPrice(Number(draft.stopPrice));
-        if (["ATR", "LoD", "HoD", "Manual"].includes(String(draft.stopSource))) setStopSource(draft.stopSource!);
-        if (Number(draft.atrMultiplier) > 0) setAtrMultiplier(Number(draft.atrMultiplier));
-        if (draft.capturedEntrySource) setCapturedEntrySource(draft.capturedEntrySource);
-        else setCapturedEntrySource({ source: "Legacy", observedAt: String((draft as { savedAt?: string }).savedAt ?? new Date(0).toISOString()) });
-        if (draft.marketSnapshot) setMarketLoad({ state: "ready", snapshot: draft.marketSnapshot });
-        else setMarketLoad({ state: "legacy", error: "This saved draft has no recorded market-data source." });
-        if (Number(draft.accountEquity) > 0) setAccountEquity(Number(draft.accountEquity));
-        if (RISK_OPTIONS.includes(Number(draft.riskPercent) as (typeof RISK_OPTIONS)[number])) setRiskPercent(Number(draft.riskPercent));
-        if (ALLOCATION_OPTIONS.includes(Number(draft.maxAllocationPercent) as (typeof ALLOCATION_OPTIONS)[number])) setMaxAllocationPercent(Number(draft.maxAllocationPercent));
-        if (draft.exitPlan && "schemaVersion" in draft.exitPlan) hydratedExitPlan = validateExitPlan(draft.exitPlan);
-        else hydratedExitPlan = legacyExitPlan(draft.exitPlan);
-        setStageState("staged");
-        restoredDraft.current = true;
+        hydratedExitPlan = null;
+        restoreSnapshot(draft);
       }
       if (hydratedExitPlan) setExitPlan(hydratedExitPlan);
     } catch {
@@ -279,7 +298,67 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
     } finally {
       setHydrated(true);
     }
-  }, [demo, storageScope, importEpoch]);
+  }, [demo, storageScope, importEpoch, privatePlanRequired]);
+
+  useEffect(() => {
+    if (!privatePlanRequired) return;
+    if (!privatePlan) {
+      setPrivateLoad("unavailable");
+      setPrivateMessage("Private paper-plan storage has not been verified for this account.");
+      return;
+    }
+    if (!privatePlan.ready) {
+      setPrivateLoad("checking");
+      return;
+    }
+    if (privateSaveUncertain.current) {
+      setPrivateLoad("unavailable");
+      setPrivateMessage("A private save was interrupted. Reopen the saved plan before editing or saving again.");
+      return;
+    }
+    if (restoredPrivateScope.current === privatePlan.scopeId) {
+      setPrivateLoad("ready");
+      return;
+    }
+    const controller = new AbortController();
+    setPrivateLoad("checking");
+    setPrivateMessage("");
+    (async () => {
+      const latest = await readLatestLocalPlan(privatePlan.csrf, privatePlan.scopeId, controller.signal);
+      if (controller.signal.aborted) return;
+      if (latest) restoreSnapshot(latest.savedPlan as unknown as PlannerDraft);
+      else {
+        setSavedPlan(null);
+        setStageState("draft");
+        setAfterFillStaged(false);
+      }
+      restoredPrivateScope.current = privatePlan.scopeId;
+      setPrivateLoad("ready");
+      setHydrated(true);
+    })().catch(() => {
+      if (controller.signal.aborted) return;
+      setPrivateLoad("unavailable");
+      setPrivateMessage("Saved private plan could not be verified. No sample draft was substituted.");
+    });
+    return () => controller.abort();
+  }, [privatePlanRequired, privatePlan?.scopeId, privatePlan?.csrf, privatePlan?.ready, privateRefreshEpoch]);
+
+  useEffect(() => () => {
+    if (privateWrite.current) {
+      privateSaveUncertain.current = true;
+      restoredPrivateScope.current = null;
+      privateWrite.current.abort();
+    }
+  },
+    [privatePlan?.scopeId, privatePlan?.csrf, privatePlan?.ready]);
+
+  useEffect(() => {
+    if (!privatePlanRequired || !privatePlan?.ready || privateLoad !== "ready") return;
+    const presets = readExitPlanPresetStore(
+      window.localStorage, demoStorageKey(EXIT_PRESET_KEY, false));
+    if (presets.ok) { setPresetStore(presets.store); setPresetRaw(presets.raw); }
+    else setExitMessage(presets.error);
+  }, [privatePlanRequired, privatePlan?.scopeId, privatePlan?.ready, privateLoad, storageScope]);
 
   useEffect(() => {
     if (!hydrated || restoredDraft.current) return;
@@ -382,8 +461,12 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
     setAccountEquity(settings.accountEquity);
     setRiskPercent(settings.riskPercent);
     setMaxAllocationPercent(settings.maxAllocationPercent);
-    window.localStorage.setItem(demoStorageKey(SETTINGS_KEY,demo), JSON.stringify(settings));
-    window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
+    if (privatePlanRequired) {
+      setPrivateMessage("Risk settings changed in this draft. Save the plan privately to keep them.");
+    } else {
+      window.localStorage.setItem(demoStorageKey(SETTINGS_KEY,demo), JSON.stringify(settings));
+      window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
+    }
     setStageState("draft");
     setSettingsOpen(false);
   }
@@ -426,8 +509,17 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
     setStopSource("Manual");
   }
 
-  function stageEntry() {
+  async function stageEntry() {
     if (!result.valid) return;
+    if (privatePlanRequired && (capturedEntrySource.source === "Simulated fixture" ||
+        marketLoad.snapshot?.status === "sample")) {
+      setPrivateMessage("Sample market data cannot be saved for a paper account. Enter a real planning source.");
+      return;
+    }
+    if (privatePlanRequired && (!privatePlan?.ready || privateLoad !== "ready" || privateSaving || privateWrite.current)) {
+      setPrivateMessage("Private account scope is unavailable. Plan changes remain unsaved.");
+      return;
+    }
     if (!planIdentity.current) planIdentity.current = crypto.randomUUID();
     const revision = crypto.randomUUID();
     const snapshot = {
@@ -446,22 +538,61 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
       sessionPolicy: sessionSelection.policy,
       savedAt: new Date().toISOString(),
     };
-    window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify(snapshot));
+    if (privatePlanRequired) {
+      const controller = new AbortController();
+      const editGeneration = privateEditGeneration.current;
+      privateWrite.current = controller;
+      setPrivateSaving(true);
+      try {
+        await saveLocalPlan(privatePlan!.csrf, privatePlan!.scopeId, snapshot,
+          savedPlan?.planId === snapshot.planId ? savedPlan.planRevision ?? null : null,
+          savedPlan?.planRevision ?? null, controller.signal);
+        if (controller.signal.aborted) return;
+        if (privateEditGeneration.current !== editGeneration) {
+          setSavedPlan(snapshot);
+          setPlanRevision(revision);
+          setPrivateMessage("The earlier plan revision was saved privately. Your newer edits are still a draft; save them separately.");
+          return;
+        }
+        setPrivateMessage("Plan saved in this paper account's private records. Broker review remains locked.");
+      } catch {
+        if (controller.signal.aborted) return;
+        setPrivateLoad("unavailable");
+        setPrivateMessage("Plan save outcome is unconfirmed. Reopen this account's saved plan before trying again; no order was sent.");
+        return;
+      } finally {
+        if (privateWrite.current === controller) privateWrite.current = null;
+        setPrivateSaving(false);
+      }
+    } else window.localStorage.setItem(demoStorageKey(DRAFT_KEY,demo), JSON.stringify(snapshot));
     setSavedPlan(JSON.parse(JSON.stringify(snapshot)));
     setStageState("staged");
+    if (privatePlanRequired) { setAfterFillStaged(true); setExitPlanDirty(false); }
     setPlanRevision(revision);
     setBrokerIntentCheck({ state: "unchecked", message: "Saved locally. Broker validation has not run and no order was submitted." });
   }
 
   function cancelStage() {
-    window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
+    if (privatePlanRequired) {
+      privateEditGeneration.current += 1;
+      setAfterFillStaged(false);
+      setExitPlanDirty(true);
+      setPrivateMessage("Editing this draft. The previous private revision remains saved; current fields are unsaved.");
+    }
+    if (!privatePlanRequired) window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
     setStageState("draft");
     restoredDraft.current = false;
   }
 
   function editPlan() {
+    if (privatePlanRequired) {
+      privateEditGeneration.current += 1;
+      setAfterFillStaged(false);
+      setExitPlanDirty(true);
+      setPrivateMessage("Current plan edits are unsaved. The previous private revision remains saved.");
+    }
     if (stageState !== "staged") return;
-    window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
+    if (!privatePlanRequired) window.localStorage.removeItem(demoStorageKey(DRAFT_KEY,demo));
     setStageState("draft");
     setBrokerIntentCheck({ state: "unchecked", message: "Plan changed. Save and validate the new revision before any submission review." });
   }
@@ -501,6 +632,10 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
   }
 
   function editExitPlan(next: ExitPlanDefinition) {
+    if (privatePlanRequired) {
+      privateEditGeneration.current += 1;
+      setPrivateMessage("Current exit edits are unsaved. The previous private revision remains saved.");
+    }
     setExitPlan(next); setExitPlanDirty(true); setExitMessage("");
   }
 
@@ -512,8 +647,44 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
     editExitPlan({ ...exitPlan, legs: exitPlan.legs.map((leg, legIndex) => legIndex === index ? next : leg) });
   }
 
-  function stageAfterFill() {
+  async function stageAfterFill() {
     if (exitState.error) { setExitMessage(exitState.error); return; }
+    if (privatePlanRequired) {
+      if (!privatePlan?.ready || privateLoad !== "ready" || privateSaving || privateWrite.current ||
+          stageState !== "staged" || !savedPlan?.planRevision) {
+        setExitMessage("Save the private plan first; the account scope must be verified before saving exits.");
+        return;
+      }
+      const revision = crypto.randomUUID();
+      const snapshot = { ...savedPlan, exitPlan, planRevision: revision,
+        savedAt: new Date().toISOString() } as PlannerDraft;
+      const controller = new AbortController();
+      const editGeneration = privateEditGeneration.current;
+      privateWrite.current = controller;
+      setPrivateSaving(true);
+      try {
+        await saveLocalPlan(privatePlan.csrf, privatePlan.scopeId, snapshot,
+          savedPlan.planRevision, savedPlan.planRevision, controller.signal);
+        if (controller.signal.aborted) return;
+        setSavedPlan(snapshot);
+        setPlanRevision(revision);
+        if (privateEditGeneration.current !== editGeneration) {
+          setExitMessage("The earlier exit revision was saved privately. Your newer exit edits remain unsaved.");
+          return;
+        }
+        setAfterFillStaged(true);
+        setExitPlanDirty(false);
+        setExitMessage("Exit-plan revision saved privately. No broker action was applied.");
+      } catch {
+        if (controller.signal.aborted) return;
+        setPrivateLoad("unavailable");
+        setExitMessage("Exit-plan save outcome is unconfirmed. Reopen the account's saved plan before trying again; no order was sent.");
+      } finally {
+        if (privateWrite.current === controller) privateWrite.current = null;
+        setPrivateSaving(false);
+      }
+      return;
+    }
     try {
       const revision = crypto.randomUUID();
       const savedEntry = window.localStorage.getItem(demoStorageKey(DRAFT_KEY,demo));
@@ -528,11 +699,19 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
   }
 
   function cancelAfterFill() {
-    window.localStorage.removeItem(demoStorageKey(AFTER_FILL_KEY,demo));
-    setAfterFillStaged(false); setExitPlanDirty(false); setExitMessage("Saved exit plan removed. Current fields remain an unsaved draft.");
+    if (privatePlanRequired) privateEditGeneration.current += 1;
+    if (!privatePlanRequired) window.localStorage.removeItem(demoStorageKey(AFTER_FILL_KEY,demo));
+    setAfterFillStaged(false); setExitPlanDirty(privatePlanRequired);
+    setExitMessage(privatePlanRequired
+      ? "Editing exits. The previous private revision remains saved until a new revision is confirmed."
+      : "Saved exit plan removed. Current fields remain an unsaved draft.");
   }
 
   function persistPresets(nextPresets: readonly ExitPlanPreset[]) {
+    if (privatePlanRequired && (!privatePlan?.ready || privateLoad !== "ready")) {
+      setExitMessage("Private account scope is unavailable. Preset changes were not saved.");
+      return false;
+    }
     const nextStore: ExitPlanPresetStore = { schemaVersion: EXIT_PLAN_SCHEMA_VERSION, presets: nextPresets };
     const written = writeExitPlanPresetStore(window.localStorage, demoStorageKey(EXIT_PRESET_KEY,demo), presetRaw, nextStore);
     if (!written.ok) { setExitMessage(written.error); return false; }
@@ -570,6 +749,28 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
     } catch (error) { setExitMessage((error as Error).message); }
   }
 
+  const privateActionsReady = !privatePlanRequired || Boolean(
+    privatePlan?.ready && privateLoad === "ready" && !privateSaving && !privateWrite.current);
+
+  if (privatePlanRequired && (!privatePlan?.ready || privateLoad !== "ready")) {
+    const checking = privateLoad === "checking";
+    return <section className="trade-planner" aria-label="Private paper plan locked">
+      <PlannerWorkspace positions={positions} count={positionCount} exposure={exposure} scope={storageScope}>
+      <h1>Private paper plan locked</h1>
+      <p className="workspace-notice" role={checking ? "status" : "alert"}>{checking
+        ? "Checking this account, its saved history and private plan. Plan fields are hidden until their scope is verified again."
+        : !privatePlan?.ready ? "The account scope or saved history is unavailable. Former plan fields remain hidden."
+          : privateMessage || "The saved private plan is unavailable. Plan fields remain hidden."} No order can be reviewed or submitted.</p>
+      {privatePlan?.ready && privateLoad === "unavailable" && <button type="button" className="secondary-button" onClick={() => {
+        privateSaveUncertain.current = false;
+        restoredPrivateScope.current = null;
+        setPrivateLoad("checking");
+        setPrivateRefreshEpoch(value => value + 1);
+      }}>Reopen saved plan</button>}
+      </PlannerWorkspace>
+    </section>;
+  }
+
   return (
     <div className="trade-planner">
       <BrokerConnection paper={paper} demo={demo} />
@@ -582,30 +783,36 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
           <button type="button" onClick={openSettings}>Change</button>
         </div>
       </header>
+      {privatePlanRequired && <p className="workspace-notice" role={privateLoad === "unavailable" ? "alert" : "status"}>
+        {privateSaving ? "Saving this account's private plan…" :
+          privateLoad === "checking" ? "Checking this account's private plan. Saving is locked until the check finishes." :
+          privateLoad === "unavailable" ? privateMessage || "Private plan storage is unavailable. Your current edits are unsaved." :
+          privateMessage || "Paper account draft · saved privately only after confirmation. Order review remains locked."}
+      </p>}
       {context && <p className="workspace-notice">Chart context: {context.symbol} · {context.mode} · {context.adjustment}{context.asOf?` · ${context.asOf}`:""}{context.tradeDraft?` · long ${price(context.tradeDraft.entry)} / stop ${price(context.tradeDraft.stop)} / ${context.tradeDraft.targets.length} target${context.tradeDraft.targets.length===1?"":"s"}`:""}. Existing saved plan was not changed. {!contextImportPending?<button onClick={()=>setContextImportPending(true)}>{context.tradeDraft?"Load drawing":"Use instrument"}</button>:<span role="alert"> Load into the current draft? <button disabled={Boolean(paper && context.mode === "sample")} title={paper && context.mode === "sample" ? "Sample chart data cannot enter paper execution" : undefined} onClick={()=>{editPlan();restoredDraft.current=false;entryEdited.current=Boolean(context.tradeDraft);setSymbol(context.symbol);setSide(context.tradeDraft?.side??"Long");setEntryPrice(context.tradeDraft?.entry??0);setStopPrice(context.tradeDraft?.stop??0);setStopSource(context.tradeDraft?"Manual":"ATR");setCapturedEntrySource({source:context.tradeDraft?"Manual":context.mode==="sample"?"Simulated fixture":"Local EOD close",observedAt:new Date().toISOString(),sessionDate:context.asOf});if(context.tradeDraft?.targets.length){const count=Math.min(2,context.tradeDraft.targets.length) as TargetCount;const imported=makeExitPlan(count,runnerCount);editExitPlan({...imported,legs:imported.legs.map((leg,index)=>leg.role==="Target"&&context.tradeDraft?.targets[index]?{...leg,target:{mode:"Price",price:context.tradeDraft.targets[index]}}:leg)});}setContextImportPending(false);}}>Confirm import</button> <button onClick={()=>setContextImportPending(false)}>Cancel</button></span>} <button onClick={()=>onChart?.(context)}>Open chart</button></p>}
 
       <section className="trade-actionbar" aria-label="Quick trade actions">
-        <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={stageState === "draft" && (!result.valid || !symbol.trim())} onClick={stageState === "staged" ? cancelStage : stageEntry}>
-          {stageState === "staged" ? "Unsave plan" : "Save plan"}
+        <button type="button" className={`trade-action-button entry ${stageState === "staged" ? "cancel" : ""}`} disabled={!privateActionsReady || (stageState === "draft" && (!result.valid || !symbol.trim() || (privatePlanRequired && (capturedEntrySource.source === "Simulated fixture" || marketLoad.snapshot?.status === "sample"))))} onClick={stageState === "staged" ? cancelStage : stageEntry}>
+          {stageState === "staged" ? privatePlanRequired ? "Edit plan" : "Unsave plan" : privateSaving ? "Saving plan…" : "Save plan"}
         </button>
-        <button type="button" className={`trade-action-button exits ${afterFillStaged && !exitPlanDirty ? "active" : ""}`} disabled={!result.valid} onClick={afterFillStaged && !exitPlanDirty ? cancelAfterFill : stageAfterFill}>
-          {afterFillStaged && !exitPlanDirty ? "Unsave exits" : "Save exits"}
+        <button type="button" className={`trade-action-button exits ${afterFillStaged && !exitPlanDirty ? "active" : ""}`} disabled={!privateActionsReady || !result.valid || (privatePlanRequired && (stageState !== "staged" || !savedPlan?.planRevision))} onClick={afterFillStaged && !exitPlanDirty ? cancelAfterFill : stageAfterFill}>
+          {afterFillStaged && !exitPlanDirty ? privatePlanRequired ? "Edit exits" : "Unsave exits" : "Save exits"}
         </button>
-        {paper && !demo && <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
+        {paper && !demo && !privatePlanRequired && <PaperOrderReview paper={paper} saved={(executionQuantity === 0 || executionQuantity <= result.shares) && stageState === "staged" && afterFillStaged && !exitPlanDirty && !exitState.error && Boolean(planRevision)} ticket={{
           planId: planIdentity.current, planRevision, savedPlan: savedPlan ?? undefined, planningSource: capturedEntrySource.source, symbol: symbol.trim().toUpperCase(), direction: side,
           method: executionMethod, quantity: executionQuantity || result.shares, planningPrice: entryPrice, hardCap: hardCap || entryPrice,
           ...(executionMethod === "Breakout" ? { triggerPrice } : {}), stopPrice: effectiveStopPrice, cleanupFloor: effectiveStopPrice,
           sessionMode, duration, protectionOrderType, ...(protectionOrderType === "STP LMT" ? { protectionLimitPrice } : {}), exitPlan,
         }} />}
-        <span className="trade-execution-state">{paper ? "Save drafts, then review the exact paper order" : "Draft only · no broker order"}</span>
+        <span className="trade-execution-state">{privatePlanRequired ? "Private paper draft · order review locked" : paper ? "Save drafts, then review the exact paper order" : "Draft only · no broker order"}</span>
       </section>
 
       {paper && !demo && <p className="trade-execution-state">Sizing basis: {brokerEquity?.available && brokerEquity.currency === "USD" ? `${paper.status?.connected && paper.status.broker?.dataStatus === "fresh" ? "Broker equity" : "Last-known broker equity · draft estimate"} ${money(sizingEquity)}` : `Legacy planning equity ${money(accountEquity)} · estimate only`}. Fresh broker funds are required for review.</p>}
-      <PlannerWorkspace positions={positions} count={positionCount} exposure={exposure} scope={demo ? "demo" : storageScope}>
+      <PlannerWorkspace positions={positions} count={positionCount} exposure={exposure} scope={storageScope}>
       <section className="trade-ticket" aria-labelledby="trade-ticket-title">
         <div className="trade-ticket-head">
           <div><h2 id="trade-ticket-title">Trade setup</h2></div>
-          <span className={`trade-draft-state ${stageState === "staged" ? "staged" : ""}`}><i/> {stageState === "staged" ? "Saved locally" : "Draft"}</span>
+          <span className={`trade-draft-state ${stageState === "staged" ? "staged" : ""}`}><i/> {stageState === "staged" ? privatePlanRequired ? "Saved privately" : "Saved locally" : "Draft"}</span>
         </div>
 
         <div className="trade-ticket-body">
@@ -616,11 +823,11 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
             <label>Initial stop<span className={`trade-combined-control ${stopSource === "ATR" ? "with-multiplier" : ""}`}><select value={stopSource} onChange={(event) => changeStopMethod(event.target.value as StopMethod)} aria-label="Stop method"><option value="ATR">ATR</option><option value={side === "Long" ? "LoD" : "HoD"}>{side === "Long" ? "Day low" : "Day high"}</option><option value="Manual">Manual</option></select>{stopSource === "ATR" && <input className="trade-atr-multiplier" inputMode="decimal" value={atrMultiplier || ""} min="0" aria-label="ATR multiplier" onChange={(event)=>{editPlan();setAtrMultiplier(safeNumber(event.target.value));}}/>}<input inputMode="decimal" value={effectiveStopPrice || ""} onChange={(event) => editStopPrice(event.target.value)} aria-label="Stop price" aria-describedby="initial-stop-context"/></span></label>
           </div>
 
-          {paper && !demo && <>
-        <PaperQuote paper={paper} symbol={symbol.trim().toUpperCase()} side={side} onApply={(value, observedAt) => {
+          {paper && !demo && !privatePlanRequired && <PaperQuote paper={paper} symbol={symbol.trim().toUpperCase()} side={side} onApply={(value, observedAt) => {
           editPlan(); entryEdited.current = true; setEntryPrice(value); setHardCap(value);
           setCapturedEntrySource({source: "IBKR TWS snapshot", observedAt});
-        }} />
+        }} />}
+          {((paper && !demo) || privatePlanRequired) && <>
         <div className="broker-execution-fields">
           <label>Order method<select aria-label="Order method" value={executionMethod} onChange={e => { editPlan(); setExecutionMethod(e.target.value as PaperTicket["method"]); }}><option value="Limit">Limit</option><option value="Normal">Capped midpoint</option><option value="Breakout">Stop-limit breakout</option></select></label>
           <label>Requested shares<input aria-label="Requested shares" type="number" min="1" step="1" placeholder={`Calculated: ${result.shares}`} value={executionQuantity || ""} onChange={e => { editPlan(); setExecutionQuantity(safeNumber(e.target.value)); }} /></label>
@@ -648,7 +855,7 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
           </fieldset>
           {(sessionSelection.policy?.blockedReason || sessionSelection.error) && <p className="trade-validation" role="alert">{sessionSelection.policy?.blockedReason || sessionSelection.error}</p>}
           {protectionOrderType === "STP LMT" && <p className="trade-validation">A triggered stop-limit may remain unfilled. Planned risk is not a guaranteed loss cap.</p>}
-          <Disclosure title="Session details" name="session-details" scope={demo ? "demo" : storageScope}>
+          <Disclosure title="Session details" name="session-details" scope={storageScope}>
           <div id="trade-session-summary" className={`trade-session-summary ${sessionSelection.policy?.submissionEligible ? "" : "blocked"}`} role={sessionSelection.policy?.submissionEligible ? "status" : "alert"}>
             <span><b>{brokerIntentCheck.sessionPolicy?.effectiveCoverage ?? sessionSelection.policy?.effectiveCoverage ?? "Session schedule will be verified from the broker contract before submission."}</b>{brokerIntentCheck.sessionPolicy?.expiresAt ? ` · expires ${new Date(brokerIntentCheck.sessionPolicy.expiresAt).toLocaleString()}` : sessionSelection.policy?.expiresAt ? ` · ${sessionSelection.policy.expiresAt}` : ""}</span>
             <span>{(sessionSelection.policy?.blockedReason ?? sessionSelection.error) || `${sessionSelection.policy?.protectionOrderType} protection is ${sessionSelection.policy?.protectionOutsideRth ? "eligible during the selected extended schedule when broker-confirmed" : "eligible only during its verified regular-hours schedule"}.`}</span>
@@ -675,7 +882,7 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
 
       <section className="trade-ticket trade-after-fill-ticket" aria-labelledby="after-fill-title">
         <div className="trade-ticket-head">
-          <div><p className="eyebrow">{afterFillStaged && !exitPlanDirty ? "Saved locally" : "Unsaved draft"}</p><h2 id="after-fill-title">After-fill plan</h2></div>
+          <div><p className="eyebrow">{afterFillStaged && !exitPlanDirty ? privatePlanRequired ? "Saved privately" : "Saved locally" : "Unsaved draft"}</p><h2 id="after-fill-title">After-fill plan</h2></div>
           <span className="trade-plan-summary">{targetCount} target{targetCount === 1 ? "" : "s"} · {runnerCount} runner{runnerCount === 1 ? "" : "s"} · {allocationTotal}%</span>
         </div>
         <div className="trade-ticket-body trade-exit-details">
@@ -721,7 +928,7 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
 
           {(exitState.error||exitMessage)&&<p className={exitState.error?"trade-validation":"trade-exit-message"} role={exitState.error?"alert":"status"}>{exitState.error||exitMessage}</p>}
 
-          <Disclosure title="Exit presets" name="exit-presets" scope={demo ? "demo" : storageScope}><div className="trade-preset-panel">
+          {(!privatePlanRequired || privateActionsReady) && <Disclosure title="Exit presets" name="exit-presets" scope={storageScope}><div className="trade-preset-panel">
             <div><b>Named presets</b><span>Load copies values into this unsaved draft.</span></div>
             <select aria-label="Exit-plan preset" value={selectedPresetId} onChange={event=>setSelectedPresetId(event.target.value)}><option value="">Choose preset</option>{presetStore.presets.filter(item=>item.scope==="General"||item.symbol===symbol.trim().toUpperCase()).map(item=><option key={item.presetId} value={item.presetId}>{item.name} · {item.scope==="Symbol"?item.symbol:"General"}</option>)}</select>
             <button type="button" onClick={loadPreset} disabled={!selectedPresetId}>Load</button>
@@ -731,11 +938,11 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
             <button type="button" onClick={renamePreset} disabled={!selectedPresetId}>Rename</button>
             <button type="button" onClick={removePreset} disabled={!selectedPresetId}>Delete</button>
           </div>
-          </Disclosure><p className="trade-exit-help">Save exits updates the draft. Open positions require a reviewed amendment.</p>
+          </Disclosure>}<p className="trade-exit-help">Save exits updates the draft. Open positions require a reviewed amendment.</p>
         </div>
       </section>
 
-      {(!paper || demo) && <section className="paper-intent-readiness" aria-labelledby="paper-intent-title">
+      {!privatePlanRequired && (!paper || demo) && <section className="paper-intent-readiness" aria-labelledby="paper-intent-title">
         <div>
           <p className="eyebrow">Paper execution · approval locked</p>
           <h2 id="paper-intent-title">Intent readiness</h2>
@@ -752,7 +959,7 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
 
 
 
-      <p className="trade-safety-note"><span>i</span> {paper && !demo ? "Saving keeps a draft. Only exact paper-order confirmation can send an order." : "Plans and exit settings are stored in this browser. Nothing is sent to a broker."}</p>
+      <p className="trade-safety-note"><span>i</span> {privatePlanRequired ? "A verified paper account is required to save privately. Broker order review and submission remain locked." : paper && !demo ? "Saving keeps a draft. Only exact paper-order confirmation can send an order." : "Plans and exit settings are stored in this browser. Nothing is sent to a broker."}</p>
 
       </PlannerWorkspace>
 
@@ -763,9 +970,9 @@ export function TradePlanner({ storageScope = "unlinked", context, onChart, demo
           <fieldset><legend>Maximum risk per trade</legend><div className="trade-setting-options">{RISK_OPTIONS.map((option) => <button type="button" key={option} className={settingsDraft.riskPercent === option ? "active" : ""} onClick={() => setSettingsDraft({...settingsDraft,riskPercent:option})}>{option.toFixed(2)}%</button>)}</div></fieldset>
           <fieldset><legend>Maximum position per symbol</legend><div className="trade-setting-options allocation-options">{ALLOCATION_OPTIONS.map((option) => <button type="button" key={option} className={settingsDraft.maxAllocationPercent === option ? "active" : ""} onClick={() => setSettingsDraft({...settingsDraft,maxAllocationPercent:option})}>{option}%</button>)}</div></fieldset>
           {settingsError && <p className="modal-validation" id="risk-settings-error" role="alert">{settingsError} Defaults were not changed.</p>}
-          {!demo && <details><summary>Import legacy planning data</summary><p>Copy this browser's unscoped saved draft, defaults and presets into the current account. Existing account data is never replaced. Imported values require a new review.</p><button type="button" onClick={() => { try { for (const key of [SETTINGS_KEY, DRAFT_KEY, EXIT_KEY, AFTER_FILL_KEY, EXIT_PRESET_KEY]) { const value = localStorage.getItem(key); const destination = demoStorageKey(key, false); if (value && !localStorage.getItem(destination)) { JSON.parse(value); localStorage.setItem(destination, value); } } setImportEpoch(v => v + 1); setSettingsOpen(false); } catch { setSettingsError("Legacy import failed. Existing records were preserved."); } }}>Import into this account</button></details>}
+          {!demo && !privatePlanRequired && <details><summary>Import legacy planning data</summary><p>Copy this browser's unscoped saved draft, defaults and presets into the current account. Existing account data is never replaced. Imported values require a new review.</p><button type="button" onClick={() => { try { for (const key of [SETTINGS_KEY, DRAFT_KEY, EXIT_KEY, AFTER_FILL_KEY, EXIT_PRESET_KEY]) { const value = localStorage.getItem(key); const destination = demoStorageKey(key, false); if (value && !localStorage.getItem(destination)) { JSON.parse(value); localStorage.setItem(destination, value); } } setImportEpoch(v => v + 1); setSettingsOpen(false); } catch { setSettingsError("Legacy import failed. Existing records were preserved."); } }}>Import into this account</button></details>}
           <p className="trade-settings-help">The calculator always uses the smaller share count produced by the risk limit and the position-allocation limit.</p>
-          <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setSettingsOpen(false)}>Cancel</button><button type="button" className="primary-button" onClick={saveSettings}>Save defaults</button></div>
+          <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setSettingsOpen(false)}>Cancel</button><button type="button" className="primary-button" onClick={saveSettings}>{privatePlanRequired ? "Apply to draft" : "Save defaults"}</button></div>
         </section>
       </div>}
     </div>

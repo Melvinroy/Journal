@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
 import math
 
@@ -111,14 +112,99 @@ def summarize(campaign):
     exits = [e for e in executions if e["effect"] == "exit"]
     entered = sum(e["quantity"] for e in entries)
     exited = sum(e["quantity"] for e in exits)
-    avg = sum(e["price"] * e["quantity"] for e in entries) / entered if entered else None
+    all_entry_average = sum(e["price"] * e["quantity"] for e in entries) / entered if entered else None
     sign = 1 if campaign["ticket"]["direction"] == "Long" else -1
-    gross = sum(sign * (e["price"] - avg) * e["quantity"] for e in exits) if avg is not None else None
+
+    def observed_time(execution):
+        value = execution.get("occurredAt")
+        if not isinstance(value, str):
+            return None
+        try:
+            observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return observed.astimezone(timezone.utc) if observed.tzinfo else None
+        except ValueError:
+            return None
+
+    accounting_complete = True
+    times = [observed_time(e) for e in executions]
+    if executions and all(value is not None for value in times):
+        ordered = sorted(zip(times, executions), key=lambda pair: pair[0])
+        grouped: dict[datetime, list[dict]] = {}
+        for instant, execution in ordered:
+            grouped.setdefault(instant, []).append(execution)
+        batches = list(grouped.values())
+    else:
+        # Callback arrival order is not economic fill order. Without a complete
+        # broker clock, different entry prices can change a realized exit's
+        # cost basis even if all callbacks arrived before its exit callback.
+        if entries and exits and any(
+                not math.isclose(e["price"], entries[0]["price"],
+                                 rel_tol=1e-12, abs_tol=1e-9) for e in entries):
+            accounting_complete = False
+        seen_exit = False
+        for execution in executions:
+            if execution["effect"] == "exit":
+                seen_exit = True
+            elif seen_exit:
+                accounting_complete = False
+        batches = [[execution] for execution in executions]
+
+    held = 0
+    held_cost = 0.0
+    gross = 0.0 if entered else None
+    seen_prior_exit = False
+    entry_after_exit = False
+    for batch in batches:
+        batch_entries = [e for e in batch if e["effect"] == "entry"]
+        batch_exits = [e for e in batch if e["effect"] == "exit"]
+        if batch_entries and (seen_prior_exit or (batch_exits and held > 0)):
+            # Equal-price fills can leave realized cost unambiguous while the
+            # order of protection and allocation changes is still unknown.
+            entry_after_exit = True
+        if batch_exits:
+            seen_prior_exit = True
+        if batch_entries and batch_exits:
+            # The API clock may report only whole seconds. A same-time entry
+            # and exit have one unambiguous cost only when new shares have the
+            # same cost as each other and any inventory already held.
+            price = batch_entries[0]["price"]
+            if (any(not math.isclose(e["price"], price, rel_tol=1e-12, abs_tol=1e-9)
+                    for e in batch_entries)
+                    or (held and not math.isclose(price, held_cost / held,
+                                                  rel_tol=1e-12, abs_tol=1e-9))):
+                accounting_complete = False
+                break
+            sequence = batch_entries + batch_exits
+        else:
+            sequence = batch
+        for execution in sequence:
+            quantity = execution["quantity"]
+            if execution["effect"] == "entry":
+                held += quantity
+                held_cost += execution["price"] * quantity
+            else:
+                if quantity > held:
+                    accounting_complete = False
+                    break
+                cost_per_share = held_cost / held
+                gross += sign * (execution["price"] - cost_per_share) * quantity
+                held_cost -= cost_per_share * quantity
+                held -= quantity
+                if held == 0:
+                    held_cost = 0.0
+        if not accounting_complete:
+            break
+    average_entry = (held_cost / held if held else all_entry_average) if accounting_complete else None
+    if not accounting_complete:
+        gross = None
     costs_complete = bool(executions) and all(e.get("commission") is not None for e in executions)
     fees = sum(e.get("commission") or 0 for e in executions)
     net = gross - fees if gross is not None and costs_complete else None
-    initial_risk = entered * abs(avg - campaign["ticket"]["stopPrice"]) if avg is not None else None
+    initial_risk = (entered * abs(all_entry_average - campaign["ticket"]["stopPrice"])
+                    if all_entry_average is not None and accounting_complete else None)
     return {"entered": entered, "exited": exited, "openQuantity": entered - exited,
-            "averageEntry": avg, "grossRealized": gross, "fees": fees if costs_complete else None,
-            "netRealized": net, "costsComplete": costs_complete, "initialRisk": initial_risk,
+            "averageEntry": average_entry, "grossRealized": gross, "fees": fees if costs_complete else None,
+            "netRealized": net, "costsComplete": costs_complete,
+            "accountingComplete": accounting_complete,
+            "entryAfterExit": entry_after_exit, "initialRisk": initial_risk,
             "finalNetR": net / initial_risk if entered == exited and initial_risk and net is not None else None}

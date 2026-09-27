@@ -51,6 +51,23 @@ test('one target and two runners allocate confirmed whole shares exactly and det
   assert.throws(() => domain.validateExitPlan(plan({ legs: definition.legs.map((leg, index) => ({ ...leg, allocationPercent: index === 0 ? 34 : leg.allocationPercent })) })), /total 100/);
 });
 
+test('two targets and two runners require four confirmed shares before every leg can be active', () => {
+  const definition = plan({ legs: [
+    { id: 'T1', role: 'Target', allocationPercent: 25, target: { mode: 'R', multipleR: 1 } },
+    { id: 'T2', role: 'Target', allocationPercent: 25, target: { mode: 'Price', price: 104 } },
+    { id: 'Runner A', role: 'Runner', allocationPercent: 25, activationR: 1, trailing: { mode: 'SMA', period: 10 } },
+    { id: 'Runner B', role: 'Runner', allocationPercent: 25, activationR: 2, trailing: { mode: 'Dollar', distance: 1 } },
+  ] });
+  assert.equal(domain.validateExitPlan(definition), definition);
+  assert.deepEqual(domain.exitLegQuantities(4, definition), [
+    { legId: 'T1', role: 'Target', quantity: 1 },
+    { legId: 'T2', role: 'Target', quantity: 1 },
+    { legId: 'Runner A', role: 'Runner', quantity: 1 },
+    { legId: 'Runner B', role: 'Runner', quantity: 1 },
+  ]);
+  assert.throws(() => domain.exitLegQuantities(3, definition), /at least one share/);
+});
+
 test('partial-entry threshold touches are recorded but never advance protection or survive a retrace', () => {
   const planned = reference('Planned');
   const touch = domain.observePartialEntryThreshold({ plannedReference: planned, quote: quote('Long', 102.25), thresholdR: 1, confirmedFilledQuantity: 40, confirmedProtectionQuantity: 40 });
@@ -103,6 +120,18 @@ test('each runner has an independent activation threshold and trailing configura
   assert.deepEqual(domain.evaluateRunnerAdvancement({ ...base, runner: runnerB }), { state: 'Advance', stopPrice: 103.25, thresholdPrice: 104 });
   assert.equal(domain.evaluateRunnerAdvancement({ ...base, runner: runnerA }).state, 'Blocked');
   assert.equal(domain.evaluateRunnerAdvancement({ ...base, runner: runnerB, quote: quote('Long', 103.5) }).state, 'Not reached');
+});
+
+test('runner advancement requires matching protected whole shares before moving a stop', () => {
+  const execution = reference();
+  const runner = plan().legs.find(leg => leg.role === 'Runner');
+  const base = { executionReference: execution, quote: quote('Long', 104.25), runner, currentStopPrice: 98, sma10: 101.5 };
+  for (const [open, protectedShares] of [[1.5, 1.5], [2, 1.5], [0, 0]]) {
+    const result = domain.evaluateRunnerAdvancement({ ...base, confirmedOpenQuantity: open, confirmedProtectionQuantity: protectedShares });
+    assert.equal(result.state, 'Blocked');
+    assert.match(result.reason, /complete broker-confirmed protection/);
+  }
+  assert.equal(domain.evaluateRunnerAdvancement({ ...base, confirmedOpenQuantity: 2, confirmedProtectionQuantity: 2 }).state, 'Advance');
 });
 
 test('general and symbol presets preserve isolation and authoritative target modes', () => {

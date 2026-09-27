@@ -45,7 +45,7 @@ test('stale plans and unlinked holdings remain explicit and simulated fixtures c
 });
 
 test('rendered navigation has four workspaces, two Trading tabs and no recovery/planner switches', () => {
-  const page = readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../app/WorkspaceApp.tsx', import.meta.url), 'utf8');
   const workspaceLabels = [...page.matchAll(/\["(Discover|Charts|Strategies|Trading)",/g)].map(match => match[1]);
   assert.deepEqual(workspaceLabels, ['Discover','Charts','Strategies','Trading']);
   assert.match(page, /Plan &amp; Position/);

@@ -1,0 +1,1424 @@
+--- a/app/StandaloneConnect.tsx
++++ b/app/StandaloneConnect.tsx
+@@ -62,7 +62,7 @@
+     setViewMessage("");
+     setChosenViews(current => current.includes(view)
+       ? current.filter(item => item !== view)
+-      : ["trading", "journal"].filter(item => item === view || current.includes(item)) as OptionalStandaloneView[]);
++      : (["trading", "journal"] as const).filter(item => item === view || current.includes(item)));
+   };
+   const saveViews = async () => {
+     if (!moduleReady || savingViews || chosenViews.length === 0) return;
+@@ -249,7 +249,7 @@
+     fixture.tws === "available" && fixture.environment === "paper" && fixture.accounts.length > 0;
+ 
+   async function refreshFixture() {
+-    if (!fixture || !localSessionActive) return;
++    if (!fixture || !localSessionActive || !localProfileId) return;
+     const requestEpoch = ++refreshEpoch.current;
+     const accountEpoch = selectionEpoch.current;
+     setRefreshing(true);
+--- a/app/TradingWorkspace.tsx
++++ b/app/TradingWorkspace.tsx
+@@ -39,7 +39,7 @@
+ import { PositionExitPlanControls } from "./PositionExitPlanControls";
+ import type { PaperExecution } from "./usePaperExecution";
+ import { paperPosition } from "../lib/paper-execution";
+-import type { RecordedJournalView } from "../lib/local-journal";
++import type { RecordedJournalView, SyntheticJournalView } from "../lib/local-journal";
+ import { PaperCampaignActions } from "./PaperCampaignActions";
+ import { TradePlanner } from "./TradePlanner";
+ import { useModalAccessibility } from "./useModalAccessibility";
+@@ -304,7 +304,7 @@
+   onCreateJournalTrade?: (item: UnlinkedPositionInput) => string;
+   positionCampaigns?: readonly TradeCampaign[];
+   localHistory?: { kind: "checking" | "sample" | "recorded" | "unavailable";
+-    view: RecordedJournalView | null };
++    view: RecordedJournalView | SyntheticJournalView | null };
+   privatePlan?: { scopeId: string; csrf: string; ready: boolean } | null;
+ }) {
+   const recordedHistoryMode = localHistory != null && localHistory.kind !== "sample";
+@@ -857,7 +857,7 @@
+ 
+   return (
+     <section className="consolidated-trading">
+-      <TradePlanner key={recordedHistoryMode ? `private:${privatePlan?.scopeId ?? "checking"}` : storageScope} storageScope={recordedHistoryMode && privatePlan ? `local-paper:${privatePlan.scopeId}` : storageScope} demo={recordedHistoryMode ? false : demo} privatePlanRequired={recordedHistoryMode} privatePlan={recordedHistoryMode ? privatePlan ?? undefined : undefined} paper={paper} context={context} onChart={onChart} positionCount={effectivePositions.filter(item => item.status !== "Closed").length} exposure={recordedHistoryMode ? <><strong>{localHistory?.kind === "recorded" ? `${localHistory.view?.rows.length ?? 0} saved records` : "History unavailable"}</strong><span>Current broker exposure unknown</span><span>Protection unverified</span></> : <><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
++      <TradePlanner key={recordedHistoryMode ? `private:${privatePlan?.scopeId ?? "checking"}` : storageScope} storageScope={recordedHistoryMode && privatePlan ? `local-paper:${privatePlan.scopeId}` : storageScope} demo={recordedHistoryMode ? false : demo} privatePlanRequired={recordedHistoryMode} privatePlan={recordedHistoryMode ? privatePlan ?? undefined : undefined} paper={paper} context={context} onChart={onChart} positionCount={recordedHistoryMode ? localHistory?.kind === "recorded" && localHistory.view ? localHistory.view.rows.filter(row => row.recordedOpenQuantity > 0).length : null : effectivePositions.filter(item => item.status !== "Closed").length} exposure={recordedHistoryMode ? <><strong>{localHistory?.kind === "recorded" ? `${localHistory.view?.rows.length ?? 0} saved records` : "History unavailable"}</strong><span>Current broker exposure unknown</span><span>Protection unverified</span></> : <><strong>{effectivePositions.filter(item => item.status !== "Closed").length} active records</strong><span>{demo ? "Simulation" : paper?.status?.connected ? "Paper account" : "Broker unavailable"}</span><span>{effectivePositions.some(item => positionNumbers(item).risk?.unprotectedQuantity || item.status === "Unprotected") ? "Protection needs attention" : "Review protection in Positions"}</span></>} positions={
+       <section
+         className="position-command-center"
+         aria-labelledby="position-center-title"
+@@ -905,7 +905,7 @@
+         {recordedHistoryMode ? (
+           <section aria-labelledby="recorded-paper-positions-title">
+             <div className="section-kicker">
+-              <h3 id="recorded-paper-positions-title">Recorded paper positions</h3>
++              <h3 id="recorded-paper-positions-title">{localHistory?.view?.source === "synthetic-ledger-fixture" ? "Artificial verification positions" : "Recorded paper positions"}</h3>
+               <span>One private ledger Â· last known</span>
+             </div>
+             {localHistory?.kind === "checking" && <p className="workspace-notice" role="status">Checking the saved account and paper historyâ€¦</p>}
+--- a/app/WorkspaceApp.tsx
++++ b/app/WorkspaceApp.tsx
+@@ -1,10 +1,12 @@
+ "use client";
+ 
+ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+-import type { ComponentType } from "react";
++import type { ComponentProps, ComponentType } from "react";
+ import { Icon } from "./WorkspaceIcon";
+ import type { Session } from "@supabase/supabase-js";
+ import type { AuthMode, CloudTradeGateway, CloudTradeRow as TradeRow } from "../lib/cloud-trade-contract";
++import { cloudWritesAcknowledged, createCloudRequestScope } from "../lib/cloud-write-acknowledgment";
++import { readCloudDraft, saveCloudDraft, clearCloudDraft, type CloudDraft } from "../lib/cloud-trade-draft";
+ import {
+   isLegacyDemoDataset,
+   LOCAL_TRADE_STORAGE_KEY,
+@@ -13,7 +15,7 @@
+ import "./trading-refinement.css";
+ import "./standalone-connect.css";
+ import { paperJournalRow } from "../lib/paper-execution";
+-import { adaptRecordedJournal, type RecordedJournalView } from "../lib/local-journal";
++import { adaptRecordedJournal, adaptSyntheticJournal, type RecordedJournalView, type SyntheticJournalView, type SyntheticJournalRow } from "../lib/local-journal";
+ import { rememberedChoiceFromResponse } from "../lib/local-account-status";
+ import { readLocalPlanScope } from "../lib/local-private-plan";
+ import {
+@@ -26,10 +28,10 @@
+ export type CloudComponents = {
+   AuthScreen: ComponentType<{ mode: AuthMode; setMode: (mode: AuthMode) => void; onRecovered: () => void }>;
+   SetupScreen: ComponentType<{ onClose?: () => void; forceUnconfigured?: boolean }>;
+-  CatalystDashboard: typeof import("./CatalystDashboard").CatalystDashboard;
+-  ScannerDashboard: typeof import("./ScannerDashboard").ScannerDashboard;
+-  ResearchWorkspace: typeof import("./ResearchWorkspace").ResearchWorkspace;
+-  ChartDashboard: typeof import("./ChartDashboard").ChartDashboard;
++  CatalystDashboard: ComponentType<ComponentProps<typeof import("./CatalystDashboard").CatalystDashboard>>;
++  ScannerDashboard: ComponentType<ComponentProps<typeof import("./ScannerDashboard").ScannerDashboard>>;
++  ResearchWorkspace: ComponentType<ComponentProps<typeof import("./ResearchWorkspace").ResearchWorkspace>>;
++  ChartDashboard: ComponentType<ComponentProps<typeof import("./ChartDashboard").ChartDashboard>>;
+ };
+ const CloudScreenUnavailable = () => <main className="loading-shell">Cloud workspace is unavailable.</main>;
+ const CloudViewUnavailable = () => null;
+@@ -77,7 +79,7 @@
+   plannedR: number;
+   grade: Grade;
+   status?: string;
+-  executions?: Execution[];
++  executions?: (Execution | SyntheticJournalRow["executions"][number])[];
+   openQuantity?: number;
+   simulated?: true;
+   initialRiskAvailable?: boolean;
+@@ -98,7 +100,7 @@
+   weightedExit?: number;
+   firstFillAt?: string;
+   closedAt?: string;
+-  journalSnapshot?: JournalCampaignSnapshot;
++  journalSnapshot?: JournalCampaignSnapshot | SyntheticJournalRow["journalSnapshot"];
+   feeAdjustments?: FeeAdjustment[];
+   confirmedAmendments?: TradeCampaign["confirmedAmendments"];
+ };
+@@ -229,8 +231,12 @@
+   return `${sign}$${Math.abs(Math.round(value)).toLocaleString()}`;
+ }
+ 
++function isLedgerRecord(id: string) {
++  return /^(paper|recorded|fixture):/.test(id);
++}
++
+ function recordMoney(id: string, value: number, showPlus = true, maximumFractionDigits = 2) {
+-  if (!id.startsWith("paper:") && !id.startsWith("recorded:")) return formatMoney(value, showPlus);
++  if (!isLedgerRecord(id)) return formatMoney(value, showPlus);
+   const sign = value < 0 ? "âˆ’" : showPlus ? "+" : "";
+   return `${sign}$${Math.abs(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits})}`;
+ }
+@@ -644,7 +650,9 @@
+   type View =
+     "Connect" | "Journal" | "Catalyst" | "Trade" | "Charts" | "Scans" | "Scanner" | "Backtest";
+   const [active, setActive] = useState<View>(standalone ? "Connect" : "Charts");
+-  const [localProfile, setLocalProfile] = useState<{ profileId: string; csrf: string } | null>(null);
++  const [localProfile, setLocalProfile] = useState<{ profileId: string; csrf: string; verificationBinding?: string } | null>(null);
++  // Keep the warning after a session expires; expiration must never look like normal mode.
++  const [verificationMode, setVerificationMode] = useState(false);
+   const [localModules, setLocalModules] = useState<
+     { kind: "checking" | "sample" | "unavailable" } |
+     { kind: "ready"; profileId: string; enabledViews: OptionalStandaloneView[]; canHideTrading: boolean }
+@@ -652,7 +660,7 @@
+   const [localJournal, setLocalJournal] = useState<{
+     profileId: string | null;
+     kind: "checking" | "sample" | "recorded" | "unavailable";
+-    view: RecordedJournalView | null;
++    view: RecordedJournalView | SyntheticJournalView | null;
+   }>({ profileId: null, kind: "checking", view: null });
+   const [localJournalReload, setLocalJournalReload] = useState(0);
+   const [localPlanScope, setLocalPlanScope] = useState<{
+@@ -660,7 +668,7 @@
+     scopeId: string | null;
+   }>({ profileId: null, kind: "checking", scopeId: null });
+   const [connectionFixture, setConnectionFixture] = useState<ConnectionFixture | null>(null);
+-  const localProfileRef = useRef<{ profileId: string; csrf: string } | null>(null);
++  const localProfileRef = useRef<{ profileId: string; csrf: string; verificationBinding?: string } | null>(null);
+   const navigationEpoch = useRef(0);
+   const initialStandaloneViewRef = useRef<View | null>(null);
+   const profileWriteQueue = useRef<Promise<void>>(Promise.resolve());
+@@ -713,7 +721,9 @@
+       const status = await statusResponse.json();
+       if (status?.authenticated !== true || status?.executionEnabled !== false ||
+           typeof status.profileId !== "string" || typeof status.csrf !== "string" ||
+-          status.brokerAccount !== null || status.environment !== null) {
++          status.brokerAccount !== null || status.environment !== null ||
++          (status.verificationProfile === true &&
++            (typeof status.verificationBinding !== "string" || !/^fixture-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(status.verificationBinding)))) {
+         setLocalModules({ kind: "unavailable" });
+         setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+         return;
+@@ -746,7 +756,9 @@
+         setLocalJournal({ profileId: null, kind: "unavailable", view: null });
+         return;
+       }
+-      const principal = { profileId: status.profileId, csrf: status.csrf };
++      const principal = { profileId: status.profileId, csrf: status.csrf,
++        ...(status.verificationProfile === true ? { verificationBinding: status.verificationBinding as string } : {}) };
++      setVerificationMode(status.verificationProfile === true);
+       localProfileRef.current = principal;
+       setLocalProfile(principal);
+       setLocalModules(moduleStatus
+@@ -805,6 +817,21 @@
+     }));
+     let scopeMismatch = false;
+     (async () => {
++      if (localProfile.verificationBinding) {
++        const response = await fetch("/v1/local/journal/verification", {
++          credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
++        });
++        if (!current()) return;
++        if (!response.ok) {
++          if (response.status === 401) sessionLost();
++          throw new Error("Artificial history is unavailable.");
++        }
++        const view = adaptSyntheticJournal(await response.json(), localProfile.verificationBinding);
++        if (!current()) return;
++        setLocalJournal({ profileId: localProfile.profileId, kind: "recorded", view });
++        setLocalPlanScope({ profileId: localProfile.profileId, kind: "unavailable", scopeId: null });
++        return;
++      }
+       const binding = await fetch("/v1/local/binding", {
+         credentials: "same-origin", cache: "no-store", headers, signal: controller.signal,
+       });
+@@ -872,7 +899,9 @@
+       localProfileRef.current = null;
+       setLocalProfile(null);
+       setConnectionFixture(null);
+-      setLocalJournal(previous => ({ profileId: null, kind: previous.kind === "sample" ? "sample" : "unavailable", view: null }));
++      setLocalModules({ kind: "unavailable" });
++      setLocalJournal({ profileId: null, kind: "unavailable", view: null });
++      setLocalPlanScope({ profileId: null, kind: "unavailable", scopeId: null });
+     };
+     // Serialize writes so rapid navigation cannot persist an older view last.
+     profileWriteQueue.current = profileWriteQueue.current.catch(() => {}).then(async () => {
+@@ -976,7 +1005,13 @@
+   const [cloudBusy, setCloudBusy] = useState(false);
+   const [cloudError, setCloudError] = useState("");
+   const [cloudReload, setCloudReload] = useState(0);
++  const [cloudSessionRevision, setCloudSessionRevision] = useState(0);
++  const cloudSessionKey = useRef<string | null>(null);
++  const [cloudDraft, setCloudDraft] = useState<CloudDraft | null>(null);
++  const cloudDraftReceipt = useRef<string | null | undefined>(undefined);
+   const [importTrades, setImportTrades] = useState<Trade[]>([]);
++  const importBackup = useRef<string | null>(null);
++  const [importUncertain, setImportUncertain] = useState(false);
+   const [importDismissed, setImportDismissed] = useState(false);
+   const [range, setRange] = useState<RangeKey>("30");
+   const [equityMode, setEquityMode] = useState<EquityMode>("dollar");
+@@ -995,13 +1030,19 @@
+     ? { profileId: localProfile?.profileId ?? null, kind: "checking" as const, view: null }
+     : localJournal;
+   const tradeOwner = standalone ? sampleScope : demoMode ? "demo" : session?.user.id ?? "signed-out";
++  const importRecoveryKey = `brontide-cloud-import-pending-v1:${encodeURIComponent(tradeOwner)}`;
+   const currentTradeOwner = useRef(tradeOwner);
++  const cloudRequests = useRef(createCloudRequestScope());
++  if (currentTradeOwner.current !== tradeOwner) cloudRequests.current.advance();
+   currentTradeOwner.current = tradeOwner;
+   useEffect(() => {
+     // A response from the previous account must not leave the new account's
+     // cloud controls stuck in a busy or error state.
+     setCloudBusy(false);
+     setCloudError("");
++    setModal(false);
++    try { setImportUncertain(window.localStorage.getItem(importRecoveryKey) !== null); }
++    catch { setImportUncertain(true); }
+   }, [tradeOwner]);
+   const trades = tradeBucket.owner === tradeOwner ? tradeBucket.rows : [];
+   function setTrades(update: Trade[] | ((previous: Trade[]) => Trade[])) {
+@@ -1160,9 +1201,12 @@
+           if (isLegacyDemoDataset(parsed))
+             window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
+           else if (Array.isArray(parsed) && parsed.length)
++          {
++            importBackup.current = saved;
+             setImportTrades(
+               parsed.map((trade) => ({ ...trade, id: String(trade.id) })),
+             );
++          }
+         } catch {
+           /* ignore unreadable local backup */
+         }
+@@ -1185,6 +1229,17 @@
+       return;
+     }
+     return cloud.subscribeSession((nextSession, recovery) => {
++      const nextKey = nextSession ? `${nextSession.user.id}:${nextSession.access_token}` : null;
++      // Supabase repeats SIGNED_IN on focus. Only an actual session transition
++      // invalidates work; the revision also catches A -> B -> A in one render.
++      if (cloudSessionKey.current !== nextKey) {
++        cloudSessionKey.current = nextKey;
++        cloudRequests.current.advance();
++        setCloudSessionRevision(value => value + 1);
++        setCloudBusy(false);
++        setCloudError("");
++        setModal(false);
++      }
+       if (recovery) {
+         setRecovering(true);
+         setAuthMode("recovery");
+@@ -1210,12 +1265,14 @@
+     }
+     const gateway = cloud;
+     let current = true;
++    const sameSession = cloudRequests.current.capture();
++    const isCurrent = () => current && sameSession();
+     async function loadTrades() {
+       setCloudBusy(true);
+       setCloudError("");
+       try {
+-      const { data, error } = await gateway.loadTrades(() => current);
+-      if (!current) return;
++      const { data, error } = await gateway.loadTrades(isCurrent);
++      if (!isCurrent()) return;
+       if (error)
+         setCloudError(
+           error.message.includes("schema cache")
+@@ -1224,16 +1281,16 @@
+         );
+       else setTrades((data ?? []).map(fromRow));
+       } catch {
+-        if (current) setCloudError("Cloud history is unavailable. Your recorded paper trades remain separate; try again when connected.");
+-      } finally { if (current) setCloudBusy(false); }
++        if (isCurrent()) setCloudError("Cloud history is unavailable. Your recorded paper trades remain separate; try again when connected.");
++      } finally { if (isCurrent()) setCloudBusy(false); }
+     }
+     loadTrades();
+     return () => {
+       current = false;
+     };
+-  }, [session?.user.id, session?.access_token, cloudReload, cloud]);
+-
+-  const journalTrades = useMemo(() => {
++  }, [session?.user.id, session?.access_token, cloudSessionRevision, cloudReload, cloud]);
++
++  const journalTrades = useMemo<Trade[]>(() => {
+     if (standalone) {
+       if (journalState.kind === "recorded") return journalState.view?.rows ?? [];
+       return journalState.kind === "sample" ? trades : [];
+@@ -1263,6 +1320,8 @@
+     });
+   }, [journalTrades, range, setupFilter, directionFilter, journalSource, journalSearch]);
+ 
++  const journalMoney = (value: number) => standalone && journalState.kind === "recorded"
++    ? recordMoney("recorded:summary", value) : formatMoney(value);
+   const measuredTrades = useMemo(
+     () => filteredTrades.filter(
+       (trade) =>
+@@ -1342,6 +1401,22 @@
+       .sort((a, b) => b.avgR - a.avgR);
+   }, [measuredTrades]);
+ 
++  function openTradeModal() {
++    setCloudDraft(null);
++    cloudDraftReceipt.current = undefined;
++    setCloudError("");
++    if (!demoMode && session) {
++      try {
++        const saved = readCloudDraft(window.localStorage, session.user.id);
++        setCloudDraft(saved.draft);
++        cloudDraftReceipt.current = saved.raw;
++      } catch {
++        setCloudError("Your saved draft could not be read. Cloud saving is unavailable until browser storage is accessible; existing data has been preserved.");
++      }
++    }
++    setModal(true);
++  }
++
+   async function addTrade(event: FormEvent<HTMLFormElement>) {
+     event.preventDefault();
+     const data = new FormData(event.currentTarget);
+@@ -1366,54 +1441,93 @@
+       setModal(false);
+       return;
+     }
+-    if (!cloud) return;
++    if (!cloud || !session || cloudBusy) return;
++    let receipt: string;
++    try {
++      receipt = saveCloudDraft(window.localStorage, session.user.id, toRow(trade), cloudDraftReceipt.current);
++      cloudDraftReceipt.current = receipt;
++      setCloudDraft(toRow(trade));
++    } catch {
++      setCloudError("A recovery copy could not be saved, or the saved draft changed in another window. Nothing was submitted. Close and reopen this form to review the saved draft.");
++      return;
++    }
++    const sameSession = cloudRequests.current.capture();
+     setCloudBusy(true);
+     setCloudError("");
+     try {
+       const { data: saved, error } = await cloud.addTrade(toRow(trade));
+-      if (currentTradeOwner.current !== tradeOwner) return;
+-      if (error) setCloudError(error.message);
+-      else if (!saved) {
+-        setCloudError("Cloud save returned no trade record. Check cloud history before trying again.");
++      if (!sameSession()) return;
++      if (error) setCloudError(`Cloud save was not confirmed: ${error.message}. Your draft is preserved; check cloud history before trying again.`);
++      else if (!saved || !cloudWritesAcknowledged([toRow(trade)], [saved])) {
++        setCloudError("Cloud save was not fully acknowledged. Your draft is preserved; check cloud history before trying again.");
+       } else {
+         setTrades((current) => [fromRow(saved), ...current]);
++        if (!clearCloudDraft(window.localStorage, session.user.id, receipt)) {
++          setCloudError("Trade saved. A local recovery draft remains; check cloud history before submitting it again.");
++        }
+         setModal(false);
+       }
+     } catch {
+-      if (currentTradeOwner.current === tradeOwner) {
++      if (sameSession()) {
+         setCloudError("Cloud save outcome is unknown. Check cloud history before trying again.");
+       }
+     } finally {
+-      if (currentTradeOwner.current === tradeOwner) setCloudBusy(false);
++      if (sameSession()) setCloudBusy(false);
+     }
+   }
+ 
+   async function importLocalTrades() {
+-    if (!importTrades.length || !cloud) return;
++    if (!importTrades.length || !cloud || !session || cloudBusy) return;
++    const sameSession = cloudRequests.current.capture();
++    const backupBefore = importBackup.current;
++    try {
++      if (!backupBefore || window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY) !== backupBefore) throw new Error("Backup changed.");
++      window.localStorage.setItem(importRecoveryKey, backupBefore);
++    } catch {
++      setCloudError("The local backup changed or browser storage is unavailable. Nothing was imported. Reload to review your saved records.");
++      return;
++    }
++    setImportUncertain(true);
+     setCloudBusy(true);
+     setCloudError("");
+     const rows = importTrades.map(({ id: _id, ...trade }) => toRow(trade));
++    let acknowledged = false;
+     try {
+       const { data, error } = await cloud.importTrades(rows);
+-      if (currentTradeOwner.current !== tradeOwner) return;
+-      if (error) setCloudError(error.message);
+-      else if (!data || data.length !== rows.length) {
++      if (!sameSession()) return;
++      if (error) setCloudError(`Cloud import was not confirmed: ${error.message}. Your local backup is preserved; check cloud history before trying again.`);
++      else if (!data || !cloudWritesAcknowledged(rows, data)) {
+         setCloudError("Cloud import was not fully acknowledged. Your local backup is preserved; check your records before trying again.");
+       } else {
++        acknowledged = true;
+         setTrades((current) => [
+           ...data.map(fromRow),
+           ...current,
+         ]);
+-        window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
+-        setImportTrades([]);
+-        setImportDismissed(true);
++        if (window.localStorage.getItem(LOCAL_TRADE_STORAGE_KEY) === backupBefore) {
++          window.localStorage.removeItem(LOCAL_TRADE_STORAGE_KEY);
++        } else {
++          setCloudError("Import acknowledged. A newer local backup was preserved; reload to review it.");
++        }
++        if (window.localStorage.getItem(importRecoveryKey) === backupBefore) {
++          window.localStorage.removeItem(importRecoveryKey);
++          setImportUncertain(false);
++        }
+       }
+     } catch {
+-      if (currentTradeOwner.current === tradeOwner) {
+-        setCloudError("Cloud import outcome is unknown. Your local backup is preserved; check cloud history before trying again.");
++      if (sameSession()) {
++        setCloudError(acknowledged
++          ? "Import confirmed. Local backup cleanup could not be completed. Check cloud history before importing anything again."
++          : "Cloud import outcome is unknown. Your local backup is preserved; check cloud history before trying again.");
+       }
+     } finally {
+-      if (currentTradeOwner.current === tradeOwner) setCloudBusy(false);
++      if (sameSession()) {
++        setCloudBusy(false);
++        if (acknowledged) {
++          setImportTrades([]);
++          setImportDismissed(true);
++        }
++      }
+     }
+   }
+ 
+@@ -1643,7 +1757,7 @@
+         </nav>
+         {standalone && (
+           <aside className="demo-access-banner" aria-label="Standalone preview status">
+-            <div><strong>Trading module preview</strong><span>Sample data only. Broker connection and order submission are locked until local setup is verified.</span></div>
++            <div><strong>{verificationMode ? "Verification profile â€” artificial records â€” execution locked" : "Trading module preview"}</strong><span>{verificationMode ? "Isolated local records for application checks. No broker identity or trading authority." : "Sample data only. Broker connection and order submission are locked until local setup is verified."}</span></div>
+           </aside>
+         )}
+         {standaloneMessage && <p className="workspace-notice" role="status">{standaloneMessage}</p>}
+@@ -1703,7 +1817,8 @@
+           setLocalProfile(null);
+           setLocalModules({ kind: "unavailable" });
+           setConnectionFixture(null);
+-          setLocalJournal({ profileId: null, kind: localJournal.kind === "sample" ? "sample" : "unavailable", view: null });
++          setLocalJournal({ profileId: null, kind: "unavailable", view: null });
++          setLocalPlanScope({ profileId: null, kind: "unavailable", scopeId: null });
+         }} onOpenTrading={() => selectView("Trade")} onOpenJournal={() => selectView("Journal")} />}
+         {(!standalone || enabledStandaloneViews.includes("trading")) && <div hidden={active !== "Trade"}>
+           <TradingWorkspace key={tradingScope} storageScope={tradingScope}
+@@ -1788,7 +1903,7 @@
+               <span className={`sync-state ${cloudError ? "has-error" : ""}`}>
+                 <i />
+                 {standalone
+-                  ? journalState.kind === "recorded" ? "Recorded paper history Â· disconnected" : journalState.kind === "sample" ? "Sample trades" : journalState.kind === "checking" ? "Checking local historyâ€¦" : "History unavailable"
++                  ? journalState.kind === "recorded" ? verificationMode ? "Artificial verification history" : "Recorded paper history Â· disconnected" : journalState.kind === "sample" ? "Sample trades" : journalState.kind === "checking" ? "Checking local historyâ€¦" : "History unavailable"
+                   : demoMode
+                     ? "Sample trades"
+                   : cloudBusy
+@@ -1805,9 +1920,9 @@
+               </button>}
+               <button
+                 className="primary-button"
+-                disabled={(standalone && journalState.kind !== "sample") || (localWorkspace && !session && !demoMode)}
++                disabled={(standalone && journalState.kind !== "sample") || (localWorkspace && !session && !demoMode) || (!demoMode && cloudBusy)}
+                 title={standalone && journalState.kind !== "sample" ? "Recorded paper history is read-only; manual logging is not available." : undefined}
+-                onClick={() => setModal(true)}
++                onClick={openTradeModal}
+               >
+                 <Icon name="plus" size={17} /> Log trade
+               </button>
+@@ -1832,12 +1947,12 @@
+               <div>
+                 <strong>
+                   {cloudError
+-                    ? "Cloud history unavailable"
++                    ? "Cloud journal needs attention"
+                     : `${importTrades.length} browser trades found`}
+                 </strong>
+                 <span>
+                   {cloudError ||
+-                    "Import them once into your private cloud journal. Review first if these are demonstration trades."}
++                    (importUncertain ? "A previous import has no confirmed result on this device. Your backup is preserved. Check cloud history for all records before importing again." : "Import them once into your private cloud journal. Review first if these are demonstration trades.")}
+                 </span>
+               </div>
+               {cloudError ? (
+@@ -1900,17 +2015,17 @@
+           {paper.enabled && !paper.status && <p className="workspace-notice" role="status">Local paper records are unavailable. Totals include loaded records only.</p>}
+           {measuredTrades.length === 0 && (!standalone || journalState.kind === "sample" || journalState.kind === "recorded") && !(paper.enabled && !paper.status && journalTrades.length === 0) && <div className="journal-empty-state" role="status"><strong>{journalTrades.length === 0 ? standalone && journalState.kind === "recorded" ? "No saved records" : "No records yet" : filteredTrades.length === 0 ? "No records match these filters" : "No eligible closed trades"}</strong><p>{journalTrades.length === 0 ? standalone && journalState.kind === "recorded" ? "No trade was found in this accountâ€™s verified local history. Current broker exposure is still unknown." : "Log a trade or review a confirmed paper execution to begin." : filteredTrades.length === 0 ? "Clear or adjust filters to see your records." : "Your records are below. Performance requires completed trades with execution history and known costs; R metrics also require initial risk."}</p></div>}
+           <section className="journal-metric-grid" aria-label="Trading statistics">
+-            <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? formatMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
++            <MetricCard label="Net P&amp;L" title="Sum of eligible closed-campaign net results." value={measuredTrades.length ? journalMoney(stats.pnl) : "Unavailable"} tone={journalSemanticTone(stats.pnl, measuredTrades.length > 0)} detail={`${measuredTrades.length} eligible closed trades`} />
+             <MetricCard label="Win rate" value={measuredTrades.length ? `${stats.winRate.toFixed(2)}%` : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail={`${stats.wins} wins Â· ${stats.losses} losses Â· ${stats.breakevens} flat`} />
+             <MetricCard label="Expectancy in R" title="Mean final net result divided by frozen initial dollar risk." value={stats.rEligible.length ? formatR(stats.avgR) : "Unavailable"} tone={journalSemanticTone(stats.avgR, stats.rEligible.length > 0)} detail={`${stats.rEligible.length} closed trades with valid risk`} />
+             <MetricCard label="Profit factor" value={stats.profitFactor == null ? "Unavailable" : stats.profitFactor === "No losses" ? stats.profitFactor : stats.profitFactor.toFixed(2)} tone={stats.profitFactor == null ? "unavailable" : "neutral"} detail={`${measuredTrades.length} eligible closed trades`} />
+-            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? formatMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
++            <MetricCard label="Max drawdown" title="Largest peak-to-trough decline in the selected closed-trade dollar curve; not account equity or intraday drawdown." value={measuredTrades.length ? journalMoney(-secondaryStats.maxDrawdown) : "Unavailable"} tone={journalSemanticTone(-secondaryStats.maxDrawdown, measuredTrades.length > 0)} detail="Selected closed-trade curve" />
+             <MetricCard label="Closed trades" title="Closed campaigns with complete execution history and known costs." value={measuredTrades.length} detail={`${stats.wins}W / ${stats.losses}L / ${stats.breakevens}BE`} />
+           </section>
+ <Disclosure title="More statistics" name="journal-statistics" scope={standalone ? sampleScope : demoMode ? "demo" : session?.user.id ?? "account"}><section className="journal-metric-grid" aria-label="Additional statistics">            <MetricCard label="Avg planned R:R" value={stats.plannedEligible.length ? `1:${stats.avgPlanned.toFixed(1)}` : "Unavailable"} tone={stats.plannedEligible.length ? "neutral" : "unavailable"} detail={`${stats.plannedEligible.length} complete fixed-target plans`} />
+-            <MetricCard label="Avg result" title="Net result divided by eligible closed trade count." value={measuredTrades.length ? formatMoney(stats.averageResult) : "Unavailable"} tone={journalSemanticTone(stats.averageResult, measuredTrades.length > 0)} detail="Per eligible closed trade" />
+-            <MetricCard label="Avg win" value={stats.averageWin == null ? "Unavailable" : formatMoney(stats.averageWin)} tone={journalSemanticTone(stats.averageWin)} detail={`${stats.wins} winning trades`} />
+-            <MetricCard label="Avg loss" value={stats.averageLoss == null ? "Unavailable" : formatMoney(stats.averageLoss)} tone={journalSemanticTone(stats.averageLoss)} detail={`${stats.losses} losing trades`} />
++            <MetricCard label="Avg result" title="Net result divided by eligible closed trade count." value={measuredTrades.length ? journalMoney(stats.averageResult) : "Unavailable"} tone={journalSemanticTone(stats.averageResult, measuredTrades.length > 0)} detail="Per eligible closed trade" />
++            <MetricCard label="Avg win" value={stats.averageWin == null ? "Unavailable" : journalMoney(stats.averageWin)} tone={journalSemanticTone(stats.averageWin)} detail={`${stats.wins} winning trades`} />
++            <MetricCard label="Avg loss" value={stats.averageLoss == null ? "Unavailable" : journalMoney(stats.averageLoss)} tone={journalSemanticTone(stats.averageLoss)} detail={`${stats.losses} losing trades`} />
+             <MetricCard label="Payoff" value={secondaryStats.payoff == null ? "Unavailable" : secondaryStats.payoff.toFixed(2)} tone={secondaryStats.payoff == null ? "unavailable" : "neutral"} detail="Average win Ã· average loss" />
+             <MetricCard label="Longest loss streak" value={measuredTrades.length ? secondaryStats.longestLosingStreak : "Unavailable"} tone={measuredTrades.length ? "neutral" : "unavailable"} detail="Consecutive losing trades" /></section></Disclosure>
+           <p className="journal-eligibility-summary" aria-label="Journal eligibility summary">
+@@ -1933,9 +2048,9 @@
+               <div className="chart-summary">
+                 <strong>
+                   {(equityMode === "r" ? rMeasuredTrades : measuredTrades).length === 0 ? "Unavailable" : equityView === "drawdown"
+-                    ? formatMoney(-secondaryStats.maxDrawdown)
++                    ? journalMoney(-secondaryStats.maxDrawdown)
+                     : equityMode === "dollar"
+-                      ? formatMoney(stats.pnl)
++                      ? journalMoney(stats.pnl)
+                     : formatR(
+                         rMeasuredTrades.reduce((sum, trade) => sum + trade.r, 0),
+                       )}
+@@ -1996,7 +2111,7 @@
+                   <div className="setup-row" key={item.setup}>
+                     <span>{item.setup}</span>
+                     <span>{item.count}</span>
+-                    <span className={item.netPnl >= 0 ? "positive" : "negative"}>{formatMoney(item.netPnl)}</span>
++                    <span className={item.netPnl >= 0 ? "positive" : "negative"}>{journalMoney(item.netPnl)}</span>
+                     <span>{item.winRate.toFixed(1)}%</span>
+                     <b className={item.avgR >= 0 ? "positive" : "negative"}>
+                       {formatR(item.avgR)} <small>({item.rCount})</small>
+@@ -2081,7 +2196,7 @@
+                         {trade.finalRAvailable === false || trade.status !== "Closed" ? <MissingValue reason="Final Net R unavailable until eligible closure" /> : formatR(trade.r)}
+                       </span>
+                       <span>
+-                        {reviewStore.value[trade.id] ? "Reviewed" : trade.id.startsWith("paper:") ? "Not reviewed" : `Grade ${trade.grade}`}
++                        {reviewStore.value[trade.id] ? "Reviewed" : isLedgerRecord(trade.id) ? "Not reviewed" : `Grade ${trade.grade}`}
+                       </span>
+                     </div>
+                     {scopedExpandedTrade === trade.id && (
+@@ -2097,7 +2212,7 @@
+                               {trade.status ?? "Closed"} Â· {trade.openQuantity ?? 0} shares open
+                             </span>
+                           </div>
+-                          <i>{trade.id.startsWith("recorded:") ? "RECORDED IBKR PAPER HISTORY Â· LAST KNOWN" : trade.id.startsWith("paper:") ? "BROKER-CONFIRMED PAPER EXECUTIONS" : trade.simulated ? "SIMULATED Â· NOT BROKER CONFIRMED" : "HISTORICAL / MANUAL RECORD"}</i>
++                          <i>{trade.id.startsWith("fixture:") ? "ARTIFICIAL VERIFICATION RECORD Â· NOT BROKER CONFIRMED" : trade.id.startsWith("recorded:") ? "RECORDED IBKR PAPER HISTORY Â· LAST KNOWN" : trade.id.startsWith("paper:") ? "BROKER-CONFIRMED PAPER EXECUTIONS" : trade.simulated ? "SIMULATED Â· NOT BROKER CONFIRMED" : "HISTORICAL / MANUAL RECORD"}</i>
+                         </header>
+                         {trade.historyStatus && (
+                           <p className="workspace-notice">{trade.historyStatus}</p>
+@@ -2109,7 +2224,7 @@
+                           <span><small>Initial dollar risk</small><b>{trade.initialRiskAvailable === false ? <MissingValue reason="Initial risk unavailable" /> : recordMoney(trade.id, trade.risk, false)}</b></span>
+                           <span><small>Entered / exited / remaining</small><b>{trade.enteredQuantity ?? "â€”"} / {trade.exitedQuantity ?? "â€”"} / {trade.openQuantity ?? "â€”"}</b></span>
+                           <span><small>Weighted exit</small><b>{trade.weightedExit ? recordMoney(trade.id, trade.weightedExit, false, 6) : <MissingValue reason="Exit execution history unavailable" />}</b></span>
+-                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && (trade.status === "Closed" || ((trade.id.startsWith("paper:") || trade.id.startsWith("recorded:")) && trade.realizedAvailable !== false)) && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${recordMoney(trade.id, trade.grossRealized)} / ${trade.costs == null ? "provisional" : recordMoney(trade.id, trade.costs)} / ${(trade.status === "Closed" || ((trade.id.startsWith("paper:") || trade.id.startsWith("recorded:")) && trade.realizedAvailable !== false)) && trade.costs != null ? recordMoney(trade.id, trade.pnl) : "Unavailable"}`}</b></span>
++                          <span><small>Gross / costs / net</small><b className={journalSemanticClass(journalSemanticTone(trade.pnl, trade.grossRealized != null && (trade.status === "Closed" || (isLedgerRecord(trade.id) && trade.realizedAvailable !== false)) && trade.costs != null))}>{trade.grossRealized == null ? <MissingValue reason="Gross result unavailable" /> : `${recordMoney(trade.id, trade.grossRealized)} / ${trade.costs == null ? "provisional" : recordMoney(trade.id, trade.costs)} / ${(trade.status === "Closed" || (isLedgerRecord(trade.id) && trade.realizedAvailable !== false)) && trade.costs != null ? recordMoney(trade.id, trade.pnl) : "Unavailable"}`}</b></span>
+                           <span><small>Entry / closure / duration</small><b>{trade.firstFillAt ? new Date(trade.firstFillAt).toLocaleString() : "Unavailable"}<br />{trade.closedAt ? new Date(trade.closedAt).toLocaleString() : trade.status === "Closed" ? "Closure time unavailable" : "Open"}<br />{holdingDuration(trade.firstFillAt, trade.closedAt)}</b></span>
+                         </div>
+                         <div className="journal-plan-detail">
+@@ -2154,7 +2269,7 @@
+                             </span>
+                           </div>
+                         ))}
+-                        {standalone && trade.id.startsWith("recorded:") ?
++                        {standalone && (trade.id.startsWith("recorded:") || trade.id.startsWith("fixture:")) ?
+                           <p className="workspace-notice">Personal review editing for saved paper trades is not available yet.</p> :
+                         <div className="journal-review-form" aria-label={`${trade.symbol} personal review`}>
+                           <strong>Personal review <i>{trade.id.startsWith("paper:") ? "optional" : `optional Â· Grade ${trade.grade}`}</i></strong>
+@@ -2213,11 +2328,15 @@
+               </button>
+             </div>
+             <form onSubmit={addTrade}>
++              {cloudError && <p role="alert" className="modal-validation">{cloudError}</p>}
++              {cloudDraft && <p className="form-help">A recovery draft is saved on this device for this account. Check cloud history before submitting it again; an earlier attempt may already have succeeded.</p>}
+               <div className="form-row">
+                 <label>
+                   Symbol
+                   <input
+                     name="symbol"
++                    disabled={!demoMode && cloudBusy}
++                    defaultValue={cloudDraft?.symbol}
+                     placeholder="NVDA"
+                     required
+                     autoFocus
+@@ -2228,8 +2347,9 @@
+                   Trade date
+                   <input
+                     name="date"
++                    disabled={!demoMode && cloudBusy}
+                     type="date"
+-                    defaultValue={isoDate()}
++                    defaultValue={cloudDraft?.trade_date ?? isoDate()}
+                     required
+                   />
+                 </label>
+@@ -2237,14 +2357,14 @@
+               <div className="form-row">
+                 <label>
+                   Side
+-                  <select name="side">
++                  <select name="side" defaultValue={cloudDraft?.side} disabled={!demoMode && cloudBusy}>
+                     <option>Long</option>
+                     <option>Short</option>
+                   </select>
+                 </label>
+                 <label>
+                   Setup
+-                  <select name="setup">
++                  <select name="setup" defaultValue={cloudDraft?.setup} disabled={!demoMode && cloudBusy}>
+                     {setups.map((setup) => (
+                       <option key={setup}>{setup}</option>
+                     ))}
+@@ -2256,6 +2376,8 @@
+                   Dollar risk
+                   <input
+                     name="risk"
++                    disabled={!demoMode && cloudBusy}
++                    defaultValue={cloudDraft?.dollar_risk}
+                     type="number"
+                     min="1"
+                     placeholder="150"
+@@ -2266,6 +2388,8 @@
+                   Planned reward
+                   <input
+                     name="plannedR"
++                    disabled={!demoMode && cloudBusy}
++                    defaultValue={cloudDraft?.planned_r}
+                     type="number"
+                     min=".1"
+                     step=".1"
+@@ -2277,11 +2401,11 @@
+               <div className="form-row">
+                 <label>
+                   Final P&amp;L
+-                  <input name="pnl" type="number" placeholder="750" required />
++                  <input name="pnl" type="number" placeholder="750" required defaultValue={cloudDraft?.pnl} disabled={!demoMode && cloudBusy} />
+                 </label>
+                 <label>
+                   Execution grade
+-                  <select name="grade">
++                  <select name="grade" defaultValue={cloudDraft?.grade} disabled={!demoMode && cloudBusy}>
+                     <option value="A">A Â· Followed every rule</option>
+                     <option value="B">B Â· Minor deviation</option>
+                     <option value="C">C Â· Broke the plan</option>
+@@ -2300,8 +2424,8 @@
+                 >
+                   Cancel
+                 </button>
+-                <button type="submit" className="primary-button">
+-                  <Icon name="check" size={16} /> Save trade
++                <button type="submit" className="primary-button" disabled={!demoMode && (cloudBusy || cloudDraftReceipt.current === undefined)}>
++                  <Icon name="check" size={16} /> {cloudBusy ? "Savingâ€¦" : "Save trade"}
+                 </button>
+               </div>
+             </form>
+--- a/lib/cloud-trade-gateway.ts
++++ b/lib/cloud-trade-gateway.ts
+@@ -26,8 +26,9 @@
+     return () => { active = false; listener.subscription.unsubscribe(); };
+   },
+   async loadTrades(current) {
+-    if (!supabase) return unavailable<CloudTradeRow[]>();
+-    const result = await readWithClockRetry(() => supabase
++    const client = supabase;
++    if (!client) return unavailable<CloudTradeRow[]>();
++    const result = await readWithClockRetry(() => client
+       .from("trades")
+       .select("*")
+       .order("trade_date", { ascending: false })
+--- a/lib/local-journal.ts
++++ b/lib/local-journal.ts
+@@ -143,6 +143,7 @@
+     && count(value.uncertainCommandCount) && Array.isArray(value.journalCampaigns) && Array.isArray(value.records), "history scope");
+   if (!synthetic) check(typeof value.scopeId === "string" && privateScope.test(value.scopeId), "private paper scope");
+   check(value.historyStatus === "recorded" || value.historyStatus === "no-records", "history status");
++  const historyStatus = value.historyStatus;
+   check(value.lastRecordedAt === null || time(value.lastRecordedAt), "last recorded timestamp");
+   check((value.historyStatus === "no-records") === (value.journalCampaigns.length === 0), "history consistency");
+   check(value.records.length === value.journalCampaigns.length, "record count");
+@@ -273,9 +274,9 @@
+   check(value.lastRecordedAt === null ? rows.length === 0 : recordedMicros(value.lastRecordedAt) === latestRecorded,
+     "last recorded agreement");
+   const common = { environment: "paper" as const, connectionStatus: "not-connected" as const,
+-    historyStatus: value.historyStatus, lastRecordedAt: value.lastRecordedAt,
++    historyStatus, lastRecordedAt: value.lastRecordedAt,
+     lastBrokerReconciledAt: null, currentExposure: null, ordersCleared: null,
+-    uncertainCommandCount: value.uncertainCommandCount };
++    uncertainCommandCount: value.uncertainCommandCount } satisfies Omit<RecordedJournalView, "source" | "scopeId" | "rows">;
+   if (synthetic) return { ...common, source: "synthetic-ledger-fixture", rows: rows as SyntheticJournalRow[] };
+   return { ...common, source: "recorded-local-ledger", scopeId: value.scopeId as string,
+     rows: rows as RecordedJournalRow[] };
+--- a/playwright.ui.config.ts
++++ b/playwright.ui.config.ts
+@@ -10,7 +10,7 @@
+ 
+ export default defineConfig({
+   testDir: "./tests/ui",
+-  testMatch: ["chart-regressions.spec.ts", "workspace-quality.spec.ts", "scanner-ui.spec.ts", "paper-ui.spec.ts", "trading-verification.spec.ts", "ui-refinement.spec.ts", "journal-correction.spec.ts", "catalyst-reports.spec.ts", "standalone-shell.spec.ts"],
++  testMatch: ["chart-regressions.spec.ts", "workspace-quality.spec.ts", "scanner-ui.spec.ts", "paper-ui.spec.ts", "trading-verification.spec.ts", "ui-refinement.spec.ts", "journal-correction.spec.ts", "catalyst-reports.spec.ts", "standalone-shell.spec.ts", "cloud-journal-qualification.spec.ts"],
+   fullyParallel: false,
+   workers: 1,
+   retries: 0,
+--- a/scripts/assert-standalone-asset-boundary.ps1
++++ b/scripts/assert-standalone-asset-boundary.ps1
+@@ -23,4 +23,15 @@
+         throw 'Standalone export contains cloud-auth code. Split the standalone and cloud entry points before packaging.'
+     }
+ }
+-Write-Output 'Standalone cloud-auth boundary passed for known signatures.'
++$privatePatterns = @(
++    '[a-z0-9-]{16,}\.supabase\.co',
++    'sb_publishable_[A-Za-z0-9_-]{20,}',
++    'C:\\Users\\',
++    'paper-lifecycle\.sqlite3'
++)
++foreach ($pattern in $privatePatterns) {
++    if (@($assets | Select-String -Pattern $pattern -Quiet -ErrorAction Stop) -contains $true) {
++        throw 'Standalone export contains cloud configuration or a private-path marker.'
++    }
++}
++Write-Output 'Standalone cloud-auth and private-configuration boundary passed for known signatures.'
+--- a/scripts/package-windows-candidate.ps1
++++ b/scripts/package-windows-candidate.ps1
+@@ -67,6 +67,9 @@
+     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'out/verification/index.html'))) {
+         throw 'The read-only Trading verification route was not exported.'
+     }
++    # Qualify the complete fresh export, including routes and orphan text assets
++    # that are not selected for the desktop payload.
++    & (Join-Path $PSScriptRoot 'assert-standalone-asset-boundary.ps1') -AssetRoot (Join-Path $repoRoot 'out')
+     New-Item -ItemType Directory -Path $assetStage -Force | Out-Null
+     Copy-Item -LiteralPath (Join-Path $repoRoot 'out/standalone') -Destination (Join-Path $assetStage 'standalone') -Recurse -Force
+     Copy-Item -LiteralPath (Join-Path $repoRoot 'out/verification') -Destination (Join-Path $assetStage 'verification') -Recurse -Force
+@@ -96,6 +99,8 @@
+         --add-data "$assetStage;out" `
+         (Join-Path $repoRoot 'scripts/standalone_entry.py')
+     if ($LASTEXITCODE -ne 0) { throw 'Desktop packaging failed.' }
++    # Recheck the actual PyInstaller payload, not only its input staging tree.
++    & (Join-Path $PSScriptRoot 'assert-standalone-asset-boundary.ps1') -AssetRoot (Join-Path $dist '_internal/out')
+     & (Join-Path $dist 'BrontideDesktop.exe') --check-assets
+     if ($LASTEXITCODE -ne 0) { throw 'Packaged asset self-check failed.' }
+     $diagnosticsRaw = & (Join-Path $dist 'BrontideDesktop.exe') --diagnostics
+--- a/scripts/standalone_entry.py
++++ b/scripts/standalone_entry.py
+@@ -8,6 +8,7 @@
+ from brontide_eod.local_session import LocalSessionManager
+ from brontide_eod.local_instance import InstanceUnavailable
+ from brontide_eod.local_profile import LocalProfileStore
++from brontide_eod.local_verification import VerificationProfileStore
+ from brontide_eod.standalone import candidate_diagnostics, create_app, run
+ 
+ 
+@@ -19,21 +20,27 @@
+                         help="Read-only check of this locked candidate's private-data compatibility")
+     parser.add_argument("--diagnostics", action="store_true",
+                         help="Print a sanitized, read-only candidate support summary")
++    parser.add_argument("--verification-profile", metavar="UUID",
++                        help="Use an isolated, labelled artificial-record profile; execution remains locked")
+     args = parser.parse_args()
++    try:
++        verification = VerificationProfileStore(args.verification_profile) if args.verification_profile is not None else None
++    except (ValueError, OSError):
++        parser.exit(2, "Verification profile is invalid or unavailable; nothing was launched.\n")
+     if getattr(sys, "frozen", False):
+         assets = Path(sys._MEIPASS) / "out"  # type: ignore[attr-defined]
+     else:
+         assets = Path(__file__).resolve().parents[1] / "out"
+     if args.diagnostics:
+         try:
+-            store = LocalProfileStore()
++            store = verification if verification is not None else LocalProfileStore()
+         except OSError:
+             store = None
+         print(json.dumps(candidate_diagnostics(assets, store), sort_keys=True))
+         return
+     if args.check_profile_schema:
+         try:
+-            LocalProfileStore().check_locked_sample_update()
++            (verification if verification is not None else LocalProfileStore()).check_locked_sample_update()
+         except (OSError, ValueError):
+             parser.exit(3, "Brontide private data is unavailable or incompatible; installation stayed locked.\n")
+         print("Brontide locked candidate is compatible; no private data was changed.")
+@@ -43,8 +50,8 @@
+         print("Brontide desktop assets are present; execution remains locked.")
+         return
+     try:
+-        run(assets)
+-    except InstanceUnavailable as exc:
++        run(assets, verification_id=args.verification_profile)
++    except (InstanceUnavailable, OSError, ValueError) as exc:
+         parser.exit(2, f"Brontide stayed locked: {exc}\n")
+ 
+ 
+--- a/scripts/test-standalone-asset-boundary.ps1
++++ b/scripts/test-standalone-asset-boundary.ps1
+@@ -36,6 +36,19 @@
+         if (-not $rejected) { throw 'A cloud-auth fixture was accepted.' }
+     }
+     Remove-Item -LiteralPath $chunk
++    foreach ($privateMarker in @('abcdefghijklmnop.supabase.co',
++                                'sb_publishable_012345678901234567890',
++                                'C:\Users\artificial-fixture', 'paper-lifecycle.sqlite3')) {
++        Set-Content -LiteralPath $data -Value $privateMarker -Encoding utf8
++        $rejected = $false
++        try { & $checker -AssetRoot $root | Out-Null }
++        catch {
++            if ($_.Exception.Message -notlike '*cloud configuration or a private-path marker*') { throw }
++            $rejected = $true
++        }
++        if (-not $rejected) { throw 'A private-configuration fixture was accepted.' }
++    }
++    Remove-Item -LiteralPath $data
+     foreach ($textAsset in @($style, $data)) {
+         Set-Content -LiteralPath $textAsset -Value 'onAuthStateChange' -Encoding utf8
+         $rejected = $false
+--- a/services/eod/src/brontide_eod/local_session.py
++++ b/services/eod/src/brontide_eod/local_session.py
+@@ -152,7 +152,8 @@
+ 
+ 
+ def local_session_router(manager: LocalSessionManager, *, origin: str,
+-                         allow_testclient: bool = False) -> APIRouter:
++                         allow_testclient: bool = False,
++                         verification_binding: str | None = None) -> APIRouter:
+     """Build the standalone router for one exact loopback origin.
+ 
+     The caller must bind its server to that literal loopback address, serve UI
+@@ -209,6 +210,8 @@
+     def status(request: Request, response: Response, principal: LocalPrincipal = Depends(require_session)):
+         response.headers["Cache-Control"] = "no-store"
+         return {"profileId": principal.profile_id, "authenticated": True,
++                **({"verificationProfile": True, "verificationBinding": verification_binding}
++                   if verification_binding is not None else {}),
+                 "brokerAccount": None, "environment": None, "executionEnabled": False,
+                 "csrf": manager.csrf_for_cookie(request.cookies.get(COOKIE_NAME))}
+ 
+--- a/services/eod/src/brontide_eod/standalone.py
++++ b/services/eod/src/brontide_eod/standalone.py
+@@ -32,6 +32,7 @@
+ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
+ 
+ from .local_profile import LocalProfileStore, SelectedView
++from .local_verification import VerificationProfileStore, VERIFICATION_LABEL
+ from .local_binding import (BrokerAccountObservation, LocalBindingError,
+                             LocalBindingStore, LocalPaperBinding)
+ from .local_discovery import ManagedAccountDiscovery
+@@ -181,7 +182,8 @@
+         asset_status = "unavailable-or-invalid"
+     return {
+         "schemaVersion": 1,
+-        "candidate": "locked-sample",
++        "candidate": "locked-verification" if isinstance(profile_store, VerificationProfileStore) else "locked-sample",
++        **({"verificationProfile": True} if isinstance(profile_store, VerificationProfileStore) else {}),
+         "executionEnabled": False,
+         "brokerConnection": "not-available",
+         "profileSchema": profile_status,
+@@ -215,6 +217,9 @@
+         raise ValueError("Synthetic Journal source is available only in isolated tests.")
+     if account_evidence is not None and profile_store is None:
+         raise ValueError("Account selection requires private profile storage.")
++    verification = profile_store if isinstance(profile_store, VerificationProfileStore) else None
++    if verification is not None and (journal_source is not None or account_evidence is not None):
++        raise ValueError("Verification uses only its isolated artificial ledger; broker evidence is unavailable.")
+     if profile_store is not None and profile_store.root.resolve().is_relative_to(root):
+         raise ValueError("Private profile storage must be outside served assets.")
+     if not 1 <= port <= 65535:
+@@ -256,8 +261,21 @@
+         return response
+ 
+     session = local_session_router(manager, origin=origin,
+-                                   allow_testclient=allow_testclient)
++                                   allow_testclient=allow_testclient,
++                                   verification_binding=verification.binding if verification else None)
+     app.include_router(session)
++
++    if verification is not None:
++        @app.get("/v1/local/journal/verification")
++        def verification_journal(request: Request, principal=Depends(session.require_session)):
++            try:
++                result = verification.journal_source(principal.profile_id).read(principal.profile_id)
++                # Revalidate both the session and profile after the ledger read.
++                manager.authenticate(request.cookies.get(COOKIE_NAME))
++                verification.journal_source(principal.profile_id)
++                return result
++            except (OSError, ValueError) as exc:
++                raise HTTPException(503, "Artificial verification history is unavailable.") from exc
+ 
+     @app.get("/v1/local/sdk/metadata")
+     def sdk_metadata(_principal=Depends(session.require_session)):
+@@ -641,9 +659,9 @@
+     return app
+ 
+ 
+-def run(assets: Path, *, open_browser: bool = True) -> None:
++def run(assets: Path, *, open_browser: bool = True, verification_id: str | None = None) -> None:
+     """Start one isolated candidate instance on a reserved loopback socket."""
+-    profile_store = LocalProfileStore()
++    profile_store = VerificationProfileStore(verification_id) if verification_id is not None else LocalProfileStore()
+     try:
+         instance = WindowsStandaloneInstance.acquire(profile_store)
+     except InstanceAlreadyRunning:
+@@ -661,6 +679,8 @@
+               "If no window appears, use its existing window or console R action.", flush=True)
+         return
+     with instance:
++        if isinstance(profile_store, VerificationProfileStore):
++            profile_store.initialize_journal(instance.profile_id)
+         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+         try:
+             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+@@ -681,7 +701,8 @@
+                 server.should_exit = True
+                 worker.join(timeout=3)
+                 raise RuntimeError("The local Brontide service did not start.")
+-            print(f"Brontide sample available at http://{HOST}:{port}/standalone/ (execution locked).",
++            launch_label = VERIFICATION_LABEL if verification_id else "Brontide sample (execution locked)"
++            print(f"{launch_label} available at http://{HOST}:{port}/standalone/.",
+                   flush=True)
+             if open_browser:
+                 if not _open_local_browser(manager, port):
+--- a/scripts/install-windows-candidate.ps1
++++ b/scripts/install-windows-candidate.ps1
+@@ -145,7 +145,10 @@
+         $rel = [string]$entry.path
+         if (-not $rel -or $rel.StartsWith('/') -or $rel.Contains('..') -or
+             $rel.Contains(':') -or $rel.Contains('\') -or
+-            $rel -notmatch '^[A-Za-z0-9._/-]+$' -or
++            # Dependencies may contain internal spaces (for example Lorem ipsum.txt).
++            # Reject empty segments and Windows-normalized trailing spaces/dots.
++            $rel -notmatch '^[A-Za-z0-9._ /+-]+$' -or
++            @($rel.Split('/') | Where-Object { -not $_ -or $_ -match '^[ ]|[ .]$' }).Count -gt 0 -or
+             [string]$entry.sha256 -notmatch '^[0-9a-f]{64}$' -or
+             $entry.bytes -isnot [long] -and $entry.bytes -isnot [int]) {
+             throw "Unsafe inventory entry: $rel"
+--- a/scripts/test-windows-candidate-lifecycle.ps1
++++ b/scripts/test-windows-candidate-lifecycle.ps1
+@@ -39,6 +39,8 @@
+     Copy-Item -LiteralPath (Join-Path $fixtureBase 'stub.exe') -Destination (Join-Path $bin 'BrontideDesktop.exe')
+     Copy-Item -LiteralPath $installer -Destination (Join-Path $path 'Install-Brontide.ps1')
+     'locked fixture' | Set-Content -LiteralPath (Join-Path $path 'README.txt') -Encoding utf8
++    'dependency text with spaces' | Set-Content -LiteralPath (Join-Path $bin 'Lorem ipsum.txt') -Encoding utf8
++    'timezone data' | Set-Content -LiteralPath (Join-Path $bin 'GMT+0') -Encoding utf8
+     $files = @(Get-ChildItem -LiteralPath $path -File -Recurse | Sort-Object FullName | ForEach-Object {
+         [ordered]@{
+             path = $_.FullName.Substring($path.Length + 1).Replace('\', '/')
+@@ -111,7 +113,25 @@
+     Assert-Equal (ActiveName) $aName 'Install did not select A'
+     if (-not (Test-Path -LiteralPath $shortcut)) { throw 'Install shortcut missing.' }
+     Assert-Equal (ShortcutTarget) (Join-Path $installed "$aName/BrontideDesktop/BrontideDesktop.exe") 'Initial shortcut target'
+-    Write-Output 'PASS initial install and owned shortcut'
++    Assert-Equal (Get-Content -LiteralPath (Join-Path $installed "$aName/BrontideDesktop/Lorem ipsum.txt") -Raw).Trim() 'dependency text with spaces' 'Internal-space filename was not preserved'
++    Assert-Equal (Get-Content -LiteralPath (Join-Path $installed "$aName/BrontideDesktop/GMT+0") -Raw).Trim() 'timezone data' 'Plus filename was not preserved'
++    Write-Output 'PASS initial install, internal-space filename and owned shortcut'
++
++    $manifestPath = Join-Path $b 'manifest.json'
++    $manifestOriginal = Get-Content -LiteralPath $manifestPath -Raw
++    try {
++        foreach ($unsafe in @('../escape', '/absolute', 'BrontideDesktop//file',
++                'BrontideDesktop/ file', 'BrontideDesktop/file ', 'BrontideDesktop/file.',
++                'BrontideDesktop/file:stream', 'BrontideDesktop\file')) {
++            $invalid = $manifestOriginal | ConvertFrom-Json
++            $invalid.files[0].path = $unsafe
++            $invalid | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $manifestPath -Encoding utf8
++            Expect-Failure { Invoke-Lifecycle 'Update' $b } "unsafe inventory $unsafe" 'missing or unlisted|Unsafe inventory'
++            Assert-Equal (ActiveName) $aName 'Unsafe manifest changed active version'
++        }
++    } finally {
++        $manifestOriginal | Set-Content -LiteralPath $manifestPath -Encoding utf8
++    }
+ 
+     $lockPath = Join-Path $programs ('.brontide-lifecycle-' + [IO.Path]::GetFileName($installed) + '.lock')
+     $heldLock = [IO.FileStream]::new($lockPath, [IO.FileMode]::OpenOrCreate,
+--- a/tests/ui/standalone-shell.spec.ts
++++ b/tests/ui/standalone-shell.spec.ts
+@@ -40,11 +40,11 @@
+       return;
+     }
+     if (url.pathname === "/v1/local/profile/view") {
+-      await route.fulfill({ json: { selectedView: "journal", executionEnabled: false } });
++      await route.fulfill({ json: { selectedView: route.request().postDataJSON().view, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname === "/v1/local/binding") {
+-      await route.fulfill({ json: { remembered: true, environment: "paper", accountMask: "****1234",
++      await route.fulfill({ json: { remembered: true, environment: "paper", accountMask: "U1â€¢â€¢â€¢â€¢56",
+         connectionVerified: false, reconciliationRequired: true, executionEnabled: false } });
+       return;
+     }
+@@ -86,9 +86,9 @@
+   await expect(page.getByText("Personal review editing for saved paper trades is not available yet.")).toBeVisible();
+   await expect(page.getByRole("button", { name: "Save review" })).toHaveCount(0);
+   await expect(page.getByRole("button", { name: "Log trade" })).toBeDisabled();
+-  await page.getByRole("button", { name: "Plan & Position" }).click();
++  await page.getByRole("button", { name: "Plan & Position", exact: true }).click();
+   await expect(page.getByRole("heading", { name: "Recorded paper positions" })).toBeVisible();
+-  await expect(page.getByText("Current broker exposure unknown")).toBeVisible();
++  await expect(page.getByText("Saved paper executions. Current broker exposure and protection are unverified.")).toBeVisible();
+   await expect(page.getByText("Paper account draft Â· saved privately only after confirmation.", { exact: false })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Validate paper intent" })).toHaveCount(0);
+   const position = page.locator('[data-recorded-position-id="recorded:campaign-1"]');
+@@ -97,12 +97,12 @@
+   await expect(position).toContainText("Recorded remaining");
+   await expect(position).toContainText("Current broker position, orders and stop protection are unverified.");
+   await expect(page.getByText("Working entries", { exact: true })).toHaveCount(0);
+-  await page.getByRole("button", { name: "Plan & Position" }).click();
++  await page.getByRole("button", { name: "Plan & Position", exact: true }).click();
+   await expect(position).toBeVisible();
+   await position.getByRole("button", { name: "Open in Journal" }).click();
+   await expect(page.locator('[data-journal-trade-id="recorded:campaign-1"]')).toBeVisible();
+   planScopeId = "b".repeat(64);
+-  await page.getByRole("button", { name: "Plan & Position" }).click();
++  await page.getByRole("button", { name: "Plan & Position", exact: true }).click();
+   await expect(page.getByText("Recorded position history is unavailable.", { exact: false })).toBeVisible();
+   await expect(page.getByRole("heading", { name: "Private paper plan locked" })).toBeVisible();
+   await expect(page.getByLabel("Stock symbol", { exact: true })).toHaveCount(0);
+@@ -136,11 +136,11 @@
+       return;
+     }
+     if (url.pathname === "/v1/local/profile/view") {
+-      await route.fulfill({ json: { selectedView: "trading", executionEnabled: false } });
++      await route.fulfill({ json: { selectedView: route.request().postDataJSON().view, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname === "/v1/local/binding") {
+-      await route.fulfill({ json: { remembered: true, environment: "paper", accountMask: "****1234",
++      await route.fulfill({ json: { remembered: true, environment: "paper", accountMask: "U1â€¢â€¢â€¢â€¢56",
+         connectionVerified: false, reconciliationRequired: true, executionEnabled: false } });
+       return;
+     }
+@@ -208,12 +208,12 @@
+   await page.getByRole("button", { name: "Edit plan" }).click();
+   await expect(page.getByText("Current fields are unsaved.", { exact: false })).toBeVisible();
+   await page.getByLabel("Stock symbol", { exact: true }).fill("MSFT");
+-  await page.getByRole("button", { name: "Journal" }).click();
+-  await page.getByRole("button", { name: "Plan & Position" }).click();
++  await page.getByRole("navigation", { name: "Trading views" }).getByRole("button", { name: "Journal", exact: true }).click();
++  await page.getByRole("button", { name: "Plan & Position", exact: true }).click();
+   await expect(page.getByLabel("Stock symbol", { exact: true })).toHaveValue("MSFT");
+   planScopeId = "b".repeat(64);
+-  await page.getByRole("button", { name: "Journal" }).click();
+-  await page.getByRole("button", { name: "Plan & Position" }).click();
++  await page.getByRole("navigation", { name: "Trading views" }).getByRole("button", { name: "Journal", exact: true }).click();
++  await page.getByRole("button", { name: "Plan & Position", exact: true }).click();
+   await expect(page.getByText("Recorded position history is unavailable.", { exact: false })).toBeVisible();
+   await expect(page.getByRole("heading", { name: "Private paper plan locked" })).toBeVisible();
+   await expect(page.getByLabel("Stock symbol", { exact: true })).toHaveCount(0);
+@@ -236,11 +236,11 @@
+       return;
+     }
+     if (url.pathname === "/v1/local/profile/view") {
+-      await route.fulfill({ json: { selectedView: "journal", executionEnabled: false } });
++      await route.fulfill({ json: { selectedView: route.request().postDataJSON().view, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname === "/v1/local/binding") {
+-      await route.fulfill({ json: { remembered: true, environment: "paper", accountMask: "****1234",
++      await route.fulfill({ json: { remembered: true, environment: "paper", accountMask: "U1â€¢â€¢â€¢â€¢56",
+         connectionVerified: false, reconciliationRequired: true, executionEnabled: false } });
+       return;
+     }
+@@ -261,16 +261,16 @@
+   });
+   await serveBothViews(page, false);
+   await page.goto("/standalone/");
+-  await expect(page.getByRole("alert")).toContainText("Recorded history unavailable");
++  await expect(page.getByRole("alert").filter({ hasText: "Recorded history unavailable" })).toBeVisible();
+   await expect(page.getByText("No sample records or zero exposure are substituted.")).toBeVisible();
+   await expect(page.locator('[data-journal-trade-id]')).toHaveCount(0);
+   await expect(page.getByText("No records yet")).toHaveCount(0);
+   await expect(page.getByRole("button", { name: "Log trade" })).toBeDisabled();
+-  await page.getByRole("button", { name: "Plan & Position" }).click();
+-  await expect(page.getByRole("alert")).toContainText("Recorded position history is unavailable");
++  await page.getByRole("button", { name: "Plan & Position", exact: true }).click();
++  await expect(page.getByRole("alert").filter({ hasText: "Recorded position history is unavailable" })).toBeVisible();
+   await expect(page.locator('[data-recorded-position-id]')).toHaveCount(0);
+-  await expect(page.getByText("No sample positions or zero broker exposure are substituted.")).toBeVisible();
+-  await expect(page.getByText("Current broker exposure unknown")).toBeVisible();
++  await expect(page.getByText("No sample positions or zero broker exposure are substituted.", { exact: false })).toBeVisible();
++  await expect(page.getByText("Saved paper executions. Current broker exposure and protection are unverified.")).toBeVisible();
+   await expect(page.getByRole("heading", { name: "Private paper plan locked" })).toBeVisible();
+   await expect(page.getByLabel("Stock symbol", { exact: true })).toHaveCount(0);
+   await expect(page.getByRole("button", { name: "Save plan", exact: true })).toHaveCount(0);
+@@ -292,7 +292,7 @@
+       return;
+     }
+     if (url.pathname === "/v1/local/profile/view") {
+-      await route.fulfill({ json: { selectedView: "connect", executionEnabled: false } });
++      await route.fulfill({ json: { selectedView: route.request().postDataJSON().view, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname === "/v1/local/binding") {
+@@ -332,6 +332,12 @@
+     if (url.pathname === "/v1/local/session/status") {
+       await route.fulfill({ json: { profileId: "local-fixture", authenticated: true,
+         brokerAccount: null, environment: null, executionEnabled: false, csrf: "fixture-csrf" } });
++      return;
++    }
++    if (url.pathname === "/v1/local/profile/view") {
++      expect(request.method()).toBe("PUT");
++      expect(request.headers()["x-brontide-csrf"]).toBe("fixture-csrf");
++      await route.fulfill({ json: { selectedView: request.postDataJSON().view, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname === "/v1/local/profile") {
+@@ -401,6 +407,12 @@
+         brokerAccount: null, environment: null, executionEnabled: false, csrf: "fixture-csrf" } });
+       return;
+     }
++    if (url.pathname === "/v1/local/profile/view") {
++      expect(request.method()).toBe("PUT");
++      expect(request.headers()["x-brontide-csrf"]).toBe("fixture-csrf");
++      await route.fulfill({ json: { selectedView: request.postDataJSON().view, executionEnabled: false } });
++      return;
++    }
+     if (url.pathname === "/v1/local/profile") {
+       await route.fulfill({ json: { profileId: "local-fixture", selectedView: "connect",
+         brokerAccount: null, executionEnabled: false } });
+@@ -474,7 +486,7 @@
+       return;
+     }
+     if (url.pathname === "/v1/local/profile/view") {
+-      await route.fulfill({ json: { selectedView: "connect", executionEnabled: false } });
++      await route.fulfill({ json: { selectedView: route.request().postDataJSON().view, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname === "/v1/local/binding/check" && request.method() === "POST") {
+@@ -670,12 +682,14 @@
+ test("standalone sample drafts and Journal reviews follow the verified profile and leave anonymous preview separate", async ({ page }) => {
+   let profile = "fixture-profile-A";
+   let revokeViewWrite = false;
++  let anonymous = false;
+   const unexpected: string[] = [];
+   const viewWrites: string[] = [];
+   await page.route("**/*", async route => {
+     const request = route.request();
+     const url = new URL(request.url());
+     if (url.pathname === "/v1/local/session/status") {
++      if (anonymous) { await route.fulfill({ status: 401, json: { detail: "Anonymous preview" } }); return; }
+       await route.fulfill({ json: { profileId: profile, authenticated: true, brokerAccount: null,
+         environment: null, executionEnabled: false, csrf: `${profile}-csrf` } });
+       return;
+@@ -746,11 +760,15 @@
+   await connect.click();
+   await expect(page.getByRole("region", { name: "Connection readiness" })).toContainText("Sample mode");
+   await expect(page.getByRole("region", { name: "Execution status" })).toContainText("Order submission locked");
++  await expect(page.getByRole("button", { name: "Explore Journal" })).toHaveCount(0);
++  anonymous = true;
++  await page.reload();
+   await page.getByRole("button", { name: "Explore Journal" }).click();
+   await page.locator('[data-journal-trade-id="journal-amd"] button').click();
+   await expect(page.getByLabel("AMD One lesson")).toHaveValue("");
+   await expect(page.getByRole("button", { name: "AONLY" })).toHaveCount(0);
+ 
++  anonymous = false;
+   profile = "fixture-profile-B";
+   await page.reload();
+   await verified();
+@@ -800,7 +818,7 @@
+   await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("button")).toHaveCount(3);
+   await expect(page.getByRole("heading", { name: "Connect to Interactive Brokers" })).toBeVisible();
+   await page.getByRole("button", { name: "Explore Trading with sample data" }).click();
+-  await expect(page.getByRole("button", { name: "Plan & Position" })).toBeVisible();
++  await expect(page.getByRole("button", { name: "Plan & Position", exact: true })).toBeVisible();
+   await expect(page.getByLabel("Stock symbol", { exact: true })).toBeVisible();
+   await page.getByLabel("Stock symbol", { exact: true }).fill("DRAFTSAFE");
+   await page.getByLabel("Captured planning entry price").fill("123.45");
+@@ -808,13 +826,14 @@
+   await page.getByRole("navigation", { name: "Trading views" }).getByRole("button", { name: "Journal" }).click();
+   await expect(page.getByRole("heading", { name: "Trading journal" })).toBeVisible();
+   await expect(page.getByRole("button", { name: "Scans" })).toHaveCount(0);
+-  await page.getByRole("navigation", { name: "Trading views" }).getByRole("button", { name: "Plan & Position" }).click();
++  await page.getByRole("navigation", { name: "Trading views" }).getByRole("button", { name: "Plan & Position", exact: true }).click();
+   await expect(page.getByLabel("Stock symbol", { exact: true })).toHaveValue("DRAFTSAFE");
+   await expect(page.getByLabel("Captured planning entry price")).toHaveValue("123.45");
+   expect(serviceCalls).toEqual([]);
+ });
+ 
+ test("standalone view choice survives reload and remains usable at mobile width", async ({ page }) => {
++  await page.route("**/v1/local/session/status", route => route.fulfill({ status: 401, json: { detail: "Anonymous sample preview" } }));
+   await page.goto("/standalone/");
+   await page.getByRole("button", { name: "Explore Journal" }).click();
+   await page.reload();
+@@ -853,6 +872,13 @@
+         enabledViews = (request.postDataJSON() as { enabledViews: ("trading" | "journal")[] }).enabledViews;
+       }
+       await route.fulfill({ json: { enabledViews, canHideTrading: true, executionEnabled: false } });
++      return;
++    }
++    if (url.pathname === "/v1/local/paper-reference") {
++      expect(request.method()).toBe("GET");
++      expect(request.headers()["x-brontide-csrf"]).toBe("fixture-csrf");
++      await route.fulfill({ json: { recorded: false, accountMask: null, environment: null,
++        paperIdentityVerified: false, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname === "/v1/local/binding") {
+@@ -944,6 +970,12 @@
+         brokerAccount: null, environment: null, executionEnabled: false, csrf: "fixture-csrf" } });
+       return;
+     }
++    if (url.pathname === "/v1/local/profile/view") {
++      expect(request.method()).toBe("PUT");
++      expect(request.headers()["x-brontide-csrf"]).toBe("fixture-csrf");
++      await route.fulfill({ json: { selectedView: request.postDataJSON().view, executionEnabled: false } });
++      return;
++    }
+     if (url.pathname === "/v1/local/profile" && request.method() === "GET") {
+       await route.fulfill({ json: { profileId: "fixture-profile", selectedView: "connect",
+         brokerAccount: null, executionEnabled: false } });
+@@ -1057,8 +1089,13 @@
+   await serveBothViews(page);
+   await page.goto("/standalone/");
+   await expect(page.getByRole("button", { name: "Explore Trading with sample data" })).toHaveCount(0);
++  await page.route("**/v1/local/binding", route => route.fulfill({ json: {
++    remembered: false, environment: null, accountMask: null, connectionVerified: false,
++    reconciliationRequired: true, executionEnabled: false,
++  } }));
+   releaseProfile();
+-  await page.getByRole("button", { name: "Explore Trading with sample data" }).click();
++  await expect(page.getByRole("heading", { name: "Trading journal" })).toBeVisible();
++  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Trading", exact: true }).click();
+   await expect(page.getByLabel("Stock symbol", { exact: true })).toBeVisible();
+   await expect.poll(() => writes.at(-1)).toBe("trading");
+   await expect(page.getByRole("heading", { name: "Trading journal" })).toHaveCount(0);
+@@ -1128,7 +1165,7 @@
+       return;
+     }
+     if (url.pathname === "/v1/local/profile/view") {
+-      await route.fulfill({ json: { selectedView: "connect", executionEnabled: false } });
++      await route.fulfill({ json: { selectedView: route.request().postDataJSON().view, executionEnabled: false } });
+       return;
+     }
+     if (url.pathname.startsWith("/v1/") || url.pathname.startsWith("/api/") || url.hostname.endsWith("supabase.co")) {
+@@ -1167,14 +1204,14 @@
+   const viewWriteGate = new Promise<void>(resolve => { releaseViewWrite = resolve; });
+   const refreshGate = new Promise<void>(resolve => { releaseRefresh = resolve; });
+   let statusCalls = 0;
++  let refreshing = false;
+   let viewWrites = 0;
+   const unexpected: string[] = [];
+   await page.route("**/*", async route => {
+     const request = route.request();
+     const url = new URL(request.url());
+     if (url.pathname === "/v1/local/session/status") {
+-      statusCalls += 1;
+-      if (statusCalls > 1) await refreshGate;
++      if (refreshing) { statusCalls += 1; await refreshGate; }
+       await route.fulfill({ json: { profileId: "fixture-profile", authenticated: true,
+         brokerAccount: null, environment: null, executionEnabled: false, csrf: "fixture-csrf",
+         connectionFixture: { source: "synthetic-fixture", generation: "generation-1",
+@@ -1208,8 +1245,9 @@
+   await page.getByRole("button", { name: "Confirm walkthrough choice" }).click();
+   await expect(page.getByText("Synthetic choice DEMO-A recorded", { exact: false })).toBeVisible();
+   await expect.poll(() => viewWrites).toBe(1);
++  refreshing = true;
+   await page.getByRole("button", { name: "Refresh synthetic local status" }).click();
+-  await expect.poll(() => statusCalls).toBe(2);
++  await expect.poll(() => statusCalls).toBe(1);
+ 
+   releaseViewWrite();
+   await expect(page.getByRole("region", { name: "Connection readiness" })).toContainText("Sample mode");
+@@ -1281,6 +1319,9 @@
+     await expect(page.getByRole("region", { name: "Execution status" })).toContainText("Order submission locked");
+     await expect(page.getByLabel("Synthetic account candidate")).toHaveCount(0);
+     await expect(page.getByRole("region", { name: "Connection readiness" })).toContainText("Sample mode");
++    await expect(page.getByRole("button", { name: "Explore Trading with sample data" })).toHaveCount(0);
++    await page.route("**/v1/local/session/status", route => route.fulfill({ status: 401, json: { detail: "Anonymous preview" } }));
++    await page.reload();
+     await page.getByRole("button", { name: "Explore Trading with sample data" }).click();
+     await expect(page.getByLabel("Stock symbol", { exact: true })).not.toHaveValue("AAPL");
+     await page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Journal" }).click();
+@@ -1294,3 +1335,55 @@
+     expect(storedProfileData.review).toContain("Profile A only.");
+   });
+ }
++
++
++test("artificial installed-profile history preserves cents and read-only reviews", async ({ page }) => {
++  const history = structuredClone(syntheticHistory);
++  const binding = "fixture-83e26da0-61db-4c42-a9e1-ca28c770ca0f";
++  history.journalCampaigns[0].accountBinding = binding;
++  await page.route("**/v1/local/**", async route => {
++    const path = new URL(route.request().url()).pathname;
++    const values: Record<string, unknown> = {
++      "/v1/local/session/status": { profileId: "local-fixture", authenticated: true, brokerAccount: null,
++        environment: null, executionEnabled: false, csrf: "fixture-csrf", verificationProfile: true, verificationBinding: binding },
++      "/v1/local/profile": { profileId: "local-fixture", selectedView: "journal", brokerAccount: null, executionEnabled: false },
++      "/v1/local/modules": { enabledViews: ["trading", "journal"], canHideTrading: true, executionEnabled: false },
++      "/v1/local/journal/verification": history,
++      "/v1/local/profile/view": { selectedView: "journal", executionEnabled: false },
++    };
++    await route.fulfill({ status: path in values ? 200 : 503, json: values[path] ?? {detail: "Not used"} });
++  });
++  await page.goto("/standalone/");
++  await expect(page.getByText("Artificial verification history", {exact: true})).toBeVisible();
++  await page.getByRole("button", {name: "TEST", exact: true}).click();
++  const detail = page.getByRole("region", {name: "TEST entry and exit details"});
++  await expect(detail).toContainText("$0.20");
++  await expect(detail).toContainText("+$2.00 / provisional / Unavailable");
++  await expect(page.getByRole("button", {name: "Save review"})).toHaveCount(0);
++  await expect(page.getByText("Grade C", {exact: false})).toHaveCount(0);
++  const campaign = history.journalCampaigns[0];
++  Object.assign(campaign, {state: "Closed"});
++  Object.assign(campaign.executions[0], {commission: .4});
++  Object.assign(campaign.executions[1], {quantity: 2, price: 103, commission: .3});
++  Object.assign(campaign.summary, {exited: 2, openQuantity: 0, costsComplete: true,
++    fees: .7, grossRealized: 6, netRealized: 5.3, finalNetR: 1.325});
++  Object.assign(history.records[0], {state: "Closed", exited: 2, recordedOpenQuantity: 0,
++    costsCompleteRecorded: true, fees: .7, grossRealized: 6, netRealized: 5.3, finalNetR: 1.325});
++  await page.reload();
++  await expect(page.getByRole("region", {name: "Trading statistics"})).toContainText("+$5.30");
++  await page.getByRole("button", {name: "TEST", exact: true}).click();
++  await expect(detail).toContainText("+$6.00 / +$0.70 / +$5.30");
++  await expect(detail).toContainText("2 / 2 / 0");
++  await page.setViewportSize({width: 1280, height: 900});
++  await page.evaluate(() => {
++    const sizes = Array.from(document.querySelectorAll<HTMLElement>("body,body *"))
++      .map(element => ({element, size: parseFloat(getComputedStyle(element).fontSize)}));
++    sizes.forEach(({element, size}) => element.style.fontSize = `${size * 2}px`);
++  });
++  const header = await page.locator(".journal-content .topbar").boundingBox();
++  const heading = await page.getByRole("heading", {name: "Trading journal", exact: true}).boundingBox();
++  const notice = await page.locator(".journal-content > .workspace-notice").boundingBox();
++  expect(header && heading && notice).toBeTruthy();
++  expect(heading!.y + heading!.height).toBeLessThanOrEqual(header!.y + header!.height);
++  expect(notice!.y).toBeGreaterThanOrEqual(header!.y + header!.height);
++});
+--- a/app/TradePlanner.tsx
++++ b/app/TradePlanner.tsx
+@@ -164,7 +164,7 @@
+   return { mode: "Manual", stopPrice: 1 };
+ }
+ 
+-export function TradePlanner({ storageScope = "unlinked", context, onChart, demo=false, paper, privatePlanRequired=false, privatePlan, positions, positionCount, exposure }: {storageScope?:string;demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;privatePlanRequired?:boolean;privatePlan?:{scopeId:string;csrf:string;ready:boolean};positions?:ReactNode;positionCount?:number;exposure?:ReactNode}) {
++export function TradePlanner({ storageScope = "unlinked", context, onChart, demo=false, paper, privatePlanRequired=false, privatePlan, positions, positionCount, exposure }: {storageScope?:string;demo?:boolean;context?:MarketContext;onChart?:(context:MarketContext)=>void;paper?:PaperExecution;privatePlanRequired?:boolean;privatePlan?:{scopeId:string;csrf:string;ready:boolean};positions?:ReactNode;positionCount?:number | null;exposure?:ReactNode}) {
+   const demoStorageKey = (key: string, simulation: boolean) => simulation ? isStandaloneSampleScope(storageScope) ? standaloneSampleStorageKey(key, storageScope) : legacyStorageKey(key, true) : `${key}:scope:${storageScope}`;
+   const [importEpoch, setImportEpoch] = useState(0);
+   const initialSnapshot = demo ? demoPlanningMarketSnapshot("NVDA") : null;
+@@ -755,6 +755,7 @@
+   if (privatePlanRequired && (!privatePlan?.ready || privateLoad !== "ready")) {
+     const checking = privateLoad === "checking";
+     return <section className="trade-planner" aria-label="Private paper plan locked">
++      <PlannerWorkspace positions={positions} count={positionCount} exposure={exposure} scope={storageScope}>
+       <h1>Private paper plan locked</h1>
+       <p className="workspace-notice" role={checking ? "status" : "alert"}>{checking
+         ? "Checking this account, its saved history and private plan. Plan fields are hidden until their scope is verified again."
+@@ -766,6 +767,7 @@
+         setPrivateLoad("checking");
+         setPrivateRefreshEpoch(value => value + 1);
+       }}>Reopen saved plan</button>}
++      </PlannerWorkspace>
+     </section>;
+   }
+ 
+--- a/app/standalone-connect.css
++++ b/app/standalone-connect.css
+@@ -89,6 +89,8 @@
+ .standalone-connect-links, .standalone-connect-actions { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+ .standalone-connect-links a { color: #155b3b; text-underline-offset: 3px; font-size: 14px; }
+ .standalone-connect-actions { margin-top: 20px; }
++/* Setup actions remain available when the legacy mobile toolbar hides secondary buttons. */
++.standalone-connect .secondary-button { display: inline-flex; align-items: center; min-height: 42px; height: auto; padding: 8px 12px; }
+ .standalone-connect-actions :is(.primary-button, .secondary-button) { display: inline-flex; align-items: center; min-height: 42px; }
+ 
+ @media (max-width: 620px) {
+--- a/tests/ui/standalone-shell.spec.ts
++++ b/tests/ui/standalone-shell.spec.ts
+@@ -903,10 +903,27 @@
+   await expect(page.getByRole("button", { name: "Explore Journal" })).toHaveCount(0);
+   await page.reload();
+   await expect(home.getByRole("checkbox", { name: "Journal" })).not.toBeChecked();
++  await page.setViewportSize({ width: 390, height: 844 });
++  await expect(home.getByRole("button", { name: "Save views" })).toBeVisible();
++  await expect(page.getByRole("button", { name: "Record private paper reference" })).toBeVisible();
++  await expect(page.getByRole("button", { name: "Record private paper reference" })).toBeDisabled();
++  await expect(page.getByRole("button", { name: "Check local API package" })).toBeVisible();
++  const recordReference = page.getByRole("button", { name: "Record private paper reference" });
++  await recordReference.evaluate(element => { element.style.fontSize = `${parseFloat(getComputedStyle(element).fontSize) * 2}px`; });
++  const enlargedBounds = await recordReference.evaluate(element => {
++    const range = document.createRange();
++    range.selectNodeContents(element);
++    const text = range.getBoundingClientRect();
++    const button = element.getBoundingClientRect();
++    return { textTop: text.top, textBottom: text.bottom, buttonTop: button.top, buttonBottom: button.bottom };
++  });
++  expect(enlargedBounds.textTop).toBeGreaterThanOrEqual(enlargedBounds.buttonTop);
++  expect(enlargedBounds.textBottom).toBeLessThanOrEqual(enlargedBounds.buttonBottom);
++  await recordReference.evaluate(element => { element.style.removeProperty("font-size"); });
+   await home.getByRole("checkbox", { name: "Journal" }).check();
+   await home.getByRole("checkbox", { name: "Trading" }).uncheck();
+   await home.getByRole("button", { name: "Save views" }).click();
+-  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("button", { name: "Trading" })).toHaveCount(0);
++  await expect(page.getByRole("navigation", { name: "Workspace tabs" }).getByRole("button", { name: "Trading" })).toHaveCount(0);
+   await page.getByRole("button", { name: "Explore Journal" }).click();
+   await expect(page.getByRole("heading", { name: "Trading journal" })).toBeVisible();
+   expect(unexpected).toEqual([]);
